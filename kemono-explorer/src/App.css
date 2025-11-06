@@ -262,6 +262,8 @@ body {
   display: flex;
   gap: 6px;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .pagination-block {
@@ -503,6 +505,7 @@ body {
   justify-content: space-between;
   gap: 20px;
   align-items: flex-end;
+  flex-wrap: wrap;
 }
 
 .creator-heading {
@@ -510,6 +513,7 @@ body {
   align-items: center;
   gap: 16px;
   min-width: 0;
+  flex-wrap: nowrap;
 }
 
 .creator-avatar-wrapper {
@@ -523,6 +527,7 @@ body {
   align-items: center;
   justify-content: center;
   flex: 0 0 72px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
 }
 
 .creator-avatar {
@@ -530,6 +535,7 @@ body {
   height: 100%;
   object-fit: cover;
   display: block;
+  background: var(--surface-muted);
 }
 
 .creator-heading-text {
@@ -537,6 +543,7 @@ body {
   flex-direction: column;
   gap: 4px;
   min-width: 0;
+  flex: 1;
 }
 
 .description {
@@ -700,9 +707,15 @@ body {
     grid-template-columns: 1fr;
   }
 
-  .hero-body {
-    flex-direction: column;
-    align-items: flex-start;
+  .pagination-pages {
+    gap: 6px;
+    justify-content: center;
+  }
+
+  .page-pill {
+    min-width: 30px;
+    height: 30px;
+    padding: 0 8px;
   }
 
   .creator-heading {
@@ -742,6 +755,26 @@ body {
 
   .controls {
     gap: 8px;
+  }
+
+  .pagination-pages {
+    gap: 4px;
+  }
+
+  .page-pill {
+    min-width: 28px;
+    height: 28px;
+    padding: 0 6px;
+  }
+
+  .hero-body {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .creator-avatar-wrapper {
+    width: 48px;
+    height: 48px;
   }
 }
 

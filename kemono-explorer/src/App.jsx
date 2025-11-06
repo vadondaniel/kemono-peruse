@@ -342,6 +342,7 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
   const [loadingPosts, setLoadingPosts] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
   const [hasNextPage, setHasNextPage] = useState(false);
+  const [compactPagination, setCompactPagination] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -425,6 +426,25 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
   const totalPages = derivedTotalPages ?? currentPage + (hasNext ? 1 : 0);
   const avatarUrl = `https://img.kemono.cr/icons/${service}/${creatorId}`;
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const media = window.matchMedia("(max-width: 520px)");
+    const handle = () => setCompactPagination(media.matches);
+    handle();
+    if (media.addEventListener) {
+      media.addEventListener("change", handle);
+    } else {
+      media.addListener(handle);
+    }
+    return () => {
+      if (media.removeEventListener) {
+        media.removeEventListener("change", handle);
+      } else {
+        media.removeListener(handle);
+      }
+    };
+  }, []);
+
   function goToPage(page) {
     if (!limit) return;
     setOffset(Math.max(0, (page - 1) * limit));
@@ -435,13 +455,16 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
 
     const pages = [];
 
-    if (totalPages <= 9) {
+    const maxDirectDisplay = compactPagination ? 5 : 9;
+    const windowRadius = compactPagination ? 1 : 2;
+
+    if (totalPages <= maxDirectDisplay) {
       for (let p = 1; p <= totalPages; p += 1) pages.push(p);
     } else {
       pages.push(1);
 
-      let start = currentPage - 2;
-      let end = currentPage + 2;
+      let start = currentPage - windowRadius;
+      let end = currentPage + windowRadius;
 
       if (start < 2) {
         end += 2 - start;
@@ -473,9 +496,11 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
           </span>
         </div>
         <nav className="pagination">
-          <button className="btn ghost" type="button" disabled={!hasPrev} onClick={() => goToPage(currentPage - 1)}>
-            &larr; Prev
-          </button>
+          {!compactPagination && (
+            <button className="btn ghost" type="button" disabled={!hasPrev} onClick={() => goToPage(currentPage - 1)}>
+              &larr; Prev
+            </button>
+          )}
           <div className="pagination-pages">
             {pages.map((item) => {
               if (typeof item === "string") {
@@ -499,9 +524,11 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
               );
             })}
           </div>
-          <button className="btn ghost" type="button" disabled={!hasNext} onClick={() => goToPage(currentPage + 1)}>
-            Next &rarr;
-          </button>
+          {!compactPagination && (
+            <button className="btn ghost" type="button" disabled={!hasNext} onClick={() => goToPage(currentPage + 1)}>
+              Next &rarr;
+            </button>
+          )}
         </nav>
       </div>
     );
