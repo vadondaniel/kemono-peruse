@@ -505,6 +505,40 @@ body {
   align-items: flex-end;
 }
 
+.creator-heading {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.creator-avatar-wrapper {
+  width: 72px;
+  height: 72px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface-muted);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 72px;
+}
+
+.creator-avatar {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.creator-heading-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
 .description {
   font-size: 14px;
   line-height: 1.6;
@@ -667,6 +701,14 @@ body {
     align-items: flex-start;
   }
 
+  .creator-heading {
+    align-items: flex-start;
+  }
+
+  .creator-avatar-wrapper {
+    width: 56px;
+    height: 56px;
+  }
   .controls {
     justify-content: flex-start;
   }

@@ -180,7 +180,6 @@ function App() {
               creatorId={view.creatorId}
               creatorName={view.creatorName}
               alreadySaved={isCreatorSaved(view.service, view.creatorId)}
-              onBack={() => setView({ name: "home" })}
               onOpenPost={(postId) => openPost(view.service, view.creatorId, view.creatorName, postId)}
               onSave={() =>
                 setSavedCreators((prev) => {
@@ -334,7 +333,7 @@ function Home({ savedCreators, onSaveCreator, onRemoveCreator, onOpenCreator }) 
   );
 }
 
-function CreatorPage({ service, creatorId, creatorName, alreadySaved, onBack, onOpenPost, onSave }) {
+function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost, onSave }) {
   const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);
   const [offset, setOffset] = useState(0);
@@ -424,6 +423,7 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onBack, on
   const currentPage = limit > 0 ? Math.floor(offset / limit) + 1 : 1;
   const hasNext = derivedTotalPages ? offset + limit < totalPosts : hasNextPage;
   const totalPages = derivedTotalPages ?? currentPage + (hasNext ? 1 : 0);
+  const avatarUrl = `https://img.kemono.cr/icons/${service}/${creatorId}`;
 
   function goToPage(page) {
     if (!limit) return;
@@ -504,11 +504,26 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onBack, on
     <div className="page">
       <section className="card hero">
         <div className="hero-body">
-          <div>
-            <h2 className="title">{creatorName || creatorId}</h2>
-            <span className="muted small">
-              {loadingProfile ? "Loading profile..." : `${profile?.post_count ?? "-"} posts indexed`}
-            </span>
+          <div className="creator-heading">
+            <div className="creator-avatar-wrapper">
+              <img
+                className="creator-avatar"
+                src={avatarUrl}
+                alt={`${creatorName || creatorId} avatar`}
+                loading="eager"
+                referrerPolicy="no-referrer"
+                onError={(event) => {
+                  // Hide broken avatars gracefully
+                  event.currentTarget.style.visibility = "hidden";
+                }}
+              />
+            </div>
+            <div className="creator-heading-text">
+              <h2 className="title">{creatorName || creatorId}</h2>
+              <span className="muted small">
+                {loadingProfile ? "Loading profile..." : `${profile?.post_count ?? "-"} posts indexed`}
+              </span>
+            </div>
           </div>
           <div className="card-actions">
             <button
@@ -690,6 +705,7 @@ function PostView({ service, creatorId, creatorName, postId, onBack, onNavigate 
         <header className="post-header">
           <h2 className="title">{post.title || post.id}</h2>
           <Timestamp value={post.published} prefix="Published" />
+          <span className="muted small">{creatorName || creatorId}</span>
         </header>
 
         {attachments.length > 0 && (
