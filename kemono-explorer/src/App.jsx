@@ -34,7 +34,7 @@ function getServiceLabel(service) {
 }
 
 function formatDate(ts) {
-  if (!ts) return { date: "—", time: "" };
+  if (!ts) return { date: "-", time: "" };
   try {
     const d = new Date(ts);
     const locale =
@@ -66,6 +66,53 @@ function Timestamp({ value, prefix }) {
       {time ? <span className="timestamp-time">{time}</span> : null}
     </span>
   );
+}
+
+function escapeHtml(value) {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function getPostExcerptHtml(post) {
+  if (!post) return null;
+  const substring = typeof post.substring === "string" ? post.substring.trim() : "";
+  if (substring) return substring;
+
+  const candidateSources = [post.excerpt, post.snippet, post.summary, post.match, post.content, post.body, post.text];
+  for (const source of candidateSources) {
+    if (!source) continue;
+
+    if (typeof source === "string") {
+      const trimmedSource = source.trim();
+      if (!trimmedSource) continue;
+      const plain = trimmedSource.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+      if (!plain) continue;
+      const limit = 240;
+      const snippet = plain.length > limit ? `${plain.slice(0, limit).trimEnd()}...` : plain;
+      return escapeHtml(snippet);
+    }
+
+    if (typeof source === "object") {
+      const stringValues = Object.values(source)
+        .filter((value) => typeof value === "string")
+        .map((value) => value.trim())
+        .filter(Boolean);
+      if (!stringValues.length) continue;
+      const combined = stringValues.join(" ");
+      const plain = combined.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+      if (!plain) continue;
+      const limit = 240;
+      const snippet = plain.length > limit ? `${plain.slice(0, limit).trimEnd()}...` : plain;
+      return escapeHtml(snippet);
+    }
+  }
+
+  return null;
 }
 
 function App() {
@@ -473,6 +520,15 @@ function CreatorPage({
     }
     return true;
   });
+  const [showTags, setShowTags] = useState(() => {
+    try {
+      const stored = localStorage.getItem("kemono.showTags");
+      if (stored === "true" || stored === "false") return stored === "true";
+    } catch {
+      // ignore
+    }
+    return true;
+  });
   const [searchInput, setSearchInput] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searchDisplayCount, setSearchDisplayCount] = useState(0);
@@ -546,6 +602,13 @@ function CreatorPage({
       // ignore
     }
   }, [showExcerpts]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("kemono.showTags", showTags ? "true" : "false");
+    } catch {
+      // ignore
+    }
+  }, [showTags]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.localStorage) return;
@@ -997,21 +1060,32 @@ function CreatorPage({
             <span className="label">{summaryLabel}</span>
           </div>
           <div className="controls">
-            <label className="label" htmlFor="show-excerpts">
-              Show excerpts
-            </label>
-            <label className="toggle">
+            <label
+              className={`filter-toggle${showExcerpts ? " filter-toggle-active" : ""}`}
+              htmlFor="show-excerpts"
+            >
               <input
                 id="show-excerpts"
-                className="toggle-input"
                 type="checkbox"
                 checked={showExcerpts}
                 onChange={(event) => setShowExcerpts(event.target.checked)}
               />
-              <span className="toggle-track" aria-hidden="true">
-                <span className="toggle-thumb" />
+              <span className="filter-toggle-track">
+                <span className="filter-toggle-thumb" />
               </span>
-              <span className="toggle-label">{showExcerpts ? "On" : "Off"}</span>
+              Excerpts
+            </label>
+            <label className={`filter-toggle${showTags ? " filter-toggle-active" : ""}`} htmlFor="show-tags">
+              <input
+                id="show-tags"
+                type="checkbox"
+                checked={showTags}
+                onChange={(event) => setShowTags(event.target.checked)}
+              />
+              <span className="filter-toggle-track">
+                <span className="filter-toggle-thumb" />
+              </span>
+              Tags
             </label>
             <label className="label" htmlFor="page-size">
               Page size
@@ -1103,28 +1177,32 @@ function CreatorPage({
         </div>
         {renderPagination()}
         <div className="post-list">
-          {displayedPosts.map((post) => (
-            <button className="post-item" key={post.id} type="button" onClick={() => onOpenPost(post.id)}>
-              <div className="post-body">
-                <div className="post-head">
-                  <span className="post-title">{post.title || post.id}</span>
-                  <Timestamp value={post.published} />
-                </div>
-                {Array.isArray(post.tags) && post.tags.length > 0 && (
-                  <div className="tag-row">
-                    {post.tags.map((tag) => (
-                      <span className="tag" key={tag}>
-                        {tag}
-                      </span>
-                    ))}
+          {displayedPosts.map((post) => {
+            const excerptHtml = showExcerpts ? getPostExcerptHtml(post) : null;
+            const hasTags = Array.isArray(post.tags) && post.tags.length > 0;
+            return (
+              <button className="post-item" key={post.id} type="button" onClick={() => onOpenPost(post.id)}>
+                <div className="post-body">
+                  <div className="post-head">
+                    <span className="post-title">{post.title || post.id}</span>
+                    <Timestamp value={post.published} />
                   </div>
-                )}
-                {showExcerpts && post.substring && (
-                  <p className="excerpt" dangerouslySetInnerHTML={{ __html: post.substring }} />
-                )}
-              </div>
-            </button>
-          ))}
+                  {showTags && hasTags && (
+                    <div className="tag-row">
+                      {post.tags.map((tag) => (
+                        <span className="tag" key={tag}>
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {showExcerpts && excerptHtml && (
+                    <p className="excerpt" dangerouslySetInnerHTML={{ __html: excerptHtml }} />
+                  )}
+                </div>
+              </button>
+            );
+          })}
         </div>
         {!listLoading && displayedPosts.length === 0 && (
           <div className="muted empty-state">
