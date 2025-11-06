@@ -435,24 +435,31 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
 
     const pages = [];
 
-    if (totalPages <= 6) {
+    if (totalPages <= 9) {
       for (let p = 1; p <= totalPages; p += 1) pages.push(p);
     } else {
       pages.push(1);
 
-      let start = Math.max(2, currentPage - 1);
-      let end = Math.min(totalPages - 1, currentPage + 1);
+      let start = currentPage - 2;
+      let end = currentPage + 2;
 
-      if (currentPage <= 3) {
+      if (start < 2) {
+        end += 2 - start;
         start = 2;
-        end = 4;
-      } else if (currentPage >= totalPages - 2) {
-        start = totalPages - 3;
+      }
+
+      if (end > totalPages - 1) {
+        start -= end - (totalPages - 1);
         end = totalPages - 1;
       }
 
+      start = Math.max(2, start);
+      end = Math.min(totalPages - 1, end);
+
       if (start > 2) pages.push("ellipsis-start");
+
       for (let p = start; p <= end; p += 1) pages.push(p);
+
       if (end < totalPages - 1) pages.push("ellipsis-end");
 
       pages.push(totalPages);
