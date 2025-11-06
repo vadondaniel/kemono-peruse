@@ -527,7 +527,7 @@ body {
   display: flex;
   justify-content: space-between;
   gap: 20px;
-  align-items: flex-end;
+  align-items: center;
   flex-wrap: wrap;
 }
 
