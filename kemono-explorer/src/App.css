@@ -504,6 +504,7 @@ body {
   cursor: not-allowed;
   opacity: 0.65;
   box-shadow: none;
+  background: rgba(59, 130, 246, 0.7);
 }
 
 .search-footer {

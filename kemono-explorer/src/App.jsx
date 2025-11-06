@@ -82,6 +82,22 @@ function App() {
     localStorage.setItem("kemono.savedCreators", JSON.stringify(savedCreators));
   }, [savedCreators]);
 
+  const [creatorFilters, setCreatorFilters] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("kemono.creatorFilters") || "{}");
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("kemono.creatorFilters", JSON.stringify(creatorFilters));
+    } catch {
+      // ignore
+    }
+  }, [creatorFilters]);
+
   const getInitialThemeMode = () => {
     if (typeof window !== "undefined" && window.localStorage) {
       const stored = window.localStorage.getItem("kemono.theme");
@@ -140,6 +156,27 @@ function App() {
   const isCreatorSaved = (service, creatorId) =>
     savedCreators.some((c) => c.service === service && c.id === creatorId);
 
+  const getCreatorFilter = (service, creatorId) => {
+    if (!service || !creatorId) return "";
+    const key = `${service}:${creatorId}`;
+    const value = creatorFilters[key];
+    return typeof value === "string" ? value : "";
+  };
+
+  const updateCreatorFilter = (service, creatorId, value) => {
+    const key = `${service}:${creatorId}`;
+    const trimmed = typeof value === "string" ? value.trim() : "";
+    setCreatorFilters((prev) => {
+      const next = { ...prev };
+      if (trimmed) {
+        next[key] = trimmed;
+      } else {
+        delete next[key];
+      }
+      return next;
+    });
+  };
+
   return (
     <div className="app-root">
       <header className="app-header">
@@ -192,9 +229,10 @@ function App() {
                   })
                 )
               }
-              onRemoveCreator={(service, id) =>
-                setSavedCreators((prev) => prev.filter((c) => !(c.service === service && c.id === id)))
-              }
+              onRemoveCreator={(service, id) => {
+                updateCreatorFilter(service, id, "");
+                setSavedCreators((prev) => prev.filter((c) => !(c.service === service && c.id === id)));
+              }}
               onOpenCreator={openCreator}
             />
           )}
@@ -216,6 +254,8 @@ function App() {
                   ];
                 })
               }
+              activeFilter={getCreatorFilter(view.service, view.creatorId)}
+              onUpdateFilter={(value) => updateCreatorFilter(view.service, view.creatorId, value)}
             />
           )}
 
@@ -225,6 +265,7 @@ function App() {
               creatorId={view.creatorId}
               creatorName={view.creatorName}
               postId={view.postId}
+              activeFilter={getCreatorFilter(view.service, view.creatorId)}
               onBack={() =>
                 setView({
                   name: "creator",
@@ -409,7 +450,16 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
   );
 }
 
-function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost, onSave }) {
+function CreatorPage({
+  service,
+  creatorId,
+  creatorName,
+  alreadySaved,
+  onOpenPost,
+  onSave,
+  activeFilter,
+  onUpdateFilter,
+}) {
   const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);
   const [offset, setOffset] = useState(0);
@@ -466,15 +516,25 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
   }, [showExcerpts]);
 
   useEffect(() => {
+    const trimmedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
+    setSearchInput(trimmedFilter);
     searchTokenRef.current += 1;
-    setSearchInput("");
-    setSearchQuery("");
+    if (!trimmedFilter) {
+      setSearchQuery("");
+      setSearchResults([]);
+      setSearchDisplayCount(0);
+      setSearchNextOffset(0);
+      setSearchExhausted(false);
+      setSearchLoading(false);
+      return;
+    }
+    setOffset((value) => (value !== 0 ? 0 : value));
     setSearchResults([]);
     setSearchDisplayCount(0);
     setSearchNextOffset(0);
     setSearchExhausted(false);
-    setSearchLoading(false);
-  }, [service, creatorId]);
+    runSearch({ query: trimmedFilter, append: false, pageSize: limit });
+  }, [service, creatorId, activeFilter, limit, reloadKey]);
 
   const runSearch = async ({ query, append = false, pageSize } = {}) => {
     const trimmed = (query || "").trim();
@@ -538,43 +598,53 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
   const handleSearchSubmit = (event) => {
     event.preventDefault();
     const trimmed = searchInput.trim();
+    setSearchInput(trimmed);
+    const currentFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
     if (!trimmed) {
-      searchTokenRef.current += 1;
-      setSearchInput("");
-      setSearchQuery("");
-      setSearchResults([]);
-      setSearchDisplayCount(0);
-      setSearchNextOffset(0);
-      setSearchExhausted(false);
-      setSearchLoading(false);
+      if (currentFilter) {
+        onUpdateFilter("");
+      } else {
+        searchTokenRef.current += 1;
+        setSearchQuery("");
+        setSearchResults([]);
+        setSearchDisplayCount(0);
+        setSearchNextOffset(0);
+        setSearchExhausted(false);
+        setSearchLoading(false);
+      }
       return;
     }
-    setSearchInput(trimmed);
-    runSearch({ query: trimmed, append: false });
+    if (trimmed === currentFilter) {
+      runSearch({ query: trimmed, append: false, pageSize: limit });
+      return;
+    }
+    onUpdateFilter(trimmed);
   };
 
   const handleSearchClear = () => {
-    searchTokenRef.current += 1;
+    onUpdateFilter("");
     setSearchInput("");
-    setSearchQuery("");
-    setSearchResults([]);
-    setSearchDisplayCount(0);
-    setSearchNextOffset(0);
-    setSearchExhausted(false);
-    setSearchLoading(false);
   };
 
   const handleSearchLoadMore = () => {
-    if (!searchQuery || searchLoading) return;
+    const currentFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
+    if (!currentFilter || searchLoading) return;
     const targetCount = searchDisplayCount + limit;
     if (searchResults.length >= targetCount) {
       setSearchDisplayCount(Math.min(targetCount, searchResults.length));
       return;
     }
-    runSearch({ query: searchQuery, append: true });
+    runSearch({ query: currentFilter, append: true });
   };
 
   useEffect(() => {
+    const trimmedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
+    if (trimmedFilter) {
+      setLoadingPosts(false);
+      setPosts([]);
+      setHasNextPage(false);
+      return;
+    }
     let alive = true;
     setLoadingPosts(true);
     setHasNextPage(false);
@@ -628,7 +698,7 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
     return () => {
       alive = false;
     };
-  }, [service, creatorId, offset, limit, reloadKey]);
+  }, [service, creatorId, offset, limit, reloadKey, activeFilter]);
 
   const hasPrev = offset > 0;
   const totalPosts =
@@ -643,17 +713,18 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
   const totalPages = derivedTotalPages ?? currentPage + (hasNext ? 1 : 0);
   const avatarUrl = `https://img.kemono.cr/icons/${service}/${creatorId}`;
   const serviceLabel = getServiceLabel(service);
-  const isSearchActive = !!searchQuery;
-  const displayedPosts = isSearchActive ? searchResults.slice(0, Math.max(0, searchDisplayCount)) : posts;
-  const listLoading = isSearchActive ? searchLoading && displayedPosts.length === 0 : loadingPosts;
-  const summaryLabel = isSearchActive
+  const normalizedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
+  const isFilterActive = normalizedFilter.length > 0;
+  const displayedPosts = isFilterActive ? searchResults.slice(0, Math.max(0, searchDisplayCount)) : posts;
+  const listLoading = isFilterActive ? searchLoading && displayedPosts.length === 0 : loadingPosts;
+  const summaryLabel = isFilterActive
     ? listLoading
-      ? `Searching "${searchQuery}"...`
+      ? `Filtering by "${normalizedFilter}"...`
       : displayedPosts.length === 0
-        ? `No matches for "${searchQuery}" yet`
+        ? `No posts match "${normalizedFilter}" yet`
         : searchExhausted
-          ? `${displayedPosts.length} matches found`
-          : `Showing ${displayedPosts.length} matches (more available)`
+          ? `${displayedPosts.length} posts match "${normalizedFilter}"`
+          : `${displayedPosts.length} posts match "${normalizedFilter}" (more available)`
     : loadingPosts
       ? "Loading..."
       : `Showing ${posts.length} items`;
@@ -683,7 +754,7 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
   }
 
   const renderPagination = () => {
-    if (isSearchActive) return null;
+    if (isFilterActive) return null;
     if (totalPages <= 1) return null;
 
     const pages = [];
@@ -825,7 +896,7 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
           <div className="controls">
             <form className="search-form" onSubmit={handleSearchSubmit}>
               <label className="label" htmlFor="post-search">
-                Search
+                Filter
               </label>
               <div className="search-field">
                 <input
@@ -833,21 +904,15 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
                   className="search-input"
                   value={searchInput}
                   onChange={(event) => setSearchInput(event.target.value)}
-                  placeholder="Title, tag, or text"
+                  placeholder="Filter by title, tag, or text"
                 />
-                {searchInput ? (
-                  <button
-                    className="search-clear"
-                    type="button"
-                    onClick={handleSearchClear}
-                    disabled={searchLoading}
-                    aria-label="Clear search"
-                  >
-                    <span aria-hidden="true">&times;</span>
+                {(searchInput || isFilterActive) && (
+                  <button className="search-clear" type="button" onClick={handleSearchClear} disabled={searchLoading}>
+                    Clear
                   </button>
-                ) : null}
+                )}
                 <button className="search-submit" type="submit" disabled={searchLoading}>
-                  {searchLoading ? "Searching..." : "Search"}
+                  {searchLoading ? "Filtering..." : "Apply filter"}
                 </button>
               </div>
             </form>
@@ -915,17 +980,17 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
         </div>
         {!listLoading && displayedPosts.length === 0 && (
           <div className="muted empty-state">
-            {isSearchActive ? "No posts match your search yet." : "No posts found for this page."}
+            {isFilterActive ? "No posts match your filter yet." : "No posts found for this page."}
           </div>
         )}
-        {isSearchActive && displayedPosts.length > 0 && (
+        {isFilterActive && displayedPosts.length > 0 && (
           <div className="search-footer">
             {!searchExhausted ? (
               <button className="btn ghost" type="button" onClick={handleSearchLoadMore} disabled={searchLoading}>
-                {searchLoading ? "Searching..." : "Load more matches"}
+                {searchLoading ? "Filtering..." : "Load more results"}
               </button>
             ) : (
-              <span className="muted small">End of search results.</span>
+              <span className="muted small">End of filtered results.</span>
             )}
           </div>
         )}
@@ -935,7 +1000,7 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
   );
 }
 
-function PostView({ service, creatorId, creatorName, postId, onBack, onNavigate }) {
+function PostView({ service, creatorId, creatorName, postId, activeFilter, onBack, onNavigate }) {
   const [post, setPost] = useState(null);
   const [loading, setLoading] = useState(true);
   const [neighbors, setNeighbors] = useState({ newerId: null, olderId: null });
@@ -957,7 +1022,9 @@ function PostView({ service, creatorId, creatorName, postId, onBack, onNavigate 
     let alive = true;
     setNeighbors({ newerId: null, olderId: null });
 
-    fetchJson(`${API_BASE}/${service}/user/${creatorId}/posts?o=0&n=200`).then((data) => {
+    const filterParam =
+      activeFilter && activeFilter.trim() ? `&q=${encodeURIComponent(activeFilter.trim())}` : "";
+    fetchJson(`${API_BASE}/${service}/user/${creatorId}/posts?o=0&n=200${filterParam}`).then((data) => {
       if (!alive) return;
       if (!Array.isArray(data)) {
         setNeighbors({ newerId: null, olderId: null });
@@ -979,7 +1046,7 @@ function PostView({ service, creatorId, creatorName, postId, onBack, onNavigate 
     return () => {
       alive = false;
     };
-  }, [service, creatorId, postId]);
+  }, [service, creatorId, postId, activeFilter]);
 
   if (loading) {
     return (
