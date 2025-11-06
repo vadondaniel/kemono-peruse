@@ -532,10 +532,10 @@ function CreatorPage({
   const [postTagMap, setPostTagMap] = useState({});
   const [searchInput, setSearchInput] = useState("");
   const [searchResults, setSearchResults] = useState([]);
-  const [searchDisplayCount, setSearchDisplayCount] = useState(0);
   const [searchNextOffset, setSearchNextOffset] = useState(0);
   const [searchExhausted, setSearchExhausted] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [searchPage, setSearchPage] = useState(1);
   const filterStorageKey = `kemono.filterFields.${service}.${creatorId}`;
   const getDefaultFilterFields = () => ({ title: true, tags: true, body: true });
   const loadStoredFilterFields = () => {
@@ -640,16 +640,17 @@ function CreatorPage({
   useEffect(() => {
     const trimmed = typeof activeFilter === "string" ? activeFilter.trim() : "";
     if (!trimmed) return;
-    runSearch({ query: trimmed, append: false, pageSize: limit });
+    setSearchPage(1);
+    runSearch({ query: trimmed, append: false, targetCount: limit });
   }, [filterFields.title, filterFields.tags, filterFields.body, limit, activeFilter]);
 
   useEffect(() => {
     const trimmedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
     setSearchInput(trimmedFilter);
     searchTokenRef.current += 1;
+    setSearchPage(1);
     if (!trimmedFilter) {
       setSearchResults([]);
-      setSearchDisplayCount(0);
       setSearchNextOffset(0);
       setSearchExhausted(false);
       setSearchLoading(false);
@@ -657,10 +658,9 @@ function CreatorPage({
     }
     setOffset((value) => (value !== 0 ? 0 : value));
     setSearchResults([]);
-    setSearchDisplayCount(0);
     setSearchNextOffset(0);
     setSearchExhausted(false);
-    runSearch({ query: trimmedFilter, append: false, pageSize: limit });
+    runSearch({ query: trimmedFilter, append: false, targetCount: limit });
   }, [service, creatorId, activeFilter, limit, reloadKey]);
 
   const extractTagTokens = (value) =>
@@ -669,7 +669,7 @@ function CreatorPage({
       .map((token) => token.trim().toLowerCase())
       .filter(Boolean);
 
-  const runSearch = async ({ query, append = false, pageSize } = {}) => {
+  const runSearch = async ({ query, append = false, targetCount } = {}) => {
     const trimmed = (query || "").trim();
     const tagTokens = filterFields.tags ? extractTagTokens(trimmed) : [];
     const textQueryEnabled = filterFields.title || filterFields.body;
@@ -679,7 +679,6 @@ function CreatorPage({
     const hasTags = filterFields.tags && tagTokens.length > 0;
     if (!hasQuery && !hasTags) return;
 
-    const desiredPageSize = pageSize ?? limit;
     const normalizedFields = {
       title: Boolean(filterFields.title),
       tags: Boolean(filterFields.tags),
@@ -704,19 +703,31 @@ function CreatorPage({
     let workingResults = append ? [...searchResults] : [];
     let offset = append ? searchNextOffset : 0;
     let exhausted = append ? searchExhausted : false;
-    const targetCount = append ? searchDisplayCount + desiredPageSize : desiredPageSize;
+    const desiredTarget =
+      targetCount ??
+      (append
+        ? searchResults.length + (limit > 0 ? limit : API_PAGE_SIZE)
+        : limit > 0
+          ? limit
+          : API_PAGE_SIZE);
+
+    if (append && workingResults.length >= desiredTarget) {
+      return;
+    }
 
     if (!append) {
       setSearchResults([]);
-      setSearchDisplayCount(0);
       setSearchNextOffset(0);
       setSearchExhausted(false);
+      workingResults = [];
+      offset = 0;
+      exhausted = false;
     }
 
     setSearchLoading(true);
 
     try {
-      while (workingResults.length < targetCount && !exhausted) {
+      while (workingResults.length < desiredTarget && !exhausted) {
         const chunk = await fetchJson(
           `${API_BASE}/${service}/user/${creatorId}/posts?o=${offset}&n=${API_PAGE_SIZE}${hasQuery ? `&q=${encodedQuery}` : ""}${fieldParams}${tagParams}`,
         );
@@ -734,10 +745,7 @@ function CreatorPage({
 
       if (token !== searchTokenRef.current) return;
 
-      const nextDisplayCount = Math.min(targetCount, workingResults.length);
-
       setSearchResults(workingResults);
-      setSearchDisplayCount(nextDisplayCount);
       setSearchNextOffset(offset);
       setSearchExhausted(exhausted);
     } catch (error) {
@@ -766,7 +774,8 @@ function CreatorPage({
     }
 
     if (trimmed === currentFilter) {
-      runSearch({ query: trimmed, append: false, pageSize: limit });
+      setSearchPage(1);
+      runSearch({ query: trimmed, append: false, targetCount: limit });
       return;
     }
 
@@ -787,24 +796,22 @@ function CreatorPage({
   const handleSearchClear = () => {
     onUpdateFilter("");
     setSearchInput("");
+    setSearchPage(1);
     if (typeof window !== "undefined" && window.localStorage) {
       window.localStorage.removeItem(filterStorageKey);
     }
     setFilterFields(getDefaultFilterFields());
   };
 
-  const handleSearchLoadMore = () => {
-    const currentFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
-    const hasTags = filterFields.tags ? extractTagTokens(currentFilter).length > 0 : false;
-    if (!currentFilter && !hasTags) return;
-    if (searchLoading) return;
-    const targetCount = searchDisplayCount + limit;
-    if (searchResults.length >= targetCount) {
-      setSearchDisplayCount(Math.min(targetCount, searchResults.length));
-      return;
-    }
-    runSearch({ query: currentFilter, append: true });
-  };
+  useEffect(() => {
+    const trimmedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
+    if (!trimmedFilter) return;
+    if (!searchPage || limit <= 0) return;
+    const desiredCount = searchPage * limit;
+    if (searchResults.length >= desiredCount) return;
+    if (searchLoading || searchExhausted) return;
+    runSearch({ query: trimmedFilter, append: true, targetCount: desiredCount });
+  }, [activeFilter, searchPage, limit, searchResults.length, searchLoading, searchExhausted]);
 
   useEffect(() => {
     const trimmedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
@@ -870,9 +877,11 @@ function CreatorPage({
   }, [service, creatorId, offset, limit, reloadKey, activeFilter]);
 
   const normalizedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
-  const activeTags = filterFields.tags ? extractTagTokens(normalizedFilter) : [];
   const isFilterActive = normalizedFilter.length > 0;
-  const displayedPosts = isFilterActive ? searchResults.slice(0, Math.max(0, searchDisplayCount)) : posts;
+  const activeTags = filterFields.tags ? extractTagTokens(normalizedFilter) : [];
+  const effectiveLimit = limit > 0 ? limit : API_PAGE_SIZE;
+  const pageStart = isFilterActive ? Math.max(0, (Math.max(searchPage, 1) - 1) * effectiveLimit) : 0;
+  const displayedPosts = isFilterActive ? searchResults.slice(pageStart, pageStart + effectiveLimit) : posts;
   const listLoading = isFilterActive ? searchLoading && displayedPosts.length === 0 : loadingPosts;
 
   useEffect(() => {
@@ -932,14 +941,21 @@ function CreatorPage({
   const totalPages = derivedTotalPages ?? currentPage + (hasNext ? 1 : 0);
   const avatarUrl = `https://img.kemono.cr/icons/${service}/${creatorId}`;
   const serviceLabel = getServiceLabel(service);
+  const filterDescriptor =
+    activeTags.length > 0
+      ? `${activeTags.length} tag${activeTags.length === 1 ? "" : "s"}`
+      : `"${normalizedFilter}"`;
+  const pageDescriptor = `page ${Math.max(searchPage, 1)}`;
   const summaryLabel = isFilterActive
     ? listLoading
-      ? `Filtering ${activeTags.length > 0 ? `${activeTags.length} tag${activeTags.length === 1 ? "" : "s"}` : `"${normalizedFilter}"`}...`
+      ? `Filtering ${filterDescriptor} (${pageDescriptor})...`
       : displayedPosts.length === 0
-        ? `No posts match ${activeTags.length > 0 ? `${activeTags.length} tag${activeTags.length === 1 ? "" : "s"}` : `"${normalizedFilter}"`} yet`
+        ? searchExhausted
+          ? `No posts match ${filterDescriptor} (${pageDescriptor}).`
+          : `No posts match ${filterDescriptor} yet (${pageDescriptor}).`
         : searchExhausted
-          ? `${displayedPosts.length} posts match ${activeTags.length > 0 ? `${activeTags.length} tag${activeTags.length === 1 ? "" : "s"}` : `"${normalizedFilter}"`}`
-          : `${displayedPosts.length} posts match ${activeTags.length > 0 ? `${activeTags.length} tag${activeTags.length === 1 ? "" : "s"}` : `"${normalizedFilter}"`} (more available)`
+          ? `Page ${Math.max(searchPage, 1)}: ${displayedPosts.length} posts match ${filterDescriptor}`
+          : `Page ${Math.max(searchPage, 1)}: ${displayedPosts.length} posts match ${filterDescriptor} (more available)`
     : loadingPosts
       ? "Loading..."
       : `Showing ${posts.length} items`;
@@ -968,55 +984,100 @@ function CreatorPage({
     setOffset(Math.max(0, (page - 1) * limit));
   }
 
+  const goToSearchPage = (page) => {
+    setSearchPage((prev) => {
+      const next = Math.max(1, page);
+      if (!Number.isFinite(next)) return prev;
+      if (next === prev) return prev;
+      return next;
+    });
+  };
+
+  const maxLoadedSearchPage = isFilterActive ? Math.max(1, Math.ceil(Math.max(searchResults.length, 1) / effectiveLimit)) : 1;
+  const filterHasPrev = isFilterActive ? searchPage > 1 : false;
+  const filterHasNext = isFilterActive
+    ? searchExhausted
+      ? searchPage < maxLoadedSearchPage
+      : true
+    : false;
+  const filteredTotalPages = isFilterActive
+    ? searchExhausted
+      ? maxLoadedSearchPage
+      : Math.max(maxLoadedSearchPage + 1, searchPage + 1)
+    : 1;
+
+  const paginationState = isFilterActive
+    ? searchResults.length === 0 && (searchLoading || searchExhausted)
+      ? null
+      : {
+          currentPage: searchPage,
+          totalPages: filteredTotalPages,
+          hasPrev: filterHasPrev,
+          hasNext: filterHasNext,
+          goTo: goToSearchPage,
+        }
+    : {
+        currentPage,
+        totalPages,
+        hasPrev,
+        hasNext,
+        goTo: goToPage,
+      };
+
   const renderPagination = () => {
-    if (isFilterActive) return null;
-    if (totalPages <= 1) return null;
+    if (!paginationState) return null;
+    if (paginationState.totalPages <= 1) return null;
 
     const pages = [];
 
     const maxDirectDisplay = compactPagination ? 5 : 9;
     const windowRadius = compactPagination ? 1 : 2;
 
-    if (totalPages <= maxDirectDisplay) {
-      for (let p = 1; p <= totalPages; p += 1) pages.push(p);
+    if (paginationState.totalPages <= maxDirectDisplay) {
+      for (let p = 1; p <= paginationState.totalPages; p += 1) pages.push(p);
     } else {
       pages.push(1);
 
-      let start = currentPage - windowRadius;
-      let end = currentPage + windowRadius;
+      let start = paginationState.currentPage - windowRadius;
+      let end = paginationState.currentPage + windowRadius;
 
       if (start < 2) {
         end += 2 - start;
         start = 2;
       }
 
-      if (end > totalPages - 1) {
-        start -= end - (totalPages - 1);
-        end = totalPages - 1;
+      if (end > paginationState.totalPages - 1) {
+        start -= end - (paginationState.totalPages - 1);
+        end = paginationState.totalPages - 1;
       }
 
       start = Math.max(2, start);
-      end = Math.min(totalPages - 1, end);
+      end = Math.min(paginationState.totalPages - 1, end);
 
       if (start > 2) pages.push("ellipsis-start");
 
       for (let p = start; p <= end; p += 1) pages.push(p);
 
-      if (end < totalPages - 1) pages.push("ellipsis-end");
+      if (end < paginationState.totalPages - 1) pages.push("ellipsis-end");
 
-      pages.push(totalPages);
+      pages.push(paginationState.totalPages);
     }
 
     return (
       <div className="pagination-block">
         <div className="pagination-meta">
           <span className="label">
-            Page <strong>{currentPage}</strong> of {totalPages}
+            Page <strong>{paginationState.currentPage}</strong> of {paginationState.totalPages}
           </span>
         </div>
         <nav className="pagination">
           {!compactPagination && (
-            <button className="btn ghost" type="button" disabled={!hasPrev} onClick={() => goToPage(currentPage - 1)}>
+            <button
+              className="btn ghost"
+              type="button"
+              disabled={!paginationState.hasPrev}
+              onClick={() => paginationState.hasPrev && paginationState.goTo(paginationState.currentPage - 1)}
+            >
               &larr; Prev
             </button>
           )}
@@ -1029,13 +1090,13 @@ function CreatorPage({
                   </span>
                 );
               }
-              const isActive = item === currentPage;
+              const isActive = item === paginationState.currentPage;
               return (
                 <button
                   key={item}
                   className={`page-pill${isActive ? " active" : ""}`}
                   type="button"
-                  onClick={() => goToPage(item)}
+                  onClick={() => paginationState.goTo(item)}
                   disabled={isActive}
                 >
                   {item}
@@ -1044,7 +1105,12 @@ function CreatorPage({
             })}
           </div>
           {!compactPagination && (
-            <button className="btn ghost" type="button" disabled={!hasNext} onClick={() => goToPage(currentPage + 1)}>
+            <button
+              className="btn ghost"
+              type="button"
+              disabled={!paginationState.hasNext}
+              onClick={() => paginationState.hasNext && paginationState.goTo(paginationState.currentPage + 1)}
+            >
               Next &rarr;
             </button>
           )}
@@ -1147,6 +1213,7 @@ function CreatorPage({
                 const nextLimit = parseInt(event.target.value, 10);
                 setOffset(0);
                 setLimit(nextLimit);
+                setSearchPage(1);
               }}
             >
               {[25, 50, 75, 100].map((count) => (
@@ -1260,16 +1327,8 @@ function CreatorPage({
             {isFilterActive ? "No posts match your filter yet." : "No posts found for this page."}
           </div>
         )}
-        {isFilterActive && displayedPosts.length > 0 && (
-          <div className="search-footer">
-            {!searchExhausted ? (
-              <button className="btn ghost" type="button" onClick={handleSearchLoadMore} disabled={searchLoading}>
-                {searchLoading ? "Filtering..." : "Load more results"}
-              </button>
-            ) : (
-              <span className="muted small">End of filtered results.</span>
-            )}
-          </div>
+        {isFilterActive && !listLoading && searchExhausted && searchResults.length > 0 && searchPage >= maxLoadedSearchPage && (
+          <div className="muted small">End of filtered results.</div>
         )}
         {renderPagination()}
       </section>
