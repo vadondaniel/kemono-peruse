@@ -1,0 +1,604 @@
+import React, { useEffect, useState } from "react";
+import "./App.css";
+
+const rawApiBase = import.meta.env.VITE_API_BASE || "/api/proxy/kemono";
+const API_BASE = rawApiBase.endsWith("/") ? rawApiBase.slice(0, -1) : rawApiBase;
+const MEDIA_BASE = `${API_BASE}/media`;
+const API_PAGE_SIZE = 50;
+
+async function fetchJson(url) {
+  try {
+    const res = await fetch(url, { headers: { Accept: "text/css" } });
+    if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+    return await res.json();
+  } catch (error) {
+    console.error("fetchJson failed", error);
+    return null;
+  }
+}
+
+function formatDate(ts) {
+  if (!ts) return "-";
+  try {
+    const d = new Date(ts);
+    return d.toLocaleString();
+  } catch {
+    return ts;
+  }
+}
+
+function App() {
+  const [view, setView] = useState({ name: "home" });
+  const [savedCreators, setSavedCreators] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("kemono.savedCreators") || "[]");
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem("kemono.savedCreators", JSON.stringify(savedCreators));
+  }, [savedCreators]);
+
+  const openCreator = (service, creatorId, creatorName) => {
+    setView({ name: "creator", service, creatorId, creatorName });
+  };
+
+  const openPost = (service, creatorId, creatorName, postId) => {
+    setView({ name: "post", service, creatorId, creatorName, postId });
+  };
+
+  return (
+    <div className="app-root">
+      <header className="app-header">
+        <div className="app-header-inner">
+          <h1 className="title">
+            <button className="brand-link" type="button" onClick={() => setView({ name: "home" })}>
+              Kemono Explorer
+            </button>
+          </h1>
+          <p className="muted">
+            Browse kemono.cr with a tidy reader. Save creators you follow, scan their latest posts, and dive into content without leaving the page.
+          </p>
+        </div>
+      </header>
+
+      <div className="app-shell">
+        <main className="app-main">
+          {view.name === "home" && (
+            <Home
+              savedCreators={savedCreators}
+              onSaveCreator={(entry) =>
+                setSavedCreators((prev) => {
+                  const exists = prev.find((c) => c.service === entry.service && c.id === entry.id);
+                  return exists ? prev : [...prev, entry];
+                })
+              }
+              onRemoveCreator={(service, id) =>
+                setSavedCreators((prev) => prev.filter((c) => !(c.service === service && c.id === id)))
+              }
+              onOpenCreator={openCreator}
+            />
+          )}
+
+          {view.name === "creator" && (
+            <CreatorPage
+              service={view.service}
+              creatorId={view.creatorId}
+              creatorName={view.creatorName}
+              onBack={() => setView({ name: "home" })}
+              onOpenPost={(postId) => openPost(view.service, view.creatorId, view.creatorName, postId)}
+              onSave={() =>
+                setSavedCreators((prev) => {
+                  const exists = prev.find((c) => c.service === view.service && c.id === view.creatorId);
+                  if (exists) return prev;
+                  return [
+                    ...prev,
+                    { service: view.service, id: view.creatorId, name: view.creatorName || view.creatorId },
+                  ];
+                })
+              }
+            />
+          )}
+
+          {view.name === "post" && (
+            <PostView
+              service={view.service}
+              creatorId={view.creatorId}
+              creatorName={view.creatorName}
+              postId={view.postId}
+              onBack={() =>
+                setView({
+                  name: "creator",
+                  service: view.service,
+                  creatorId: view.creatorId,
+                  creatorName: view.creatorName,
+                })
+              }
+              onNavigate={(nextPostId) =>
+                setView({
+                  name: "post",
+                  service: view.service,
+                  creatorId: view.creatorId,
+                  creatorName: view.creatorName,
+                  postId: nextPostId,
+                })
+              }
+            />
+          )}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function Home({ savedCreators, onSaveCreator, onRemoveCreator, onOpenCreator }) {
+  const [service, setService] = useState("fanbox");
+  const [creatorId, setCreatorId] = useState("");
+  const [creatorName, setCreatorName] = useState("");
+
+  const handleSave = (event) => {
+    event.preventDefault();
+    const id = creatorId.trim();
+    if (!id) return;
+    onSaveCreator({ service, id, name: creatorName.trim() });
+    setCreatorId("");
+    setCreatorName("");
+  };
+
+  const handleOpen = (event) => {
+    event.preventDefault();
+    const id = creatorId.trim();
+    if (!id) return;
+    onOpenCreator(service, id, creatorName.trim());
+  };
+
+  return (
+    <div className="section-grid">
+      <section className="card">
+        <div className="card-row header-row">
+          <div className="card-col">
+            <h2 className="title">Saved creators</h2>
+            <span className="label">
+              {savedCreators.length > 0 ? `${savedCreators.length} saved` : "Nothing saved yet"}
+            </span>
+          </div>
+        </div>
+
+        <ul className="list">
+          {savedCreators.map((c) => (
+            <li className="list-item" key={`${c.service}-${c.id}`}>
+              <div className="list-details">
+                <button className="link list-title" onClick={() => onOpenCreator(c.service, c.id, c.name)}>
+                  {c.name || c.id}
+                </button>
+                <span className="muted small">
+                  {c.service} - {c.id}
+                </span>
+              </div>
+              <button className="btn subtle" onClick={() => onRemoveCreator(c.service, c.id)}>
+                Remove
+              </button>
+            </li>
+          ))}
+          {savedCreators.length === 0 && <li className="muted empty-state">Save creators to keep them handy.</li>}
+        </ul>
+      </section>
+
+      <section className="card">
+        <div className="card-row header-row">
+          <div className="card-col">
+            <h2 className="title">Open a creator</h2>
+            <span className="label">Use a service + creator ID straight from kemono</span>
+          </div>
+        </div>
+
+        <form className="form-grid" onSubmit={handleSave}>
+          <label className="field">
+            <span className="label">Service</span>
+            <select className="input" value={service} onChange={(event) => setService(event.target.value)}>
+              <option value="fanbox">Fanbox</option>
+              <option value="patreon">Patreon</option>
+              <option value="fantia">Fantia</option>
+              <option value="discord">Discord</option>
+              <option value="gumroad">Gumroad</option>
+              <option value="dlsite">DLsite</option>
+            </select>
+          </label>
+
+          <label className="field">
+            <span className="label">Creator ID</span>
+            <input
+              className="input"
+              value={creatorId}
+              onChange={(event) => setCreatorId(event.target.value)}
+              placeholder="e.g. 48003713"
+            />
+          </label>
+
+          <label className="field">
+            <span className="label">Display name</span>
+            <input
+              className="input"
+              value={creatorName}
+              onChange={(event) => setCreatorName(event.target.value)}
+              placeholder="Optional label"
+            />
+          </label>
+
+          <div className="form-actions">
+            <button className="btn" type="button" onClick={handleOpen}>
+              Open without saving
+            </button>
+            <button className="btn primary" type="submit">
+              Save creator
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+  );
+}
+
+function CreatorPage({ service, creatorId, creatorName, onBack, onOpenPost, onSave }) {
+  const [profile, setProfile] = useState(null);
+  const [posts, setPosts] = useState([]);
+  const [offset, setOffset] = useState(0);
+  const [limit, setLimit] = useState(50);
+  const [loadingProfile, setLoadingProfile] = useState(true);
+  const [loadingPosts, setLoadingPosts] = useState(true);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [hasNextPage, setHasNextPage] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setLoadingProfile(true);
+    fetchJson(`${API_BASE}/${service}/user/${creatorId}/profile`).then((data) => {
+      if (!alive) return;
+      setProfile(data);
+      setLoadingProfile(false);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [service, creatorId]);
+
+  useEffect(() => {
+    let alive = true;
+    setLoadingPosts(true);
+    setHasNextPage(false);
+
+    const start = offset;
+    const requested = limit > 0 ? limit : API_PAGE_SIZE;
+    const firstChunkOffset = Math.floor(start / API_PAGE_SIZE) * API_PAGE_SIZE;
+    const lastIndexNeeded = Math.max(start, start + requested - 1);
+    const lastChunkOffset = Math.floor(lastIndexNeeded / API_PAGE_SIZE) * API_PAGE_SIZE;
+
+    const chunkOffsets = [];
+    for (let current = firstChunkOffset; current <= lastChunkOffset; current += API_PAGE_SIZE) {
+      chunkOffsets.push(current);
+    }
+    if (chunkOffsets.length === 0) chunkOffsets.push(0);
+
+    Promise.all(
+      chunkOffsets.map((chunkOffset) =>
+        fetchJson(`${API_BASE}/${service}/user/${creatorId}/posts?o=${chunkOffset}&n=${API_PAGE_SIZE}`),
+      ),
+    )
+      .then((responses) => {
+        if (!alive) return;
+
+        const combined = responses.reduce((acc, data) => {
+          if (Array.isArray(data) && data.length) {
+            acc.push(...data);
+          }
+          return acc;
+        }, []);
+
+        const sliceStart = start - chunkOffsets[0];
+        const slice = combined.slice(sliceStart, sliceStart + requested);
+        setPosts(slice);
+
+        const lastResponse = responses[responses.length - 1];
+        const lastChunkLength = Array.isArray(lastResponse) ? lastResponse.length : 0;
+        const availableFromStart = Math.max(0, combined.length - sliceStart);
+        const hasMore = availableFromStart > slice.length || lastChunkLength === API_PAGE_SIZE;
+        setHasNextPage(hasMore);
+        setLoadingPosts(false);
+      })
+      .catch((error) => {
+        console.error("Failed to load posts", error);
+        if (!alive) return;
+        setPosts([]);
+        setHasNextPage(false);
+        setLoadingPosts(false);
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [service, creatorId, offset, limit, reloadKey]);
+
+  const hasPrev = offset > 0;
+  const hasNext = hasNextPage;
+  const pageNumber = limit > 0 ? Math.floor(offset / limit) + 1 : 1;
+
+  return (
+    <div className="page">
+      <div className="page-bar">
+        <button className="link back-link" onClick={onBack}>
+          {"< Back"}
+        </button>
+        <span className="muted small">
+          {service} - {creatorId}
+        </span>
+      </div>
+
+      <section className="card hero">
+        <div className="hero-body">
+          <div>
+            <h2 className="title">{creatorName || creatorId}</h2>
+            <span className="muted small">
+              {loadingProfile ? "Loading profile..." : `${profile?.post_count ?? "-"} posts indexed`}
+            </span>
+          </div>
+          <div className="card-actions">
+            <button
+              className="btn"
+              onClick={() => {
+                setReloadKey((value) => value + 1);
+              }}
+            >
+              Refresh posts
+            </button>
+            <button className="btn primary" onClick={onSave}>
+              Save creator
+            </button>
+          </div>
+        </div>
+        {profile?.description && (
+          <div className="muted description" dangerouslySetInnerHTML={{ __html: profile.description }} />
+        )}
+      </section>
+
+      <section className="card">
+        <div className="card-row header-row">
+          <div className="card-col">
+            <h3 className="title">Recent posts</h3>
+            <span className="label">
+              {loadingPosts ? "Loading..." : `Showing ${posts.length} items`}
+            </span>
+          </div>
+          <div className="controls">
+            <label className="label" htmlFor="page-size">
+              Page size
+            </label>
+              <select
+                id="page-size"
+                className="input small"
+                value={limit}
+                onChange={(event) => {
+                  const nextLimit = parseInt(event.target.value, 10);
+                  setOffset(0);
+                  setLimit(nextLimit);
+                }}
+              >
+                {[25, 50, 75, 100].map((count) => (
+                  <option key={count} value={count}>
+                    {count}
+                  </option>
+                ))}
+              </select>
+            <span className="label">Page {pageNumber}</span>
+            <button className="btn" disabled={!hasPrev} onClick={() => setOffset(Math.max(0, offset - limit))}>
+              Prev
+            </button>
+            <button className="btn" disabled={!hasNext} onClick={() => setOffset(offset + limit)}>
+              Next
+            </button>
+          </div>
+        </div>
+
+        <div className="post-list">
+          {posts.map((post) => (
+            <button className="post-item" key={post.id} type="button" onClick={() => onOpenPost(post.id)}>
+              <div className="post-body">
+                <div className="post-head">
+                  <span className="post-title">{post.title || post.id}</span>
+                  <span className="muted small">{formatDate(post.published)}</span>
+                </div>
+                {Array.isArray(post.tags) && post.tags.length > 0 && (
+                  <div className="tag-row">
+                    {post.tags.map((tag) => (
+                      <span className="tag" key={tag}>
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {post.substring && <p className="excerpt" dangerouslySetInnerHTML={{ __html: post.substring }} />}
+              </div>
+            </button>
+          ))}
+          {!loadingPosts && posts.length === 0 && (
+            <div className="muted empty-state">No posts found for this page.</div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PostView({ service, creatorId, creatorName, postId, onBack, onNavigate }) {
+  const [post, setPost] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [neighbors, setNeighbors] = useState({ newerId: null, olderId: null });
+
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    fetchJson(`${API_BASE}/${service}/user/${creatorId}/post/${postId}`).then((data) => {
+      if (!alive) return;
+      setPost(data?.post || null);
+      setLoading(false);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [service, creatorId, postId]);
+
+  useEffect(() => {
+    let alive = true;
+    setNeighbors({ newerId: null, olderId: null });
+
+    fetchJson(`${API_BASE}/${service}/user/${creatorId}/posts?o=0&n=200`).then((data) => {
+      if (!alive) return;
+      if (!Array.isArray(data)) {
+        setNeighbors({ newerId: null, olderId: null });
+        return;
+      }
+      const index = data.findIndex((item) => `${item.id}` === `${postId}`);
+      if (index === -1) {
+        setNeighbors({ newerId: null, olderId: null });
+        return;
+      }
+      const newer = index > 0 ? data[index - 1] : null;
+      const older = index < data.length - 1 ? data[index + 1] : null;
+      setNeighbors({
+        newerId: newer?.id || null,
+        olderId: older?.id || null,
+      });
+    });
+
+    return () => {
+      alive = false;
+    };
+  }, [service, creatorId, postId]);
+
+  if (loading) {
+    return (
+      <div className="page">
+        <div className="page-bar">
+          <button className="link back-link" onClick={onBack}>
+            {"< Back"}
+          </button>
+        </div>
+        <div className="card">
+          <p className="muted">Loading post...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!post) {
+    return (
+      <div className="page">
+        <div className="page-bar">
+          <button className="link back-link" onClick={onBack}>
+            {"< Back"}
+          </button>
+        </div>
+        <div className="card">
+          <p className="muted">This post could not be loaded.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const bodyHtml = post.content || post.body || post.text || "";
+  const heroImage = post.file?.path ? `${MEDIA_BASE}${post.file.path}` : null;
+  const attachments = Array.isArray(post.attachments) ? post.attachments : [];
+
+  return (
+    <div className="page">
+      <div className="page-bar">
+        <button className="link back-link" onClick={onBack}>
+          {"< Back"}
+        </button>
+        <span className="muted small">
+          {service} - {creatorName || creatorId}
+        </span>
+      </div>
+
+      <article className="card post-card">
+        <div className="post-nav">
+          <button
+            className="btn ghost"
+            type="button"
+            disabled={!neighbors.olderId}
+            onClick={() => neighbors.olderId && onNavigate && onNavigate(neighbors.olderId)}
+          >
+            {"← Prev"}
+          </button>
+          <button className="btn outline" type="button" onClick={onBack}>
+            Posts
+          </button>
+          <button
+            className="btn primary"
+            type="button"
+            disabled={!neighbors.newerId}
+            onClick={() => neighbors.newerId && onNavigate && onNavigate(neighbors.newerId)}
+          >
+            {"Next →"}
+          </button>
+        </div>
+        <header className="post-header">
+          <h2 className="title">{post.title || post.id}</h2>
+          <span className="muted small">Published {formatDate(post.published)}</span>
+        </header>
+
+        {attachments.length > 0 && (
+          <div className="attachments">
+            {attachments.map((item) => (
+              <a
+                className="tag attachment"
+                href={`${MEDIA_BASE}${item.path}`}
+                target="_blank"
+                rel="noreferrer"
+                key={item.path}
+              >
+                {item.name || item.path.split("/").pop()}
+              </a>
+            ))}
+          </div>
+        )}
+
+        {bodyHtml && <div className="prose" dangerouslySetInnerHTML={{ __html: bodyHtml }} />}
+
+        {heroImage && (
+          <div className="feature-image">
+            <img src={heroImage} alt="" />
+          </div>
+        )}
+        <div className="post-nav">
+          <button
+            className="btn ghost"
+            type="button"
+            disabled={!neighbors.olderId}
+            onClick={() => neighbors.olderId && onNavigate && onNavigate(neighbors.olderId)}
+          >
+            {"← Prev"}
+          </button>
+          <button className="btn outline" type="button" onClick={onBack}>
+            Posts
+          </button>
+          <button
+            className="btn primary"
+            type="button"
+            disabled={!neighbors.newerId}
+            onClick={() => neighbors.newerId && onNavigate && onNavigate(neighbors.newerId)}
+          >
+            {"Next →"}
+          </button>
+        </div>
+      </article>
+    </div>
+  );
+}
+
+export default App;
+
+
+
+
