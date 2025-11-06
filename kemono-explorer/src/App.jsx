@@ -361,87 +361,80 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onBack, on
   const hasNext = derivedTotalPages ? offset + limit < totalPosts : hasNextPage;
   const totalPages = derivedTotalPages ?? currentPage + (hasNext ? 1 : 0);
 
-  const visiblePages = [];
-  const innerWindow = 5;
-  let startPage = Math.max(2, currentPage - Math.floor(innerWindow / 2));
-  let endPage = startPage + innerWindow - 1;
-  if (derivedTotalPages && endPage > totalPages - 1) {
-    endPage = totalPages - 1;
-    startPage = Math.max(2, endPage - innerWindow + 1);
-  }
-  if (startPage <= 2) {
-    startPage = 2;
-    endPage = innerWindow + 1;
-  }
-  endPage = Math.min(endPage, totalPages - 1);
-  for (let p = startPage; p <= endPage; p += 1) {
-    visiblePages.push(p);
-  }
-  const includeLeadingEllipsis = startPage > 2;
-  const includeTrailingEllipsis = derivedTotalPages ? endPage < totalPages - 1 : hasNext;
-
   function goToPage(page) {
     if (!limit) return;
     setOffset(Math.max(0, (page - 1) * limit));
   }
 
-  const renderPagination = () => (
-    <div className="pagination-block">
-      <div className="pagination-meta">
-        <span className="label">
-          Page <strong>{currentPage}</strong> of {totalPages}
-        </span>
-      </div>
-      <nav className="pagination">
-        <button className="btn ghost" type="button" disabled={!hasPrev} onClick={() => goToPage(currentPage - 1)}>
-          {"←"}
-        </button>
-        <div className="pagination-pages">
-          {visiblePages[0] > 1 && (
-            <>
-              <button
-                className={`page-pill${currentPage === 1 ? " active" : ""}`}
-                type="button"
-                onClick={() => goToPage(1)}
-                disabled={currentPage === 1}
-              >
-                1
-              </button>
-              {includeLeadingEllipsis && <span className="pagination-ellipsis">…</span>}
-            </>
-          )}
-          {visiblePages.map((page) => {
-            const isActive = page === currentPage;
-            return (
-              <button
-                key={page}
-                className={`page-pill${isActive ? " active" : ""}`}
-                type="button"
-                onClick={() => goToPage(page)}
-                disabled={isActive}
-              >
-                {page}
-              </button>
-            );
-          })}
-          {includeTrailingEllipsis && <span className="pagination-ellipsis">…</span>}
-          {totalPages > 1 && (
-            <button
-              className={`page-pill${currentPage === totalPages ? " active" : ""}`}
-              type="button"
-              onClick={() => goToPage(totalPages)}
-              disabled={currentPage === totalPages}
-            >
-              {totalPages}
-            </button>
-          )}
+  const renderPagination = () => {
+    if (totalPages <= 1) return null;
+
+    const pages = [];
+
+    if (totalPages <= 6) {
+      for (let p = 1; p <= totalPages; p += 1) pages.push(p);
+    } else {
+      pages.push(1);
+
+      let start = Math.max(2, currentPage - 1);
+      let end = Math.min(totalPages - 1, currentPage + 1);
+
+      if (currentPage <= 3) {
+        start = 2;
+        end = 4;
+      } else if (currentPage >= totalPages - 2) {
+        start = totalPages - 3;
+        end = totalPages - 1;
+      }
+
+      if (start > 2) pages.push("ellipsis-start");
+      for (let p = start; p <= end; p += 1) pages.push(p);
+      if (end < totalPages - 1) pages.push("ellipsis-end");
+
+      pages.push(totalPages);
+    }
+
+    return (
+      <div className="pagination-block">
+        <div className="pagination-meta">
+          <span className="label">
+            Page <strong>{currentPage}</strong> of {totalPages}
+          </span>
         </div>
-        <button className="btn ghost" type="button" disabled={!hasNext} onClick={() => goToPage(currentPage + 1)}>
-          {"→"}
-        </button>
-      </nav>
-    </div>
-  );
+        <nav className="pagination">
+          <button className="btn ghost" type="button" disabled={!hasPrev} onClick={() => goToPage(currentPage - 1)}>
+            {"←"}
+          </button>
+          <div className="pagination-pages">
+            {pages.map((item) => {
+              if (typeof item === "string") {
+                return (
+                  <span key={item} className="pagination-ellipsis">
+                    …
+                  </span>
+                );
+              }
+              const isActive = item === currentPage;
+              return (
+                <button
+                  key={item}
+                  className={`page-pill${isActive ? " active" : ""}`}
+                  type="button"
+                  onClick={() => goToPage(item)}
+                  disabled={isActive}
+                >
+                  {item}
+                </button>
+              );
+            })}
+          </div>
+          <button className="btn ghost" type="button" disabled={!hasNext} onClick={() => goToPage(currentPage + 1)}>
+            {"→"}
+          </button>
+        </nav>
+      </div>
+    );
+  };
 
   return (
     <div className="page">
@@ -713,10 +706,3 @@ function PostView({ service, creatorId, creatorName, postId, onBack, onNavigate 
 }
 
 export default App;
-
-
-
-
-
-
-
