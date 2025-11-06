@@ -250,6 +250,13 @@ function getPostExcerptHtml(post) {
   return null;
 }
 
+function extractTagTokens(value) {
+  return String(value || "")
+    .split(",")
+    .map((token) => token.trim().toLowerCase())
+    .filter(Boolean);
+}
+
 function App() {
   const [view, setView] = useState({ name: "home" });
   const [savedCreators, setSavedCreators] = useState(() => {
@@ -889,12 +896,6 @@ function CreatorPage({
     setSearchCapped(false);
     runSearch({ query: trimmedFilter });
   }, [service, creatorId, activeFilter, reloadKey]);
-
-  const extractTagTokens = (value) =>
-    String(value || "")
-      .split(",")
-      .map((token) => token.trim().toLowerCase())
-      .filter(Boolean);
 
   const runSearch = async ({ query } = {}) => {
     const trimmed = (query || "").trim();
@@ -1766,9 +1767,9 @@ function PostView({ service, creatorId, creatorName, postId, activeFilter, onBac
       return defaults;
     }
   };
-  const buildFieldQueryParams = () => {
-    const fields = getStoredFilterFields();
-    return `&title=${fields.title ? "true" : "false"}&tags=${fields.tags ? "true" : "false"}&body=${fields.body ? "true" : "false"}`;
+  const buildFieldQueryParams = (fields) => {
+    const resolved = fields || getStoredFilterFields();
+    return `&title=${resolved.title ? "true" : "false"}&tags=${resolved.tags ? "true" : "false"}&body=${resolved.body ? "true" : "false"}`;
   };
 
   useEffect(() => {
@@ -1817,8 +1818,17 @@ function PostView({ service, creatorId, creatorName, postId, activeFilter, onBac
     setNeighbors({ newerId: null, olderId: null });
 
     const trimmedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
-    const queryParam = trimmedFilter ? `&q=${encodeURIComponent(trimmedFilter)}` : "";
-    const fieldParams = trimmedFilter ? buildFieldQueryParams() : "";
+    const storedFields = getStoredFilterFields();
+    const tagTokens = trimmedFilter ? extractTagTokens(trimmedFilter) : [];
+    const textQueryEnabled = storedFields.title || storedFields.body;
+    const applyTextQuery = textQueryEnabled && (!storedFields.tags || tagTokens.length === 0);
+    const textQuery = applyTextQuery ? trimmedFilter : "";
+    const queryParam = textQuery ? `&q=${encodeURIComponent(textQuery)}` : "";
+    const fieldParams = trimmedFilter ? buildFieldQueryParams(storedFields) : "";
+    const tagParams =
+      trimmedFilter && storedFields.tags && tagTokens.length > 0
+        ? tagTokens.map((tag) => `&tag=${encodeURIComponent(tag)}`).join("")
+        : "";
 
     const resolveNeighbors = async () => {
       let offset = 0;
@@ -1827,7 +1837,7 @@ function PostView({ service, creatorId, creatorName, postId, activeFilter, onBac
       try {
         while (alive) {
           const chunk = await fetchJson(
-            `${API_BASE}/${service}/user/${creatorId}/posts?o=${offset}&n=${API_PAGE_SIZE}${queryParam}${fieldParams}`,
+            `${API_BASE}/${service}/user/${creatorId}/posts?o=${offset}&n=${API_PAGE_SIZE}${queryParam}${fieldParams}${tagParams}`,
           );
           if (!alive) return;
           if (!Array.isArray(chunk) || chunk.length === 0) break;
@@ -1847,7 +1857,7 @@ function PostView({ service, creatorId, creatorName, postId, activeFilter, onBac
               olderId = chunk[idx + 1]?.id ?? null;
             } else if (chunk.length === API_PAGE_SIZE) {
               const nextChunk = await fetchJson(
-                `${API_BASE}/${service}/user/${creatorId}/posts?o=${offset + API_PAGE_SIZE}&n=${API_PAGE_SIZE}${queryParam}${fieldParams}`,
+                `${API_BASE}/${service}/user/${creatorId}/posts?o=${offset + API_PAGE_SIZE}&n=${API_PAGE_SIZE}${queryParam}${fieldParams}${tagParams}`,
               );
               if (!alive) return;
               if (Array.isArray(nextChunk) && nextChunk.length > 0) {
