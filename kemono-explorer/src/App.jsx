@@ -675,6 +675,9 @@ function PostView({ service, creatorId, creatorName, postId, onBack, onNavigate 
   }
 
   const bodyHtml = post.content || post.body || post.text || "";
+  const normalizedHtml = bodyHtml
+    ? bodyHtml.replace(/src=(["'])\/(?!\/)/gi, 'src=$1https://kemono.cr/')
+    : "";
   const heroImage = post.file?.path ? `${MEDIA_BASE}${post.file.path}` : null;
   const attachments = Array.isArray(post.attachments) ? post.attachments : [];
 
@@ -724,7 +727,7 @@ function PostView({ service, creatorId, creatorName, postId, onBack, onNavigate 
           </div>
         )}
 
-        {bodyHtml && <div className="prose" dangerouslySetInnerHTML={{ __html: bodyHtml }} />}
+        {normalizedHtml && <div className="prose" dangerouslySetInnerHTML={{ __html: normalizedHtml }} />}
 
         {heroImage && (
           <div className="feature-image">
