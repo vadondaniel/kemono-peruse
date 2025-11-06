@@ -677,6 +677,10 @@ body {
 .prose img {
   max-width: 100%;
   border-radius: 12px;
+  object-fit: contain;
+  display: block;
+  margin: 12px auto;
+  background: var(--surface-muted);
 }
 
 .feature-image {
