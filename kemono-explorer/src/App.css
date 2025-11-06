@@ -157,13 +157,30 @@ body {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  margin-top: 8px;
+  margin: 4px 0 0;
 }
 
 .pagination-pages {
   display: flex;
   gap: 6px;
   align-items: center;
+}
+
+.pagination-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.pagination-meta {
+  margin: 0 0 2px;
+  display: flex;
+  justify-content: center;
+}
+
+.pagination-meta .label {
+  font-size: 13px;
 }
 
 .page-pill {
@@ -219,7 +236,7 @@ body {
 }
 
 .input.small {
-  width: 90px;
+  width: 60px;
 }
 
 .btn {

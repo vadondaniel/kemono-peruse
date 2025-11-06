@@ -381,6 +381,64 @@ function CreatorPage({ service, creatorId, creatorName, onBack, onOpenPost, onSa
     setOffset(Math.max(0, (page - 1) * limit));
   }
 
+  const renderPagination = () => (
+    <>
+      <div className="pagination-meta">
+        <span className="label">
+          Page <strong>{currentPage}</strong> of {totalPages}
+        </span>
+      </div>
+      <nav className="pagination">
+        <button className="btn ghost" type="button" disabled={!hasPrev} onClick={() => goToPage(currentPage - 1)}>
+          {"←"}
+        </button>
+        <div className="pagination-pages">
+          {visiblePages[0] > 1 && (
+            <>
+              <button
+                className={`page-pill${currentPage === 1 ? " active" : ""}`}
+                type="button"
+                onClick={() => goToPage(1)}
+                disabled={currentPage === 1}
+              >
+                1
+              </button>
+              {includeLeadingEllipsis && <span className="pagination-ellipsis">…</span>}
+            </>
+          )}
+          {visiblePages.map((page) => {
+            const isActive = page === currentPage;
+            return (
+              <button
+                key={page}
+                className={`page-pill${isActive ? " active" : ""}`}
+                type="button"
+                onClick={() => goToPage(page)}
+                disabled={isActive}
+              >
+                {page}
+              </button>
+            );
+          })}
+            {includeTrailingEllipsis && <span className="pagination-ellipsis">…</span>}
+          {totalPages > 1 && (
+            <button
+              className={`page-pill${currentPage === totalPages ? " active" : ""}`}
+              type="button"
+              onClick={() => goToPage(totalPages)}
+              disabled={currentPage === totalPages}
+            >
+              {totalPages}
+            </button>
+          )}
+        </div>
+        <button className="btn ghost" type="button" disabled={!hasNext} onClick={() => goToPage(currentPage + 1)}>
+          {"→"}
+        </button>
+      </nav>
+    </>
+  );
+
   return (
     <div className="page">
       <div className="page-bar">
@@ -447,63 +505,9 @@ function CreatorPage({ service, creatorId, creatorName, onBack, onOpenPost, onSa
                 </option>
               ))}
             </select>
-            <span className="label">Page {currentPage}</span>
           </div>
         </div>
-        <nav className="pagination">
-          <button
-            className="btn ghost"
-            type="button"
-            disabled={!hasPrev}
-            onClick={() => goToPage(currentPage - 1)}
-          >
-            {"←"}
-          </button>
-          <div className="pagination-pages">
-            {visiblePages[0] > 1 && (
-              <>
-                <button
-                  className={`page-pill${currentPage === 1 ? " active" : ""}`}
-                  type="button"
-                  onClick={() => goToPage(1)}
-                  disabled={currentPage === 1}
-                >
-                  1
-                </button>
-                {includeLeadingEllipsis && <span className="pagination-ellipsis">…</span>}
-              </>
-            )}
-            {visiblePages.map((page) => {
-              const isActive = page === currentPage;
-              return (
-                <button
-                  key={page}
-                  className={`page-pill${isActive ? " active" : ""}`}
-                  type="button"
-                  onClick={() => goToPage(page)}
-                  disabled={isActive}
-                >
-                  {page}
-                </button>
-              );
-            })}
-            {includeTrailingEllipsis && <span className="pagination-ellipsis">…</span>}
-            {totalPages > 1 && (
-              <button
-                className={`page-pill${currentPage === totalPages ? " active" : ""}`}
-                type="button"
-                onClick={() => goToPage(totalPages)}
-                disabled={currentPage === totalPages}
-              >
-                {totalPages}
-              </button>
-            )}
-          </div>
-          <button className="btn ghost" type="button" disabled={!hasNext} onClick={() => goToPage(currentPage + 1)}>
-            {"→"}
-          </button>
-        </nav>
-
+        {renderPagination()}
         <div className="post-list">
           {posts.map((post) => (
             <button className="post-item" key={post.id} type="button" onClick={() => onOpenPost(post.id)}>
@@ -529,6 +533,7 @@ function CreatorPage({ service, creatorId, creatorName, onBack, onOpenPost, onSa
             <div className="muted empty-state">No posts found for this page.</div>
           )}
         </div>
+        {renderPagination()}
       </section>
     </div>
   );
@@ -702,3 +707,10 @@ function PostView({ service, creatorId, creatorName, postId, onBack, onNavigate 
 }
 
 export default App;
+
+
+
+
+
+
+
