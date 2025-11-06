@@ -157,7 +157,7 @@ body {
   align-items: center;
   justify-content: center;
   gap: 12px;
-  margin: 4px 0 0;
+  margin: 0;
 }
 
 .pagination-pages {
@@ -170,11 +170,11 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
 }
 
 .pagination-meta {
-  margin: 0 0 2px;
+  margin: 0;
   display: flex;
   justify-content: center;
 }

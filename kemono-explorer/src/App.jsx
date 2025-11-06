@@ -382,7 +382,7 @@ function CreatorPage({ service, creatorId, creatorName, onBack, onOpenPost, onSa
   }
 
   const renderPagination = () => (
-    <>
+    <div className="pagination-block">
       <div className="pagination-meta">
         <span className="label">
           Page <strong>{currentPage}</strong> of {totalPages}
@@ -420,7 +420,7 @@ function CreatorPage({ service, creatorId, creatorName, onBack, onOpenPost, onSa
               </button>
             );
           })}
-            {includeTrailingEllipsis && <span className="pagination-ellipsis">…</span>}
+          {includeTrailingEllipsis && <span className="pagination-ellipsis">…</span>}
           {totalPages > 1 && (
             <button
               className={`page-pill${currentPage === totalPages ? " active" : ""}`}
@@ -436,7 +436,7 @@ function CreatorPage({ service, creatorId, creatorName, onBack, onOpenPost, onSa
           {"→"}
         </button>
       </nav>
-    </>
+    </div>
   );
 
   return (
