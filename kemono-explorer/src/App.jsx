@@ -1019,33 +1019,32 @@ function CreatorPage({
           </div>
         </div>
         <div className="filter-row">
-          <form className="search-form" onSubmit={handleSearchSubmit}>
-            <label className="label" htmlFor="post-search">
-              Filter
-            </label>
-            <div className="search-field">
-              <input
-                id="post-search"
-                className="search-input"
-                value={searchInput}
-                onChange={(event) => setSearchInput(event.target.value)}
-                placeholder="Filter by title, tag, or text"
-              />
-              {(searchInput || isFilterActive) && (
-                <button className="search-clear" type="button" onClick={handleSearchClear} disabled={searchLoading}>
-                  Clear
-                </button>
-              )}
-              <button className="search-submit" type="submit" disabled={searchLoading}>
-                {searchLoading ? "Filtering..." : "Apply filter"}
-              </button>
-            </div>
-          </form>
           <div className="filter-controls">
-            <span className="label">Match fields</span>
-            <div className="filter-fields">
+            <form className="search-form" onSubmit={handleSearchSubmit}>
+              <label className="label" htmlFor="post-search">
+                Filter
+              </label>
+              <div className="search-field">
+                <input
+                  id="post-search"
+                  className="search-input"
+                  value={searchInput}
+                  onChange={(event) => setSearchInput(event.target.value)}
+                  placeholder="Filter by title, tag, or text"
+                />
+                {(searchInput || isFilterActive) && (
+                  <button className="search-clear" type="button" onClick={handleSearchClear} disabled={searchLoading}>
+                    Clear
+                  </button>
+                )}
+                <button className="search-submit" type="submit" disabled={searchLoading}>
+                  {searchLoading ? "Filtering..." : "Apply filter"}
+                </button>
+              </div>
+            </form>
+            <div className="filter-toggles">
               <label
-                className={`filter-field${filterFields.title ? " filter-field-active" : ""}`}
+                className={`filter-toggle${filterFields.title ? " filter-toggle-active" : ""}`}
                 htmlFor="filter-title"
               >
                 <input
@@ -1054,24 +1053,33 @@ function CreatorPage({
                   checked={filterFields.title}
                   onChange={(event) => updateFilterField("title", event.target.checked)}
                 />
+                <span className="filter-toggle-track">
+                  <span className="filter-toggle-thumb" />
+                </span>
                 Title
               </label>
-              <label className={`filter-field${filterFields.tags ? " filter-field-active" : ""}`} htmlFor="filter-tags">
+              <label className={`filter-toggle${filterFields.tags ? " filter-toggle-active" : ""}`} htmlFor="filter-tags">
                 <input
                   id="filter-tags"
                   type="checkbox"
                   checked={filterFields.tags}
                   onChange={(event) => updateFilterField("tags", event.target.checked)}
                 />
+                <span className="filter-toggle-track">
+                  <span className="filter-toggle-thumb" />
+                </span>
                 Tags
               </label>
-              <label className={`filter-field${filterFields.body ? " filter-field-active" : ""}`} htmlFor="filter-body">
+              <label className={`filter-toggle${filterFields.body ? " filter-toggle-active" : ""}`} htmlFor="filter-body">
                 <input
                   id="filter-body"
                   type="checkbox"
                   checked={filterFields.body}
                   onChange={(event) => updateFilterField("body", event.target.checked)}
                 />
+                <span className="filter-toggle-track">
+                  <span className="filter-toggle-thumb" />
+                </span>
                 Body text
               </label>
             </div>

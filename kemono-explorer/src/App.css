@@ -430,38 +430,83 @@ body {
   flex-wrap: wrap;
 }
 
-.filter-fields {
+.filter-toggles {
   display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  font-size: 13px;
-  color: var(--muted);
 }
 
-.filter-field {
+.filter-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
+  gap: 8px;
+  padding: 6px 12px;
   border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--surface-muted);
-  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+  color: var(--muted);
   cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+  font-size: 13px;
+  font-weight: 600;
 }
 
-.filter-field input {
-  accent-color: var(--accent);
-  margin: 0;
-}
-
-.filter-field:hover {
+.filter-toggle:hover {
   border-color: var(--accent);
   color: var(--accent);
 }
 
-.filter-field-active {
+.filter-toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  border: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  overflow: hidden;
+}
+
+.filter-toggle-track {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.4);
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+  flex-shrink: 0;
+}
+
+.filter-toggle-thumb {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.2);
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.filter-toggle input:checked + .filter-toggle-track {
+  background: var(--accent);
+  box-shadow: 0 6px 16px rgba(59, 130, 246, 0.3);
+}
+
+.filter-toggle input:checked + .filter-toggle-track .filter-toggle-thumb {
+  transform: translateX(16px);
+  background: #fff;
+}
+
+.filter-toggle input:focus-visible + .filter-toggle-track {
+  outline: 3px solid rgba(59, 130, 246, 0.35);
+  outline-offset: 2px;
+}
+
+.filter-toggle-active {
   border-color: var(--accent);
   background: rgba(59, 130, 246, 0.12);
   color: var(--accent);
@@ -470,11 +515,12 @@ body {
 .search-field {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  flex-wrap: nowrap;
   background: var(--surface-muted);
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 4px;
+  padding: 4px 8px 4px 4px;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 
@@ -1077,12 +1123,14 @@ body {
     gap: 12px;
   }
 
-  .filter-fields {
+  .filter-toggles {
+    width: 100%;
     justify-content: flex-start;
   }
 
-  .filter-field {
-    justify-content: flex-start;
+  .filter-toggle {
+    width: 100%;
+    justify-content: space-between;
   }
 
   .pagination-pages {
