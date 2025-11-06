@@ -74,6 +74,9 @@ function App() {
     setView({ name: "post", service, creatorId, creatorName, postId });
   };
 
+  const isCreatorSaved = (service, creatorId) =>
+    savedCreators.some((c) => c.service === service && c.id === creatorId);
+
   return (
     <div className="app-root">
       <header className="app-header">
@@ -112,6 +115,7 @@ function App() {
               service={view.service}
               creatorId={view.creatorId}
               creatorName={view.creatorName}
+              alreadySaved={isCreatorSaved(view.service, view.creatorId)}
               onBack={() => setView({ name: "home" })}
               onOpenPost={(postId) => openPost(view.service, view.creatorId, view.creatorName, postId)}
               onSave={() =>
@@ -266,7 +270,7 @@ function Home({ savedCreators, onSaveCreator, onRemoveCreator, onOpenCreator }) 
   );
 }
 
-function CreatorPage({ service, creatorId, creatorName, onBack, onOpenPost, onSave }) {
+function CreatorPage({ service, creatorId, creatorName, alreadySaved, onBack, onOpenPost, onSave }) {
   const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);
   const [offset, setOffset] = useState(0);
@@ -467,9 +471,11 @@ function CreatorPage({ service, creatorId, creatorName, onBack, onOpenPost, onSa
             >
               Refresh posts
             </button>
-            <button className="btn primary" onClick={onSave}>
-              Save creator
-            </button>
+            {!alreadySaved && (
+              <button className="btn primary" onClick={onSave}>
+                Save creator
+              </button>
+            )}
           </div>
         </div>
         {profile?.description && (
