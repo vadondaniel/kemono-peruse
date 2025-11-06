@@ -529,6 +529,7 @@ function CreatorPage({
     }
     return true;
   });
+  const [postTagMap, setPostTagMap] = useState({});
   const [searchInput, setSearchInput] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searchDisplayCount, setSearchDisplayCount] = useState(0);
@@ -609,6 +610,9 @@ function CreatorPage({
       // ignore
     }
   }, [showTags]);
+  useEffect(() => {
+    setPostTagMap({});
+  }, [service, creatorId]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.localStorage) return;
@@ -865,6 +869,56 @@ function CreatorPage({
     };
   }, [service, creatorId, offset, limit, reloadKey, activeFilter]);
 
+  const normalizedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
+  const activeTags = filterFields.tags ? extractTagTokens(normalizedFilter) : [];
+  const isFilterActive = normalizedFilter.length > 0;
+  const displayedPosts = isFilterActive ? searchResults.slice(0, Math.max(0, searchDisplayCount)) : posts;
+  const listLoading = isFilterActive ? searchLoading && displayedPosts.length === 0 : loadingPosts;
+
+  useEffect(() => {
+    if (!showTags) return;
+    if (isFilterActive) return;
+    if (!posts.length) return;
+
+    const missing = posts.filter(
+      (post) => !Array.isArray(post.tags) && !Array.isArray(postTagMap[post.id]),
+    );
+    if (missing.length === 0) return;
+
+    let alive = true;
+
+    (async () => {
+      const results = await Promise.all(
+        missing.map(async (post) => {
+          try {
+            const data = await fetchJson(`${API_BASE}/${service}/user/${creatorId}/post/${post.id}`);
+            const tags = Array.isArray(data?.post?.tags)
+              ? data.post.tags.map((tag) => String(tag))
+              : [];
+            return { id: post.id, tags };
+          } catch (error) {
+            console.error("Failed to load tags for post", post.id, error);
+            return { id: post.id, tags: [] };
+          }
+        }),
+      );
+      if (!alive) return;
+      setPostTagMap((prev) => {
+        const next = { ...prev };
+        for (const { id, tags } of results) {
+          if (!next[id] && Array.isArray(tags)) {
+            next[id] = tags;
+          }
+        }
+        return next;
+      });
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [showTags, isFilterActive, posts, service, creatorId, postTagMap]);
+
   const hasPrev = offset > 0;
   const totalPosts =
     typeof profile?.post_count === "number"
@@ -878,11 +932,6 @@ function CreatorPage({
   const totalPages = derivedTotalPages ?? currentPage + (hasNext ? 1 : 0);
   const avatarUrl = `https://img.kemono.cr/icons/${service}/${creatorId}`;
   const serviceLabel = getServiceLabel(service);
-  const normalizedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
-  const activeTags = filterFields.tags ? extractTagTokens(normalizedFilter) : [];
-  const isFilterActive = normalizedFilter.length > 0;
-  const displayedPosts = isFilterActive ? searchResults.slice(0, Math.max(0, searchDisplayCount)) : posts;
-  const listLoading = isFilterActive ? searchLoading && displayedPosts.length === 0 : loadingPosts;
   const summaryLabel = isFilterActive
     ? listLoading
       ? `Filtering ${activeTags.length > 0 ? `${activeTags.length} tag${activeTags.length === 1 ? "" : "s"}` : `"${normalizedFilter}"`}...`
@@ -1179,7 +1228,9 @@ function CreatorPage({
         <div className="post-list">
           {displayedPosts.map((post) => {
             const excerptHtml = showExcerpts ? getPostExcerptHtml(post) : null;
-            const hasTags = Array.isArray(post.tags) && post.tags.length > 0;
+            const postTags = Array.isArray(post.tags) ? post.tags : postTagMap[post.id];
+            const normalizedTags = Array.isArray(postTags) ? postTags : [];
+            const hasTags = normalizedTags.length > 0;
             return (
               <button className="post-item" key={post.id} type="button" onClick={() => onOpenPost(post.id)}>
                 <div className="post-body">
@@ -1189,7 +1240,7 @@ function CreatorPage({
                   </div>
                   {showTags && hasTags && (
                     <div className="tag-row">
-                      {post.tags.map((tag) => (
+                      {normalizedTags.map((tag) => (
                         <span className="tag" key={tag}>
                           {tag}
                         </span>
