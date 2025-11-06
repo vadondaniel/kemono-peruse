@@ -474,7 +474,6 @@ function CreatorPage({
     return true;
   });
   const [searchInput, setSearchInput] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searchDisplayCount, setSearchDisplayCount] = useState(0);
   const [searchNextOffset, setSearchNextOffset] = useState(0);
@@ -520,7 +519,6 @@ function CreatorPage({
     setSearchInput(trimmedFilter);
     searchTokenRef.current += 1;
     if (!trimmedFilter) {
-      setSearchQuery("");
       setSearchResults([]);
       setSearchDisplayCount(0);
       setSearchNextOffset(0);
@@ -549,7 +547,6 @@ function CreatorPage({
     const targetCount = append ? searchDisplayCount + desiredPageSize : desiredPageSize;
 
     if (!append) {
-      setSearchQuery(trimmed);
       setSearchResults([]);
       setSearchDisplayCount(0);
       setSearchNextOffset(0);
@@ -579,7 +576,6 @@ function CreatorPage({
 
       const nextDisplayCount = Math.min(targetCount, workingResults.length);
 
-      setSearchQuery(trimmed);
       setSearchResults(workingResults);
       setSearchDisplayCount(nextDisplayCount);
       setSearchNextOffset(offset);
@@ -640,9 +636,9 @@ function CreatorPage({
   useEffect(() => {
     const trimmedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
     if (trimmedFilter) {
-      setLoadingPosts(false);
       setPosts([]);
       setHasNextPage(false);
+      setLoadingPosts(false);
       return;
     }
     let alive = true;
@@ -1022,26 +1018,65 @@ function PostView({ service, creatorId, creatorName, postId, activeFilter, onBac
     let alive = true;
     setNeighbors({ newerId: null, olderId: null });
 
-    const filterParam =
-      activeFilter && activeFilter.trim() ? `&q=${encodeURIComponent(activeFilter.trim())}` : "";
-    fetchJson(`${API_BASE}/${service}/user/${creatorId}/posts?o=0&n=200${filterParam}`).then((data) => {
-      if (!alive) return;
-      if (!Array.isArray(data)) {
+    const trimmedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
+    const queryParam = trimmedFilter ? `&q=${encodeURIComponent(trimmedFilter)}` : "";
+
+    const resolveNeighbors = async () => {
+      let offset = 0;
+      let prevChunkLast = null;
+
+      try {
+        while (alive) {
+          const chunk = await fetchJson(
+            `${API_BASE}/${service}/user/${creatorId}/posts?o=${offset}&n=${API_PAGE_SIZE}${queryParam}`,
+          );
+          if (!alive) return;
+          if (!Array.isArray(chunk) || chunk.length === 0) break;
+
+          const idx = chunk.findIndex((item) => `${item.id}` === `${postId}`);
+          if (idx !== -1) {
+            let newerId = null;
+            let olderId = null;
+
+            if (idx > 0) {
+              newerId = chunk[idx - 1]?.id ?? null;
+            } else {
+              newerId = prevChunkLast?.id ?? null;
+            }
+
+            if (idx < chunk.length - 1) {
+              olderId = chunk[idx + 1]?.id ?? null;
+            } else if (chunk.length === API_PAGE_SIZE) {
+              const nextChunk = await fetchJson(
+                `${API_BASE}/${service}/user/${creatorId}/posts?o=${offset + API_PAGE_SIZE}&n=${API_PAGE_SIZE}${queryParam}`,
+              );
+              if (!alive) return;
+              if (Array.isArray(nextChunk) && nextChunk.length > 0) {
+                olderId = nextChunk[0]?.id ?? null;
+              }
+            }
+
+            setNeighbors({
+              newerId: newerId ?? null,
+              olderId: olderId ?? null,
+            });
+            return;
+          }
+
+          prevChunkLast = chunk[chunk.length - 1] ?? prevChunkLast;
+          offset += API_PAGE_SIZE;
+          if (chunk.length < API_PAGE_SIZE) break;
+        }
+
         setNeighbors({ newerId: null, olderId: null });
-        return;
-      }
-      const index = data.findIndex((item) => `${item.id}` === `${postId}`);
-      if (index === -1) {
+      } catch (error) {
+        console.error("Failed to resolve post neighbors", error);
+        if (!alive) return;
         setNeighbors({ newerId: null, olderId: null });
-        return;
       }
-      const newer = index > 0 ? data[index - 1] : null;
-      const older = index < data.length - 1 ? data[index + 1] : null;
-      setNeighbors({
-        newerId: newer?.id || null,
-        olderId: older?.id || null,
-      });
-    });
+    };
+
+    resolveNeighbors();
 
     return () => {
       alive = false;
