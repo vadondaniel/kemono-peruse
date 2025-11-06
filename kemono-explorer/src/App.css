@@ -432,7 +432,9 @@ body {
 
 .excerpt {
   color: #334155;
-  line-height: 1.2;
+  line-height: 1;
+  max-height: 7.2em;
+  overflow: hidden;
   margin: 0;
 }
 
@@ -553,4 +555,12 @@ body {
   .controls {
     gap: 8px;
   }
+}
+
+.excerpt img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 8px;
+  margin-top: 8px;
 }
