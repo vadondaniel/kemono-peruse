@@ -163,7 +163,7 @@ function App() {
 }
 
 function Home({ savedCreators, onSaveCreator, onRemoveCreator, onOpenCreator }) {
-  const [service, setService] = useState("fanbox");
+  const [service, setService] = useState("patreon");
   const [creatorId, setCreatorId] = useState("");
   const [creatorName, setCreatorName] = useState("");
 
@@ -227,8 +227,8 @@ function Home({ savedCreators, onSaveCreator, onRemoveCreator, onOpenCreator }) 
           <label className="field">
             <span className="label">Service</span>
             <select className="input" value={service} onChange={(event) => setService(event.target.value)}>
-              <option value="fanbox">Fanbox</option>
               <option value="patreon">Patreon</option>
+              <option value="fanbox">Fanbox</option>
               <option value="fantia">Fantia</option>
               <option value="discord">Discord</option>
               <option value="gumroad">Gumroad</option>
