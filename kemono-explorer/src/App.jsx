@@ -6,6 +6,15 @@ const API_BASE = rawApiBase.endsWith("/") ? rawApiBase.slice(0, -1) : rawApiBase
 const MEDIA_BASE = `${API_BASE}/media`;
 const API_PAGE_SIZE = 50;
 
+const SERVICE_LABELS = {
+  patreon: "Patreon",
+  fanbox: "Pixiv Fanbox",
+  fantia: "Fantia",
+  discord: "Discord",
+  gumroad: "Gumroad",
+  dlsite: "DLsite",
+};
+
 async function fetchJson(url) {
   try {
     const res = await fetch(url, { headers: { Accept: "text/css" } });
@@ -15,6 +24,13 @@ async function fetchJson(url) {
     console.error("fetchJson failed", error);
     return null;
   }
+}
+
+function getServiceLabel(service) {
+  if (!service) return "";
+  const key = String(service).toLowerCase();
+  if (SERVICE_LABELS[key]) return SERVICE_LABELS[key];
+  return key.charAt(0).toUpperCase() + key.slice(1);
 }
 
 function formatDate(ts) {
@@ -485,6 +501,7 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
   const hasNext = derivedTotalPages ? offset + limit < totalPosts : hasNextPage;
   const totalPages = derivedTotalPages ?? currentPage + (hasNext ? 1 : 0);
   const avatarUrl = `https://img.kemono.cr/icons/${service}/${creatorId}`;
+  const serviceLabel = getServiceLabel(service);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -614,9 +631,12 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
             </div>
             <div className="creator-heading-text">
               <h2 className="title">{creatorName || creatorId}</h2>
-              <span className="muted small">
-                {loadingProfile ? "Loading profile..." : `${profile?.post_count ?? "-"} posts indexed`}
-              </span>
+              <div className="creator-heading-meta">
+                {serviceLabel ? <span className="creator-service-badge">{serviceLabel}</span> : null}
+                <span className="muted small">
+                  {loadingProfile ? "Loading profile..." : `${profile?.post_count ?? "-"} posts indexed`}
+                </span>
+              </div>
             </div>
           </div>
           <div className="card-actions">
