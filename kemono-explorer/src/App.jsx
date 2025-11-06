@@ -321,8 +321,40 @@ function CreatorPage({ service, creatorId, creatorName, onBack, onOpenPost, onSa
   }, [service, creatorId, offset, limit, reloadKey]);
 
   const hasPrev = offset > 0;
-  const hasNext = hasNextPage;
-  const pageNumber = limit > 0 ? Math.floor(offset / limit) + 1 : 1;
+  const totalPosts =
+    typeof profile?.post_count === "number"
+      ? profile.post_count
+      : Number.isFinite(Number(profile?.post_count))
+        ? Number(profile?.post_count)
+        : null;
+  const derivedTotalPages = totalPosts && limit > 0 ? Math.max(1, Math.ceil(totalPosts / limit)) : null;
+  const currentPage = limit > 0 ? Math.floor(offset / limit) + 1 : 1;
+  const hasNext = derivedTotalPages ? offset + limit < totalPosts : hasNextPage;
+  const totalPages = derivedTotalPages ?? currentPage + (hasNext ? 1 : 0);
+
+  const visiblePages = [];
+  const innerWindow = 5;
+  let startPage = Math.max(2, currentPage - Math.floor(innerWindow / 2));
+  let endPage = startPage + innerWindow - 1;
+  if (derivedTotalPages && endPage > totalPages - 1) {
+    endPage = totalPages - 1;
+    startPage = Math.max(2, endPage - innerWindow + 1);
+  }
+  if (startPage <= 2) {
+    startPage = 2;
+    endPage = innerWindow + 1;
+  }
+  endPage = Math.min(endPage, totalPages - 1);
+  for (let p = startPage; p <= endPage; p += 1) {
+    visiblePages.push(p);
+  }
+  const includeLeadingEllipsis = startPage > 2;
+  const includeTrailingEllipsis = derivedTotalPages ? endPage < totalPages - 1 : hasNext;
+
+  function goToPage(page) {
+    if (!limit) return;
+    setOffset(Math.max(0, (page - 1) * limit));
+  }
 
   return (
     <div className="page">
@@ -374,31 +406,78 @@ function CreatorPage({ service, creatorId, creatorName, onBack, onOpenPost, onSa
             <label className="label" htmlFor="page-size">
               Page size
             </label>
-              <select
-                id="page-size"
-                className="input small"
-                value={limit}
-                onChange={(event) => {
-                  const nextLimit = parseInt(event.target.value, 10);
-                  setOffset(0);
-                  setLimit(nextLimit);
-                }}
-              >
-                {[25, 50, 75, 100].map((count) => (
-                  <option key={count} value={count}>
-                    {count}
-                  </option>
-                ))}
-              </select>
-            <span className="label">Page {pageNumber}</span>
-            <button className="btn" disabled={!hasPrev} onClick={() => setOffset(Math.max(0, offset - limit))}>
-              Prev
-            </button>
-            <button className="btn" disabled={!hasNext} onClick={() => setOffset(offset + limit)}>
-              Next
-            </button>
+            <select
+              id="page-size"
+              className="input small"
+              value={limit}
+              onChange={(event) => {
+                const nextLimit = parseInt(event.target.value, 10);
+                setOffset(0);
+                setLimit(nextLimit);
+              }}
+            >
+              {[25, 50, 75, 100].map((count) => (
+                <option key={count} value={count}>
+                  {count}
+                </option>
+              ))}
+            </select>
+            <span className="label">Page {currentPage}</span>
           </div>
         </div>
+        <nav className="pagination">
+          <button
+            className="btn ghost"
+            type="button"
+            disabled={!hasPrev}
+            onClick={() => goToPage(currentPage - 1)}
+          >
+            {"←"}
+          </button>
+          <div className="pagination-pages">
+            {visiblePages[0] > 1 && (
+              <>
+                <button
+                  className={`page-pill${currentPage === 1 ? " active" : ""}`}
+                  type="button"
+                  onClick={() => goToPage(1)}
+                  disabled={currentPage === 1}
+                >
+                  1
+                </button>
+                {includeLeadingEllipsis && <span className="pagination-ellipsis">…</span>}
+              </>
+            )}
+            {visiblePages.map((page) => {
+              const isActive = page === currentPage;
+              return (
+                <button
+                  key={page}
+                  className={`page-pill${isActive ? " active" : ""}`}
+                  type="button"
+                  onClick={() => goToPage(page)}
+                  disabled={isActive}
+                >
+                  {page}
+                </button>
+              );
+            })}
+            {includeTrailingEllipsis && <span className="pagination-ellipsis">…</span>}
+            {totalPages > 1 && (
+              <button
+                className={`page-pill${currentPage === totalPages ? " active" : ""}`}
+                type="button"
+                onClick={() => goToPage(totalPages)}
+                disabled={currentPage === totalPages}
+              >
+                {totalPages}
+              </button>
+            )}
+          </div>
+          <button className="btn ghost" type="button" disabled={!hasNext} onClick={() => goToPage(currentPage + 1)}>
+            {"→"}
+          </button>
+        </nav>
 
         <div className="post-list">
           {posts.map((post) => (

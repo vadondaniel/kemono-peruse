@@ -144,6 +144,52 @@ body {
   flex-wrap: wrap;
 }
 
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.pagination-pages {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.page-pill {
+  min-width: 32px;
+  height: 32px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: #ffffff;
+  color: #1f2937;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.page-pill:hover:not(:disabled) {
+  border-color: rgba(59, 130, 246, 0.4);
+  color: #1d4ed8;
+}
+
+.page-pill:disabled {
+  cursor: default;
+  background: var(--accent);
+  color: #ffffff;
+  border-color: transparent;
+  box-shadow: 0 8px 16px rgba(59, 130, 246, 0.25);
+}
+
+.pagination-ellipsis {
+  color: var(--muted);
+  font-size: 16px;
+}
+
 .label {
   font-size: 13px;
   color: var(--muted);
