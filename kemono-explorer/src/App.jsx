@@ -5,6 +5,7 @@ const rawApiBase = import.meta.env.VITE_API_BASE || "/api/proxy/kemono";
 const API_BASE = rawApiBase.endsWith("/") ? rawApiBase.slice(0, -1) : rawApiBase;
 const MEDIA_BASE = `${API_BASE}/media`;
 const API_PAGE_SIZE = 50;
+const MAX_SEARCH_RESULTS = 1000;
 
 const SERVICE_LABELS = {
   patreon: "Patreon",
@@ -532,10 +533,9 @@ function CreatorPage({
   const [postTagMap, setPostTagMap] = useState({});
   const [searchInput, setSearchInput] = useState("");
   const [searchResults, setSearchResults] = useState([]);
-  const [searchNextOffset, setSearchNextOffset] = useState(0);
-  const [searchExhausted, setSearchExhausted] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchPage, setSearchPage] = useState(1);
+  const [searchCapped, setSearchCapped] = useState(false);
   const filterStorageKey = `kemono.filterFields.${service}.${creatorId}`;
   const getDefaultFilterFields = () => ({ title: true, tags: true, body: true });
   const loadStoredFilterFields = () => {
@@ -641,8 +641,9 @@ function CreatorPage({
     const trimmed = typeof activeFilter === "string" ? activeFilter.trim() : "";
     if (!trimmed) return;
     setSearchPage(1);
-    runSearch({ query: trimmed, append: false, targetCount: limit });
-  }, [filterFields.title, filterFields.tags, filterFields.body, limit, activeFilter]);
+    setSearchCapped(false);
+    runSearch({ query: trimmed });
+  }, [filterFields.title, filterFields.tags, filterFields.body, activeFilter]);
 
   useEffect(() => {
     const trimmedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
@@ -651,17 +652,15 @@ function CreatorPage({
     setSearchPage(1);
     if (!trimmedFilter) {
       setSearchResults([]);
-      setSearchNextOffset(0);
-      setSearchExhausted(false);
       setSearchLoading(false);
+      setSearchCapped(false);
       return;
     }
     setOffset((value) => (value !== 0 ? 0 : value));
     setSearchResults([]);
-    setSearchNextOffset(0);
-    setSearchExhausted(false);
-    runSearch({ query: trimmedFilter, append: false, targetCount: limit });
-  }, [service, creatorId, activeFilter, limit, reloadKey]);
+    setSearchCapped(false);
+    runSearch({ query: trimmedFilter });
+  }, [service, creatorId, activeFilter, reloadKey]);
 
   const extractTagTokens = (value) =>
     String(value || "")
@@ -669,7 +668,7 @@ function CreatorPage({
       .map((token) => token.trim().toLowerCase())
       .filter(Boolean);
 
-  const runSearch = async ({ query, append = false, targetCount } = {}) => {
+  const runSearch = async ({ query } = {}) => {
     const trimmed = (query || "").trim();
     const tagTokens = filterFields.tags ? extractTagTokens(trimmed) : [];
     const textQueryEnabled = filterFields.title || filterFields.body;
@@ -677,7 +676,12 @@ function CreatorPage({
     const textQuery = applyTextQuery ? trimmed : "";
     const hasQuery = textQuery.length > 0;
     const hasTags = filterFields.tags && tagTokens.length > 0;
-    if (!hasQuery && !hasTags) return;
+    if (!hasQuery && !hasTags) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      setSearchCapped(false);
+      return;
+    }
 
     const normalizedFields = {
       title: Boolean(filterFields.title),
@@ -690,6 +694,7 @@ function CreatorPage({
       normalizedFields.body = true;
       setFilterFields({ ...normalizedFields });
     }
+
     const token = (searchTokenRef.current += 1);
     const encodedQuery = hasQuery ? encodeURIComponent(textQuery.replace(/,/g, " ").trim()) : "";
     const filterBody = normalizedFields.body ? "true" : "false";
@@ -700,34 +705,18 @@ function CreatorPage({
       normalizedFields.tags && tagTokens.length > 0
         ? tagTokens.map((tag) => `&tag=${encodeURIComponent(tag)}`).join("")
         : "";
-    let workingResults = append ? [...searchResults] : [];
-    let offset = append ? searchNextOffset : 0;
-    let exhausted = append ? searchExhausted : false;
-    const desiredTarget =
-      targetCount ??
-      (append
-        ? searchResults.length + (limit > 0 ? limit : API_PAGE_SIZE)
-        : limit > 0
-          ? limit
-          : API_PAGE_SIZE);
-
-    if (append && workingResults.length >= desiredTarget) {
-      return;
-    }
-
-    if (!append) {
-      setSearchResults([]);
-      setSearchNextOffset(0);
-      setSearchExhausted(false);
-      workingResults = [];
-      offset = 0;
-      exhausted = false;
-    }
 
     setSearchLoading(true);
+    setSearchResults([]);
+    setSearchCapped(false);
+
+    let workingResults = [];
+    let offset = 0;
+    let exhausted = false;
+    let capped = false;
 
     try {
-      while (workingResults.length < desiredTarget && !exhausted) {
+      while (!exhausted && workingResults.length < MAX_SEARCH_RESULTS) {
         const chunk = await fetchJson(
           `${API_BASE}/${service}/user/${creatorId}/posts?o=${offset}&n=${API_PAGE_SIZE}${hasQuery ? `&q=${encodedQuery}` : ""}${fieldParams}${tagParams}`,
         );
@@ -741,17 +730,21 @@ function CreatorPage({
         if (chunk.length < API_PAGE_SIZE) {
           exhausted = true;
         }
+        if (workingResults.length >= MAX_SEARCH_RESULTS) {
+          capped = true;
+          break;
+        }
       }
 
       if (token !== searchTokenRef.current) return;
 
       setSearchResults(workingResults);
-      setSearchNextOffset(offset);
-      setSearchExhausted(exhausted);
+      setSearchCapped(capped);
     } catch (error) {
       console.error("Post search failed", error);
       if (token !== searchTokenRef.current) return;
-      setSearchExhausted(true);
+      setSearchResults([]);
+      setSearchCapped(false);
     } finally {
       if (token === searchTokenRef.current) {
         setSearchLoading(false);
@@ -775,7 +768,8 @@ function CreatorPage({
 
     if (trimmed === currentFilter) {
       setSearchPage(1);
-      runSearch({ query: trimmed, append: false, targetCount: limit });
+      setSearchCapped(false);
+      runSearch({ query: trimmed });
       return;
     }
 
@@ -802,16 +796,6 @@ function CreatorPage({
     }
     setFilterFields(getDefaultFilterFields());
   };
-
-  useEffect(() => {
-    const trimmedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
-    if (!trimmedFilter) return;
-    if (!searchPage || limit <= 0) return;
-    const desiredCount = searchPage * limit;
-    if (searchResults.length >= desiredCount) return;
-    if (searchLoading || searchExhausted) return;
-    runSearch({ query: trimmedFilter, append: true, targetCount: desiredCount });
-  }, [activeFilter, searchPage, limit, searchResults.length, searchLoading, searchExhausted]);
 
   useEffect(() => {
     const trimmedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
@@ -880,9 +864,21 @@ function CreatorPage({
   const isFilterActive = normalizedFilter.length > 0;
   const activeTags = filterFields.tags ? extractTagTokens(normalizedFilter) : [];
   const effectiveLimit = limit > 0 ? limit : API_PAGE_SIZE;
-  const pageStart = isFilterActive ? Math.max(0, (Math.max(searchPage, 1) - 1) * effectiveLimit) : 0;
+  const totalFilteredPosts = searchResults.length;
+  const filteredTotalPages = isFilterActive
+    ? Math.max(1, Math.ceil(Math.max(totalFilteredPosts, 1) / effectiveLimit))
+    : 1;
+  const clampedSearchPage = isFilterActive ? Math.min(Math.max(searchPage, 1), filteredTotalPages) : 1;
+  const pageStart = isFilterActive ? Math.max(0, (clampedSearchPage - 1) * effectiveLimit) : 0;
   const displayedPosts = isFilterActive ? searchResults.slice(pageStart, pageStart + effectiveLimit) : posts;
   const listLoading = isFilterActive ? searchLoading && displayedPosts.length === 0 : loadingPosts;
+
+  useEffect(() => {
+    if (!isFilterActive) return;
+    if (!searchResults.length) return;
+    if (searchPage === clampedSearchPage) return;
+    setSearchPage(clampedSearchPage);
+  }, [isFilterActive, searchResults.length, clampedSearchPage, searchPage]);
 
   useEffect(() => {
     if (!showTags) return;
@@ -945,17 +941,13 @@ function CreatorPage({
     activeTags.length > 0
       ? `${activeTags.length} tag${activeTags.length === 1 ? "" : "s"}`
       : `"${normalizedFilter}"`;
-  const pageDescriptor = `page ${Math.max(searchPage, 1)}`;
+  const totalLabel = searchCapped ? `${totalFilteredPosts}+` : `${totalFilteredPosts}`;
   const summaryLabel = isFilterActive
     ? listLoading
-      ? `Filtering ${filterDescriptor} (${pageDescriptor})...`
-      : displayedPosts.length === 0
-        ? searchExhausted
-          ? `No posts match ${filterDescriptor} (${pageDescriptor}).`
-          : `No posts match ${filterDescriptor} yet (${pageDescriptor}).`
-        : searchExhausted
-          ? `Page ${Math.max(searchPage, 1)}: ${displayedPosts.length} posts match ${filterDescriptor}`
-          : `Page ${Math.max(searchPage, 1)}: ${displayedPosts.length} posts match ${filterDescriptor} (more available)`
+      ? `Filtering ${filterDescriptor}...`
+      : totalFilteredPosts === 0
+        ? `No posts match ${filterDescriptor}.`
+        : `Page ${clampedSearchPage} of ${filteredTotalPages} • ${totalLabel} post${totalFilteredPosts === 1 ? "" : "s"} match ${filterDescriptor}${searchCapped ? ` (showing first ${MAX_SEARCH_RESULTS})` : ""}`
     : loadingPosts
       ? "Loading..."
       : `Showing ${posts.length} items`;
@@ -986,43 +978,34 @@ function CreatorPage({
 
   const goToSearchPage = (page) => {
     setSearchPage((prev) => {
-      const next = Math.max(1, page);
-      if (!Number.isFinite(next)) return prev;
-      if (next === prev) return prev;
-      return next;
+      const nextNumeric = Number.isFinite(page) ? Math.trunc(page) : prev;
+      const next = Math.min(Math.max(nextNumeric || 1, 1), filteredTotalPages || 1);
+      return next === prev ? prev : next;
     });
   };
 
-  const maxLoadedSearchPage = isFilterActive ? Math.max(1, Math.ceil(Math.max(searchResults.length, 1) / effectiveLimit)) : 1;
-  const filterHasPrev = isFilterActive ? searchPage > 1 : false;
-  const filterHasNext = isFilterActive
-    ? searchExhausted
-      ? searchPage < maxLoadedSearchPage
-      : true
-    : false;
-  const filteredTotalPages = isFilterActive
-    ? searchExhausted
-      ? maxLoadedSearchPage
-      : Math.max(maxLoadedSearchPage + 1, searchPage + 1)
-    : 1;
+  const filterHasPrev = isFilterActive ? clampedSearchPage > 1 : false;
+  const filterHasNext = isFilterActive ? clampedSearchPage < filteredTotalPages : false;
 
   const paginationState = isFilterActive
-    ? searchResults.length === 0 && (searchLoading || searchExhausted)
-      ? null
-      : {
-          currentPage: searchPage,
+    ? filteredTotalPages > 1
+      ? {
+          currentPage: clampedSearchPage,
           totalPages: filteredTotalPages,
           hasPrev: filterHasPrev,
           hasNext: filterHasNext,
           goTo: goToSearchPage,
         }
-    : {
-        currentPage,
-        totalPages,
-        hasPrev,
-        hasNext,
-        goTo: goToPage,
-      };
+      : null
+    : totalPages > 1
+      ? {
+          currentPage,
+          totalPages,
+          hasPrev,
+          hasNext,
+          goTo: goToPage,
+        }
+      : null;
 
   const renderPagination = () => {
     if (!paginationState) return null;
@@ -1326,9 +1309,6 @@ function CreatorPage({
           <div className="muted empty-state">
             {isFilterActive ? "No posts match your filter yet." : "No posts found for this page."}
           </div>
-        )}
-        {isFilterActive && !listLoading && searchExhausted && searchResults.length > 0 && searchPage >= maxLoadedSearchPage && (
-          <div className="muted small">End of filtered results.</div>
         )}
         {renderPagination()}
       </section>
