@@ -417,6 +417,56 @@ body {
   margin: 0;
 }
 
+.filter-row {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.filter-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.filter-fields {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.filter-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-muted);
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+  cursor: pointer;
+}
+
+.filter-field input {
+  accent-color: var(--accent);
+  margin: 0;
+}
+
+.filter-field:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.filter-field-active {
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--accent);
+}
+
 .search-field {
   display: flex;
   align-items: center;
@@ -1015,6 +1065,24 @@ body {
   .search-footer {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .filter-row {
+    gap: 12px;
+  }
+
+  .filter-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .filter-fields {
+    justify-content: flex-start;
+  }
+
+  .filter-field {
+    justify-content: flex-start;
   }
 
   .pagination-pages {

@@ -479,12 +479,31 @@ function CreatorPage({
   const [searchNextOffset, setSearchNextOffset] = useState(0);
   const [searchExhausted, setSearchExhausted] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
+  const filterStorageKey = `kemono.filterFields.${service}.${creatorId}`;
+  const getDefaultFilterFields = () => ({ title: true, tags: true, body: true });
+  const loadStoredFilterFields = () => {
+    if (typeof window === "undefined" || !window.localStorage) return getDefaultFilterFields();
+    try {
+      const stored = window.localStorage.getItem(filterStorageKey);
+      if (!stored) return getDefaultFilterFields();
+      const parsed = JSON.parse(stored);
+      return {
+        title: parsed?.title !== undefined ? Boolean(parsed.title) : true,
+        tags: parsed?.tags !== undefined ? Boolean(parsed.tags) : true,
+        body: parsed?.body !== undefined ? Boolean(parsed.body) : true,
+      };
+    } catch {
+      return getDefaultFilterFields();
+    }
+  };
+  const [filterFields, setFilterFields] = useState(loadStoredFilterFields);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [loadingPosts, setLoadingPosts] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [compactPagination, setCompactPagination] = useState(false);
   const searchTokenRef = useRef(0);
+  const prevFilterStorageKeyRef = useRef(filterStorageKey);
 
   useEffect(
     () => () => {
@@ -492,6 +511,20 @@ function CreatorPage({
     },
     [],
   );
+
+  useEffect(() => {
+    setFilterFields((prev) => {
+      const stored = loadStoredFilterFields();
+      if (
+        prev.title === stored.title &&
+        prev.tags === stored.tags &&
+        prev.body === stored.body
+      ) {
+        return prev;
+      }
+      return stored;
+    });
+  }, [service, creatorId]);
 
   useEffect(() => {
     let alive = true;
@@ -513,6 +546,35 @@ function CreatorPage({
       // ignore
     }
   }, [showExcerpts]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.localStorage) return;
+    const storageKeyChanged = prevFilterStorageKeyRef.current !== filterStorageKey;
+    if (storageKeyChanged) {
+      prevFilterStorageKeyRef.current = filterStorageKey;
+      return;
+    }
+    prevFilterStorageKeyRef.current = filterStorageKey;
+    const storedSnapshot = loadStoredFilterFields();
+    if (
+      storedSnapshot.title === filterFields.title &&
+      storedSnapshot.tags === filterFields.tags &&
+      storedSnapshot.body === filterFields.body
+    ) {
+      return;
+    }
+    try {
+      window.localStorage.setItem(filterStorageKey, JSON.stringify(filterFields));
+    } catch {
+      // ignore persistence failures
+    }
+  }, [filterStorageKey, filterFields]);
+
+  useEffect(() => {
+    const trimmed = typeof activeFilter === "string" ? activeFilter.trim() : "";
+    if (!trimmed) return;
+    runSearch({ query: trimmed, append: false, pageSize: limit });
+  }, [filterFields.title, filterFields.tags, filterFields.body, limit, activeFilter]);
 
   useEffect(() => {
     const trimmedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
@@ -539,8 +601,23 @@ function CreatorPage({
     if (!trimmed) return;
 
     const desiredPageSize = pageSize ?? limit;
+    const normalizedFields = {
+      title: Boolean(filterFields.title),
+      tags: Boolean(filterFields.tags),
+      body: Boolean(filterFields.body),
+    };
+    if (!normalizedFields.title && !normalizedFields.tags && !normalizedFields.body) {
+      normalizedFields.title = true;
+      normalizedFields.tags = true;
+      normalizedFields.body = true;
+      setFilterFields({ ...normalizedFields });
+    }
     const token = (searchTokenRef.current += 1);
     const encodedQuery = encodeURIComponent(trimmed);
+    const filterBody = normalizedFields.body ? "true" : "false";
+    const filterTitle = normalizedFields.title ? "true" : "false";
+    const filterTags = normalizedFields.tags ? "true" : "false";
+    const fieldParams = `&title=${filterTitle}&tags=${filterTags}&body=${filterBody}`;
     let workingResults = append ? [...searchResults] : [];
     let offset = append ? searchNextOffset : 0;
     let exhausted = append ? searchExhausted : false;
@@ -558,7 +635,7 @@ function CreatorPage({
     try {
       while (workingResults.length < targetCount && !exhausted) {
         const chunk = await fetchJson(
-          `${API_BASE}/${service}/user/${creatorId}/posts?o=${offset}&n=${API_PAGE_SIZE}&q=${encodedQuery}`,
+          `${API_BASE}/${service}/user/${creatorId}/posts?o=${offset}&n=${API_PAGE_SIZE}&q=${encodedQuery}${fieldParams}`,
         );
         if (token !== searchTokenRef.current) return;
         if (!Array.isArray(chunk) || chunk.length === 0) {
@@ -601,7 +678,6 @@ function CreatorPage({
         onUpdateFilter("");
       } else {
         searchTokenRef.current += 1;
-        setSearchQuery("");
         setSearchResults([]);
         setSearchDisplayCount(0);
         setSearchNextOffset(0);
@@ -617,9 +693,24 @@ function CreatorPage({
     onUpdateFilter(trimmed);
   };
 
+  const updateFilterField = (field, checked) => {
+    setFilterFields((prev) => {
+      if (prev[field] === checked) return prev;
+      const next = { ...prev, [field]: checked };
+      if (!next.title && !next.tags && !next.body) {
+        return { ...next, [field]: true };
+      }
+      return next;
+    });
+  };
+
   const handleSearchClear = () => {
     onUpdateFilter("");
     setSearchInput("");
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.removeItem(filterStorageKey);
+    }
+    setFilterFields(getDefaultFilterFields());
   };
 
   const handleSearchLoadMore = () => {
@@ -669,27 +760,27 @@ function CreatorPage({
           if (Array.isArray(data) && data.length) {
             acc.push(...data);
           }
-          return acc;
-        }, []);
+      return acc;
+    }, []);
 
-        const sliceStart = start - chunkOffsets[0];
-        const slice = combined.slice(sliceStart, sliceStart + requested);
-        setPosts(slice);
+    const sliceStart = start - chunkOffsets[0];
+    const slice = combined.slice(sliceStart, sliceStart + requested);
+    setPosts(slice);
 
-        const lastResponse = responses[responses.length - 1];
-        const lastChunkLength = Array.isArray(lastResponse) ? lastResponse.length : 0;
-        const availableFromStart = Math.max(0, combined.length - sliceStart);
-        const hasMore = availableFromStart > slice.length || lastChunkLength === API_PAGE_SIZE;
-        setHasNextPage(hasMore);
-        setLoadingPosts(false);
-      })
-      .catch((error) => {
-        console.error("Failed to load posts", error);
-        if (!alive) return;
-        setPosts([]);
-        setHasNextPage(false);
-        setLoadingPosts(false);
-      });
+    const lastResponse = responses[responses.length - 1];
+    const lastChunkLength = Array.isArray(lastResponse) ? lastResponse.length : 0;
+    const availableFromStart = Math.max(0, combined.length - sliceStart);
+    const hasMore = availableFromStart > slice.length || lastChunkLength === API_PAGE_SIZE;
+    setHasNextPage(hasMore);
+    setLoadingPosts(false);
+  })
+  .catch((error) => {
+      console.error("Failed to load posts", error);
+      if (!alive) return;
+      setPosts([]);
+      setHasNextPage(false);
+      setLoadingPosts(false);
+    });
 
     return () => {
       alive = false;
@@ -890,28 +981,6 @@ function CreatorPage({
             <span className="label">{summaryLabel}</span>
           </div>
           <div className="controls">
-            <form className="search-form" onSubmit={handleSearchSubmit}>
-              <label className="label" htmlFor="post-search">
-                Filter
-              </label>
-              <div className="search-field">
-                <input
-                  id="post-search"
-                  className="search-input"
-                  value={searchInput}
-                  onChange={(event) => setSearchInput(event.target.value)}
-                  placeholder="Filter by title, tag, or text"
-                />
-                {(searchInput || isFilterActive) && (
-                  <button className="search-clear" type="button" onClick={handleSearchClear} disabled={searchLoading}>
-                    Clear
-                  </button>
-                )}
-                <button className="search-submit" type="submit" disabled={searchLoading}>
-                  {searchLoading ? "Filtering..." : "Apply filter"}
-                </button>
-              </div>
-            </form>
             <label className="label" htmlFor="show-excerpts">
               Show excerpts
             </label>
@@ -947,6 +1016,65 @@ function CreatorPage({
                 </option>
               ))}
             </select>
+          </div>
+        </div>
+        <div className="filter-row">
+          <form className="search-form" onSubmit={handleSearchSubmit}>
+            <label className="label" htmlFor="post-search">
+              Filter
+            </label>
+            <div className="search-field">
+              <input
+                id="post-search"
+                className="search-input"
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+                placeholder="Filter by title, tag, or text"
+              />
+              {(searchInput || isFilterActive) && (
+                <button className="search-clear" type="button" onClick={handleSearchClear} disabled={searchLoading}>
+                  Clear
+                </button>
+              )}
+              <button className="search-submit" type="submit" disabled={searchLoading}>
+                {searchLoading ? "Filtering..." : "Apply filter"}
+              </button>
+            </div>
+          </form>
+          <div className="filter-controls">
+            <span className="label">Match fields</span>
+            <div className="filter-fields">
+              <label
+                className={`filter-field${filterFields.title ? " filter-field-active" : ""}`}
+                htmlFor="filter-title"
+              >
+                <input
+                  id="filter-title"
+                  type="checkbox"
+                  checked={filterFields.title}
+                  onChange={(event) => updateFilterField("title", event.target.checked)}
+                />
+                Title
+              </label>
+              <label className={`filter-field${filterFields.tags ? " filter-field-active" : ""}`} htmlFor="filter-tags">
+                <input
+                  id="filter-tags"
+                  type="checkbox"
+                  checked={filterFields.tags}
+                  onChange={(event) => updateFilterField("tags", event.target.checked)}
+                />
+                Tags
+              </label>
+              <label className={`filter-field${filterFields.body ? " filter-field-active" : ""}`} htmlFor="filter-body">
+                <input
+                  id="filter-body"
+                  type="checkbox"
+                  checked={filterFields.body}
+                  onChange={(event) => updateFilterField("body", event.target.checked)}
+                />
+                Body text
+              </label>
+            </div>
           </div>
         </div>
         {renderPagination()}
@@ -1000,6 +1128,30 @@ function PostView({ service, creatorId, creatorName, postId, activeFilter, onBac
   const [post, setPost] = useState(null);
   const [loading, setLoading] = useState(true);
   const [neighbors, setNeighbors] = useState({ newerId: null, olderId: null });
+  const getStoredFilterFields = () => {
+    const defaults = { title: true, tags: true, body: true };
+    if (typeof window === "undefined" || !window.localStorage) return defaults;
+    try {
+      const stored = window.localStorage.getItem(`kemono.filterFields.${service}.${creatorId}`);
+      if (!stored) return defaults;
+      const parsed = JSON.parse(stored);
+      const fields = {
+        title: parsed?.title !== undefined ? Boolean(parsed.title) : true,
+        tags: parsed?.tags !== undefined ? Boolean(parsed.tags) : true,
+        body: parsed?.body !== undefined ? Boolean(parsed.body) : true,
+      };
+      if (!fields.title && !fields.tags && !fields.body) {
+        return defaults;
+      }
+      return fields;
+    } catch {
+      return defaults;
+    }
+  };
+  const buildFieldQueryParams = () => {
+    const fields = getStoredFilterFields();
+    return `&title=${fields.title ? "true" : "false"}&tags=${fields.tags ? "true" : "false"}&body=${fields.body ? "true" : "false"}`;
+  };
 
   useEffect(() => {
     let alive = true;
@@ -1020,6 +1172,7 @@ function PostView({ service, creatorId, creatorName, postId, activeFilter, onBac
 
     const trimmedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
     const queryParam = trimmedFilter ? `&q=${encodeURIComponent(trimmedFilter)}` : "";
+    const fieldParams = trimmedFilter ? buildFieldQueryParams() : "";
 
     const resolveNeighbors = async () => {
       let offset = 0;
@@ -1028,7 +1181,7 @@ function PostView({ service, creatorId, creatorName, postId, activeFilter, onBac
       try {
         while (alive) {
           const chunk = await fetchJson(
-            `${API_BASE}/${service}/user/${creatorId}/posts?o=${offset}&n=${API_PAGE_SIZE}${queryParam}`,
+            `${API_BASE}/${service}/user/${creatorId}/posts?o=${offset}&n=${API_PAGE_SIZE}${queryParam}${fieldParams}`,
           );
           if (!alive) return;
           if (!Array.isArray(chunk) || chunk.length === 0) break;
@@ -1048,7 +1201,7 @@ function PostView({ service, creatorId, creatorName, postId, activeFilter, onBac
               olderId = chunk[idx + 1]?.id ?? null;
             } else if (chunk.length === API_PAGE_SIZE) {
               const nextChunk = await fetchJson(
-                `${API_BASE}/${service}/user/${creatorId}/posts?o=${offset + API_PAGE_SIZE}&n=${API_PAGE_SIZE}${queryParam}`,
+                `${API_BASE}/${service}/user/${creatorId}/posts?o=${offset + API_PAGE_SIZE}&n=${API_PAGE_SIZE}${queryParam}${fieldParams}`,
               );
               if (!alive) return;
               if (Array.isArray(nextChunk) && nextChunk.length > 0) {
