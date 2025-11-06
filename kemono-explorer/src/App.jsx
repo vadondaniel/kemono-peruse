@@ -502,15 +502,6 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onBack, on
 
   return (
     <div className="page">
-      <div className="page-bar">
-        <button className="link back-link" onClick={onBack}>
-          {"< Back"}
-        </button>
-        <span className="muted small">
-          {service} - {creatorId}
-        </span>
-      </div>
-
       <section className="card hero">
         <div className="hero-body">
           <div>
@@ -651,11 +642,6 @@ function PostView({ service, creatorId, creatorName, postId, onBack, onNavigate 
   if (loading) {
     return (
       <div className="page">
-        <div className="page-bar">
-          <button className="link back-link" onClick={onBack}>
-            {"< Back"}
-          </button>
-        </div>
         <div className="card">
           <p className="muted">Loading post...</p>
         </div>
@@ -666,11 +652,6 @@ function PostView({ service, creatorId, creatorName, postId, onBack, onNavigate 
   if (!post) {
     return (
       <div className="page">
-        <div className="page-bar">
-          <button className="link back-link" onClick={onBack}>
-            {"< Back"}
-          </button>
-        </div>
         <div className="card">
           <p className="muted">This post could not be loaded.</p>
         </div>
@@ -684,15 +665,6 @@ function PostView({ service, creatorId, creatorName, postId, onBack, onNavigate 
 
   return (
     <div className="page">
-      <div className="page-bar">
-        <button className="link back-link" onClick={onBack}>
-          {"< Back"}
-        </button>
-        <span className="muted small">
-          {service} - {creatorName || creatorId}
-        </span>
-      </div>
-
       <article className="card post-card">
         <div className="post-nav">
           <button
