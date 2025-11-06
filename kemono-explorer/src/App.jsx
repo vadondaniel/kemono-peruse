@@ -675,6 +675,8 @@ function CreatorPage({
   const [searchPage, setSearchPage] = useState(1);
   const [searchCapped, setSearchCapped] = useState(false);
   const filterStorageKey = `kemono.filterFields.${service}.${creatorId}`;
+  const reversePrefKey = `kemono.reverseOrder.${service}.${creatorId}`;
+  const [reverseOrder, setReverseOrder] = useState(() => readBooleanPreference(reversePrefKey, false));
   const updateCache = useCallback(
     (updater, { updateTimestamp = true } = {}) => {
       setCacheData((prev) => {
@@ -732,7 +734,8 @@ function CreatorPage({
     setUseCache(readBooleanPreference(cachePrefKey, false));
     setCacheData(loadCreatorCache(service, creatorId));
     setCacheReloadApplied(0);
-  }, [cachePrefKey, service, creatorId]);
+    setReverseOrder(readBooleanPreference(reversePrefKey, false));
+  }, [cachePrefKey, service, creatorId, reversePrefKey]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -742,6 +745,15 @@ function CreatorPage({
       // ignore preference persistence failures
     }
   }, [useCache, cachePrefKey]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(reversePrefKey, reverseOrder ? "true" : "false");
+    } catch {
+      // ignore persistence failures
+    }
+  }, [reverseOrder, reversePrefKey]);
 
   useEffect(() => {
     if (!useCache) return;
@@ -1213,6 +1225,7 @@ function CreatorPage({
   const pageStart = isFilterActive ? Math.max(0, (clampedSearchPage - 1) * effectiveLimit) : 0;
   const displayedPosts = isFilterActive ? searchResults.slice(pageStart, pageStart + effectiveLimit) : posts;
   const listLoading = isFilterActive ? searchLoading && displayedPosts.length === 0 : loadingPosts;
+  const orderedPosts = reverseOrder ? [...displayedPosts].reverse() : displayedPosts;
   const cacheUpdatedAt = useCache && cacheData?.updatedAt ? cacheData.updatedAt : null;
   const cacheUpdatedStamp = cacheUpdatedAt ? formatDate(cacheUpdatedAt) : null;
   const cacheUpdatedLabel = cacheUpdatedStamp
@@ -1550,6 +1563,18 @@ function CreatorPage({
               </span>
               Cache data
             </label>
+            <label className={`filter-toggle${reverseOrder ? " filter-toggle-active" : ""}`} htmlFor="reverse-order">
+              <input
+                id="reverse-order"
+                type="checkbox"
+                checked={reverseOrder}
+                onChange={(event) => setReverseOrder(event.target.checked)}
+              />
+              <span className="filter-toggle-track">
+                <span className="filter-toggle-thumb" />
+              </span>
+              Reverse order
+            </label>
             <label className="label" htmlFor="page-size">
               Page size
             </label>
@@ -1641,7 +1666,7 @@ function CreatorPage({
         </div>
         {renderPagination()}
         <div className="post-list">
-          {displayedPosts.map((post) => {
+          {orderedPosts.map((post) => {
             const excerptHtml = showExcerpts ? getPostExcerptHtml(post) : null;
             const postTags = Array.isArray(post.tags) ? post.tags : postTagMap[post.id];
             const normalizedTags = Array.isArray(postTags) ? postTags : [];
