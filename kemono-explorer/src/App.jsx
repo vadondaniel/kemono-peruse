@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import "./App.css";
 
 const rawApiBase = import.meta.env.VITE_API_BASE || "/api/proxy/kemono";
@@ -423,11 +423,26 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
     }
     return true;
   });
+  const [searchInput, setSearchInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchDisplayCount, setSearchDisplayCount] = useState(0);
+  const [searchNextOffset, setSearchNextOffset] = useState(0);
+  const [searchExhausted, setSearchExhausted] = useState(false);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [loadingPosts, setLoadingPosts] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [compactPagination, setCompactPagination] = useState(false);
+  const searchTokenRef = useRef(0);
+
+  useEffect(
+    () => () => {
+      searchTokenRef.current += 1;
+    },
+    [],
+  );
 
   useEffect(() => {
     let alive = true;
@@ -449,6 +464,115 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
       // ignore
     }
   }, [showExcerpts]);
+
+  useEffect(() => {
+    searchTokenRef.current += 1;
+    setSearchInput("");
+    setSearchQuery("");
+    setSearchResults([]);
+    setSearchDisplayCount(0);
+    setSearchNextOffset(0);
+    setSearchExhausted(false);
+    setSearchLoading(false);
+  }, [service, creatorId]);
+
+  const runSearch = async ({ query, append = false, pageSize } = {}) => {
+    const trimmed = (query || "").trim();
+    if (!trimmed) return;
+
+    const desiredPageSize = pageSize ?? limit;
+    const token = (searchTokenRef.current += 1);
+    const encodedQuery = encodeURIComponent(trimmed);
+    let workingResults = append ? [...searchResults] : [];
+    let offset = append ? searchNextOffset : 0;
+    let exhausted = append ? searchExhausted : false;
+    const targetCount = append ? searchDisplayCount + desiredPageSize : desiredPageSize;
+
+    if (!append) {
+      setSearchQuery(trimmed);
+      setSearchResults([]);
+      setSearchDisplayCount(0);
+      setSearchNextOffset(0);
+      setSearchExhausted(false);
+    }
+
+    setSearchLoading(true);
+
+    try {
+      while (workingResults.length < targetCount && !exhausted) {
+        const chunk = await fetchJson(
+          `${API_BASE}/${service}/user/${creatorId}/posts?o=${offset}&n=${API_PAGE_SIZE}&q=${encodedQuery}`,
+        );
+        if (token !== searchTokenRef.current) return;
+        if (!Array.isArray(chunk) || chunk.length === 0) {
+          exhausted = true;
+          break;
+        }
+        workingResults = workingResults.concat(chunk);
+        offset += API_PAGE_SIZE;
+        if (chunk.length < API_PAGE_SIZE) {
+          exhausted = true;
+        }
+      }
+
+      if (token !== searchTokenRef.current) return;
+
+      const nextDisplayCount = Math.min(targetCount, workingResults.length);
+
+      setSearchQuery(trimmed);
+      setSearchResults(workingResults);
+      setSearchDisplayCount(nextDisplayCount);
+      setSearchNextOffset(offset);
+      setSearchExhausted(exhausted);
+    } catch (error) {
+      console.error("Post search failed", error);
+      if (token !== searchTokenRef.current) return;
+      setSearchExhausted(true);
+    } finally {
+      if (token === searchTokenRef.current) {
+        setSearchLoading(false);
+      }
+    }
+  };
+
+  const handleSearchSubmit = (event) => {
+    event.preventDefault();
+    const trimmed = searchInput.trim();
+    if (!trimmed) {
+      searchTokenRef.current += 1;
+      setSearchInput("");
+      setSearchQuery("");
+      setSearchResults([]);
+      setSearchDisplayCount(0);
+      setSearchNextOffset(0);
+      setSearchExhausted(false);
+      setSearchLoading(false);
+      return;
+    }
+    setSearchInput(trimmed);
+    runSearch({ query: trimmed, append: false });
+  };
+
+  const handleSearchClear = () => {
+    searchTokenRef.current += 1;
+    setSearchInput("");
+    setSearchQuery("");
+    setSearchResults([]);
+    setSearchDisplayCount(0);
+    setSearchNextOffset(0);
+    setSearchExhausted(false);
+    setSearchLoading(false);
+  };
+
+  const handleSearchLoadMore = () => {
+    if (!searchQuery || searchLoading) return;
+    const targetCount = searchDisplayCount + limit;
+    if (searchResults.length >= targetCount) {
+      setSearchDisplayCount(Math.min(targetCount, searchResults.length));
+      return;
+    }
+    runSearch({ query: searchQuery, append: true });
+  };
 
   useEffect(() => {
     let alive = true;
@@ -519,6 +643,20 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
   const totalPages = derivedTotalPages ?? currentPage + (hasNext ? 1 : 0);
   const avatarUrl = `https://img.kemono.cr/icons/${service}/${creatorId}`;
   const serviceLabel = getServiceLabel(service);
+  const isSearchActive = !!searchQuery;
+  const displayedPosts = isSearchActive ? searchResults.slice(0, Math.max(0, searchDisplayCount)) : posts;
+  const listLoading = isSearchActive ? searchLoading && displayedPosts.length === 0 : loadingPosts;
+  const summaryLabel = isSearchActive
+    ? listLoading
+      ? `Searching "${searchQuery}"...`
+      : displayedPosts.length === 0
+        ? `No matches for "${searchQuery}" yet`
+        : searchExhausted
+          ? `${displayedPosts.length} matches found`
+          : `Showing ${displayedPosts.length} matches (more available)`
+    : loadingPosts
+      ? "Loading..."
+      : `Showing ${posts.length} items`;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -545,6 +683,7 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
   }
 
   const renderPagination = () => {
+    if (isSearchActive) return null;
     if (totalPages <= 1) return null;
 
     const pages = [];
@@ -681,11 +820,37 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
         <div className="card-row header-row">
           <div className="card-col">
             <h3 className="title">Recent posts</h3>
-            <span className="label">
-              {loadingPosts ? "Loading..." : `Showing ${posts.length} items`}
-            </span>
+            <span className="label">{summaryLabel}</span>
           </div>
           <div className="controls">
+            <form className="search-form" onSubmit={handleSearchSubmit}>
+              <label className="label" htmlFor="post-search">
+                Search
+              </label>
+              <div className="search-field">
+                <input
+                  id="post-search"
+                  className="search-input"
+                  value={searchInput}
+                  onChange={(event) => setSearchInput(event.target.value)}
+                  placeholder="Title, tag, or text"
+                />
+                {searchInput ? (
+                  <button
+                    className="search-clear"
+                    type="button"
+                    onClick={handleSearchClear}
+                    disabled={searchLoading}
+                    aria-label="Clear search"
+                  >
+                    <span aria-hidden="true">&times;</span>
+                  </button>
+                ) : null}
+                <button className="search-submit" type="submit" disabled={searchLoading}>
+                  {searchLoading ? "Searching..." : "Search"}
+                </button>
+              </div>
+            </form>
             <label className="label" htmlFor="show-excerpts">
               Show excerpts
             </label>
@@ -725,7 +890,7 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
         </div>
         {renderPagination()}
         <div className="post-list">
-          {posts.map((post) => (
+          {displayedPosts.map((post) => (
             <button className="post-item" key={post.id} type="button" onClick={() => onOpenPost(post.id)}>
               <div className="post-body">
                 <div className="post-head">
@@ -747,10 +912,23 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
               </div>
             </button>
           ))}
-          {!loadingPosts && posts.length === 0 && (
-            <div className="muted empty-state">No posts found for this page.</div>
-          )}
         </div>
+        {!listLoading && displayedPosts.length === 0 && (
+          <div className="muted empty-state">
+            {isSearchActive ? "No posts match your search yet." : "No posts found for this page."}
+          </div>
+        )}
+        {isSearchActive && displayedPosts.length > 0 && (
+          <div className="search-footer">
+            {!searchExhausted ? (
+              <button className="btn ghost" type="button" onClick={handleSearchLoadMore} disabled={searchLoading}>
+                {searchLoading ? "Searching..." : "Load more matches"}
+              </button>
+            ) : (
+              <span className="muted small">End of search results.</span>
+            )}
+          </div>
+        )}
         {renderPagination()}
       </section>
     </div>
