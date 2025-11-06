@@ -18,13 +18,38 @@ async function fetchJson(url) {
 }
 
 function formatDate(ts) {
-  if (!ts) return "-";
+  if (!ts) return { date: "—", time: "" };
   try {
     const d = new Date(ts);
-    return d.toLocaleString();
+    const locale =
+      typeof navigator !== "undefined"
+        ? navigator.languages?.[0] || navigator.language || "en-GB"
+        : "en-GB";
+    const dateFormatter = new Intl.DateTimeFormat(locale, {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    });
+    const timeFormatter = new Intl.DateTimeFormat(locale, {
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    });
+    return { date: dateFormatter.format(d), time: timeFormatter.format(d) };
   } catch {
-    return ts;
+    return { date: typeof ts === "string" ? ts : "—", time: "" };
   }
+}
+
+function Timestamp({ value, prefix }) {
+  const { date, time } = formatDate(value);
+  if (!date) return null;
+  return (
+    <span className="timestamp">
+      <span className="timestamp-date">{prefix ? `${prefix} ${date}` : date}</span>
+      {time ? <span className="timestamp-time">{time}</span> : null}
+    </span>
+  );
 }
 
 function App() {
@@ -485,7 +510,7 @@ function CreatorPage({ service, creatorId, creatorName, onBack, onOpenPost, onSa
               <div className="post-body">
                 <div className="post-head">
                   <span className="post-title">{post.title || post.id}</span>
-                  <span className="muted small">{formatDate(post.published)}</span>
+                  <Timestamp value={post.published} />
                 </div>
                 {Array.isArray(post.tags) && post.tags.length > 0 && (
                   <div className="tag-row">
@@ -624,7 +649,7 @@ function PostView({ service, creatorId, creatorName, postId, onBack, onNavigate 
         </div>
         <header className="post-header">
           <h2 className="title">{post.title || post.id}</h2>
-          <span className="muted small">Published {formatDate(post.published)}</span>
+          <Timestamp value={post.published} prefix="Published" />
         </header>
 
         {attachments.length > 0 && (
@@ -677,7 +702,3 @@ function PostView({ service, creatorId, creatorName, postId, onBack, onNavigate 
 }
 
 export default App;
-
-
-
-
