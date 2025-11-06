@@ -596,9 +596,21 @@ function CreatorPage({
     runSearch({ query: trimmedFilter, append: false, pageSize: limit });
   }, [service, creatorId, activeFilter, limit, reloadKey]);
 
+  const extractTagTokens = (value) =>
+    String(value || "")
+      .split(",")
+      .map((token) => token.trim().toLowerCase())
+      .filter(Boolean);
+
   const runSearch = async ({ query, append = false, pageSize } = {}) => {
     const trimmed = (query || "").trim();
-    if (!trimmed) return;
+    const tagTokens = filterFields.tags ? extractTagTokens(trimmed) : [];
+    const textQueryEnabled = filterFields.title || filterFields.body;
+    const applyTextQuery = textQueryEnabled && (!filterFields.tags || tagTokens.length === 0);
+    const textQuery = applyTextQuery ? trimmed : "";
+    const hasQuery = textQuery.length > 0;
+    const hasTags = filterFields.tags && tagTokens.length > 0;
+    if (!hasQuery && !hasTags) return;
 
     const desiredPageSize = pageSize ?? limit;
     const normalizedFields = {
@@ -613,11 +625,15 @@ function CreatorPage({
       setFilterFields({ ...normalizedFields });
     }
     const token = (searchTokenRef.current += 1);
-    const encodedQuery = encodeURIComponent(trimmed);
+    const encodedQuery = hasQuery ? encodeURIComponent(textQuery.replace(/,/g, " ").trim()) : "";
     const filterBody = normalizedFields.body ? "true" : "false";
     const filterTitle = normalizedFields.title ? "true" : "false";
     const filterTags = normalizedFields.tags ? "true" : "false";
     const fieldParams = `&title=${filterTitle}&tags=${filterTags}&body=${filterBody}`;
+    const tagParams =
+      normalizedFields.tags && tagTokens.length > 0
+        ? tagTokens.map((tag) => `&tag=${encodeURIComponent(tag)}`).join("")
+        : "";
     let workingResults = append ? [...searchResults] : [];
     let offset = append ? searchNextOffset : 0;
     let exhausted = append ? searchExhausted : false;
@@ -635,7 +651,7 @@ function CreatorPage({
     try {
       while (workingResults.length < targetCount && !exhausted) {
         const chunk = await fetchJson(
-          `${API_BASE}/${service}/user/${creatorId}/posts?o=${offset}&n=${API_PAGE_SIZE}&q=${encodedQuery}${fieldParams}`,
+          `${API_BASE}/${service}/user/${creatorId}/posts?o=${offset}&n=${API_PAGE_SIZE}${hasQuery ? `&q=${encodedQuery}` : ""}${fieldParams}${tagParams}`,
         );
         if (token !== searchTokenRef.current) return;
         if (!Array.isArray(chunk) || chunk.length === 0) {
@@ -673,23 +689,20 @@ function CreatorPage({
     const trimmed = searchInput.trim();
     setSearchInput(trimmed);
     const currentFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
-    if (!trimmed) {
-      if (currentFilter) {
-        onUpdateFilter("");
-      } else {
-        searchTokenRef.current += 1;
-        setSearchResults([]);
-        setSearchDisplayCount(0);
-        setSearchNextOffset(0);
-        setSearchExhausted(false);
-        setSearchLoading(false);
-      }
+    const tagTokens = filterFields.tags ? extractTagTokens(trimmed) : [];
+    const hasTags = tagTokens.length > 0;
+    const hasQuery = trimmed.replace(/,/g, " ").trim().length > 0;
+
+    if (!hasQuery && !hasTags) {
+      handleSearchClear();
       return;
     }
+
     if (trimmed === currentFilter) {
       runSearch({ query: trimmed, append: false, pageSize: limit });
       return;
     }
+
     onUpdateFilter(trimmed);
   };
 
@@ -715,7 +728,9 @@ function CreatorPage({
 
   const handleSearchLoadMore = () => {
     const currentFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
-    if (!currentFilter || searchLoading) return;
+    const hasTags = filterFields.tags ? extractTagTokens(currentFilter).length > 0 : false;
+    if (!currentFilter && !hasTags) return;
+    if (searchLoading) return;
     const targetCount = searchDisplayCount + limit;
     if (searchResults.length >= targetCount) {
       setSearchDisplayCount(Math.min(targetCount, searchResults.length));
@@ -801,17 +816,18 @@ function CreatorPage({
   const avatarUrl = `https://img.kemono.cr/icons/${service}/${creatorId}`;
   const serviceLabel = getServiceLabel(service);
   const normalizedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
+  const activeTags = filterFields.tags ? extractTagTokens(normalizedFilter) : [];
   const isFilterActive = normalizedFilter.length > 0;
   const displayedPosts = isFilterActive ? searchResults.slice(0, Math.max(0, searchDisplayCount)) : posts;
   const listLoading = isFilterActive ? searchLoading && displayedPosts.length === 0 : loadingPosts;
   const summaryLabel = isFilterActive
     ? listLoading
-      ? `Filtering by "${normalizedFilter}"...`
+      ? `Filtering ${activeTags.length > 0 ? `${activeTags.length} tag${activeTags.length === 1 ? "" : "s"}` : `"${normalizedFilter}"`}...`
       : displayedPosts.length === 0
-        ? `No posts match "${normalizedFilter}" yet`
+        ? `No posts match ${activeTags.length > 0 ? `${activeTags.length} tag${activeTags.length === 1 ? "" : "s"}` : `"${normalizedFilter}"`} yet`
         : searchExhausted
-          ? `${displayedPosts.length} posts match "${normalizedFilter}"`
-          : `${displayedPosts.length} posts match "${normalizedFilter}" (more available)`
+          ? `${displayedPosts.length} posts match ${activeTags.length > 0 ? `${activeTags.length} tag${activeTags.length === 1 ? "" : "s"}` : `"${normalizedFilter}"`}`
+          : `${displayedPosts.length} posts match ${activeTags.length > 0 ? `${activeTags.length} tag${activeTags.length === 1 ? "" : "s"}` : `"${normalizedFilter}"`} (more available)`
     : loadingPosts
       ? "Loading..."
       : `Showing ${posts.length} items`;
@@ -1351,3 +1367,4 @@ function PostView({ service, creatorId, creatorName, postId, activeFilter, onBac
 }
 
 export default App;
+
