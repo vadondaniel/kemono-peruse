@@ -66,6 +66,53 @@ function App() {
     localStorage.setItem("kemono.savedCreators", JSON.stringify(savedCreators));
   }, [savedCreators]);
 
+  const getInitialThemeMode = () => {
+    if (typeof window !== "undefined" && window.localStorage) {
+      const stored = window.localStorage.getItem("kemono.theme");
+      if (stored === "light" || stored === "dark" || stored === "auto") return stored;
+    }
+    return "auto";
+  };
+
+  const [themeMode, setThemeMode] = useState(getInitialThemeMode);
+  const [systemTheme, setSystemTheme] = useState(() => {
+    if (typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches) {
+      return "dark";
+    }
+    return "light";
+  });
+  const activeTheme = themeMode === "auto" ? systemTheme : themeMode;
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.documentElement.setAttribute("data-theme", activeTheme);
+  }, [activeTheme]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.localStorage) {
+      window.localStorage.setItem("kemono.theme", themeMode);
+    }
+  }, [themeMode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleChange = (event) => setSystemTheme(event.matches ? "dark" : "light");
+    setSystemTheme(media.matches ? "dark" : "light");
+    if (media.addEventListener) {
+      media.addEventListener("change", handleChange);
+    } else {
+      media.addListener(handleChange);
+    }
+    return () => {
+      if (media.removeEventListener) {
+        media.removeEventListener("change", handleChange);
+      } else {
+        media.removeListener(handleChange);
+      }
+    };
+  }, []);
+
   const openCreator = (service, creatorId, creatorName) => {
     setView({ name: "creator", service, creatorId, creatorName });
   };
@@ -81,11 +128,28 @@ function App() {
     <div className="app-root">
       <header className="app-header">
         <div className="app-header-inner">
-          <h1 className="title">
-            <button className="brand-link" type="button" onClick={() => setView({ name: "home" })}>
-              Kemono Explorer
-            </button>
-          </h1>
+          <div className="header-top">
+            <h1 className="title">
+              <button className="brand-link" type="button" onClick={() => setView({ name: "home" })}>
+                Kemono Explorer
+              </button>
+            </h1>
+            <div className="theme-switcher">
+              <label className="theme-label" htmlFor="theme-select">
+                Theme
+              </label>
+              <select
+                id="theme-select"
+                className="theme-select"
+                value={themeMode}
+                onChange={(event) => setThemeMode(event.target.value)}
+              >
+                <option value="auto">Auto</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+            </div>
+          </div>
           <p className="muted">
             Browse kemono.cr with a tidy reader. Save creators you follow, scan their latest posts, and dive into content without leaving the page.
           </p>
@@ -403,7 +467,7 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onBack, on
         </div>
         <nav className="pagination">
           <button className="btn ghost" type="button" disabled={!hasPrev} onClick={() => goToPage(currentPage - 1)}>
-            {"←"}
+            &larr; Prev
           </button>
           <div className="pagination-pages">
             {pages.map((item) => {
@@ -429,7 +493,7 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onBack, on
             })}
           </div>
           <button className="btn ghost" type="button" disabled={!hasNext} onClick={() => goToPage(currentPage + 1)}>
-            {"→"}
+            Next &rarr;
           </button>
         </nav>
       </div>
@@ -637,7 +701,7 @@ function PostView({ service, creatorId, creatorName, postId, onBack, onNavigate 
             disabled={!neighbors.olderId}
             onClick={() => neighbors.olderId && onNavigate && onNavigate(neighbors.olderId)}
           >
-            {"← Prev"}
+            &larr; Prev
           </button>
           <button className="btn outline" type="button" onClick={onBack}>
             Posts
@@ -648,7 +712,7 @@ function PostView({ service, creatorId, creatorName, postId, onBack, onNavigate 
             disabled={!neighbors.newerId}
             onClick={() => neighbors.newerId && onNavigate && onNavigate(neighbors.newerId)}
           >
-            {"Next →"}
+            Next &rarr;
           </button>
         </div>
         <header className="post-header">
@@ -686,7 +750,7 @@ function PostView({ service, creatorId, creatorName, postId, onBack, onNavigate 
             disabled={!neighbors.olderId}
             onClick={() => neighbors.olderId && onNavigate && onNavigate(neighbors.olderId)}
           >
-            {"← Prev"}
+            &larr; Prev
           </button>
           <button className="btn outline" type="button" onClick={onBack}>
             Posts
@@ -697,7 +761,7 @@ function PostView({ service, creatorId, creatorName, postId, onBack, onNavigate 
             disabled={!neighbors.newerId}
             onClick={() => neighbors.newerId && onNavigate && onNavigate(neighbors.newerId)}
           >
-            {"Next →"}
+            Next &rarr;
           </button>
         </div>
       </article>
