@@ -414,6 +414,15 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
   const [posts, setPosts] = useState([]);
   const [offset, setOffset] = useState(0);
   const [limit, setLimit] = useState(50);
+  const [showExcerpts, setShowExcerpts] = useState(() => {
+    try {
+      const stored = localStorage.getItem("kemono.showExcerpts");
+      if (stored === "true" || stored === "false") return stored === "true";
+    } catch {
+      // ignore
+    }
+    return true;
+  });
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [loadingPosts, setLoadingPosts] = useState(true);
   const [reloadKey, setReloadKey] = useState(0);
@@ -432,6 +441,14 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
       alive = false;
     };
   }, [service, creatorId]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("kemono.showExcerpts", showExcerpts ? "true" : "false");
+    } catch {
+      // ignore
+    }
+  }, [showExcerpts]);
 
   useEffect(() => {
     let alive = true;
@@ -669,6 +686,22 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
             </span>
           </div>
           <div className="controls">
+            <label className="label" htmlFor="show-excerpts">
+              Show excerpts
+            </label>
+            <label className="toggle">
+              <input
+                id="show-excerpts"
+                className="toggle-input"
+                type="checkbox"
+                checked={showExcerpts}
+                onChange={(event) => setShowExcerpts(event.target.checked)}
+              />
+              <span className="toggle-track" aria-hidden="true">
+                <span className="toggle-thumb" />
+              </span>
+              <span className="toggle-label">{showExcerpts ? "On" : "Off"}</span>
+            </label>
             <label className="label" htmlFor="page-size">
               Page size
             </label>
@@ -708,7 +741,9 @@ function CreatorPage({ service, creatorId, creatorName, alreadySaved, onOpenPost
                     ))}
                   </div>
                 )}
-                {post.substring && <p className="excerpt" dangerouslySetInnerHTML={{ __html: post.substring }} />}
+                {showExcerpts && post.substring && (
+                  <p className="excerpt" dangerouslySetInnerHTML={{ __html: post.substring }} />
+                )}
               </div>
             </button>
           ))}
