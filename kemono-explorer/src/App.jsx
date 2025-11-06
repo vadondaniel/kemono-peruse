@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import "./App.css";
 
 const rawApiBase = import.meta.env.VITE_API_BASE || "/api/proxy/kemono";
@@ -6,6 +6,12 @@ const API_BASE = rawApiBase.endsWith("/") ? rawApiBase.slice(0, -1) : rawApiBase
 const MEDIA_BASE = `${API_BASE}/media`;
 const API_PAGE_SIZE = 50;
 const MAX_SEARCH_RESULTS = 1000;
+const MAX_CACHE_POSTS = 1000;
+const MAX_CACHE_POST_DETAILS = 100;
+const CACHE_VERSION = 1;
+const CACHE_MAX_AGE_MS = 1000 * 60 * 60 * 24;
+const CACHE_PREF_PREFIX = "kemono.cache.pref";
+const CACHE_DATA_PREFIX = "kemono.cache";
 
 const SERVICE_LABELS = {
   patreon: "Patreon",
@@ -15,6 +21,134 @@ const SERVICE_LABELS = {
   gumroad: "Gumroad",
   dlsite: "DLsite",
 };
+
+function getCachePreferenceKey(service, creatorId) {
+  return `${CACHE_PREF_PREFIX}.${service}.${creatorId}`;
+}
+
+function getCacheDataKey(service, creatorId) {
+  return `${CACHE_DATA_PREFIX}.${service}.${creatorId}`;
+}
+
+function readBooleanPreference(key, fallback = false) {
+  if (typeof window === "undefined") return fallback;
+  try {
+    const stored = window.localStorage.getItem(key);
+    if (stored === "true") return true;
+    if (stored === "false") return false;
+  } catch {
+    // ignore persistence issues
+  }
+  return fallback;
+}
+
+function loadCreatorCache(service, creatorId) {
+  if (typeof window === "undefined") return null;
+  const key = getCacheDataKey(service, creatorId);
+  try {
+    const stored = window.localStorage.getItem(key);
+    if (!stored) return null;
+    const parsed = JSON.parse(stored);
+    if (!parsed || parsed.version !== CACHE_VERSION) return null;
+    if (parsed.chunks && typeof parsed.chunks === "object") {
+      Object.keys(parsed.chunks).forEach((offset) => {
+        if (!Array.isArray(parsed.chunks[offset])) {
+          delete parsed.chunks[offset];
+        }
+      });
+    }
+    if (parsed.postDetails && typeof parsed.postDetails === "object") {
+      Object.keys(parsed.postDetails).forEach((postId) => {
+        const entry = parsed.postDetails[postId];
+        if (!entry || typeof entry !== "object" || !entry.data) {
+          delete parsed.postDetails[postId];
+        }
+      });
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeCreatorCache(service, creatorId, data) {
+  if (typeof window === "undefined") return;
+  const key = getCacheDataKey(service, creatorId);
+  if (!data) {
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      // ignore
+    }
+    return;
+  }
+  const payload = { version: CACHE_VERSION, ...data };
+  try {
+    window.localStorage.setItem(key, JSON.stringify(payload));
+  } catch (error) {
+    console.error("Failed to persist creator cache", error);
+  }
+}
+
+function isCacheFresh(cache) {
+  if (!cache || typeof cache.updatedAt !== "number") return false;
+  return Date.now() - cache.updatedAt < CACHE_MAX_AGE_MS;
+}
+
+function pruneCacheChunks(chunks) {
+  if (!chunks) return undefined;
+  const entries = Object.entries(chunks)
+    .map(([offset, value]) => ({ offset: Number(offset), value: Array.isArray(value) ? value : [] }))
+    .filter((entry) => entry.value.length > 0)
+    .sort((a, b) => a.offset - b.offset);
+  const pruned = {};
+  let stored = 0;
+  for (const entry of entries) {
+    if (stored >= MAX_CACHE_POSTS) break;
+    const remaining = MAX_CACHE_POSTS - stored;
+    pruned[String(entry.offset)] =
+      entry.value.length > remaining ? entry.value.slice(0, remaining) : entry.value.slice();
+    stored += pruned[String(entry.offset)].length;
+    if (entry.value.length < API_PAGE_SIZE) break;
+  }
+  return pruned;
+}
+
+function pruneCachePostDetails(details) {
+  if (!details) return undefined;
+  const entries = Object.entries(details)
+    .map(([postId, value]) => ({
+      postId,
+      data: value?.data,
+      updatedAt: typeof value?.updatedAt === "number" ? value.updatedAt : 0,
+    }))
+    .filter((entry) => entry.data)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+  const pruned = {};
+  entries.slice(0, MAX_CACHE_POST_DETAILS).forEach((entry) => {
+    pruned[entry.postId] = { data: entry.data, updatedAt: entry.updatedAt || Date.now() };
+  });
+  return pruned;
+}
+
+function collectCachedPosts(cache) {
+  if (!cache || !cache.chunks) return null;
+  const entries = Object.entries(cache.chunks)
+    .map(([offset, value]) => ({ offset: Number(offset), value: Array.isArray(value) ? value : [] }))
+    .filter((entry) => entry.value.length > 0)
+    .sort((a, b) => a.offset - b.offset);
+  if (!entries.length) return null;
+  const posts = [];
+  let expectedOffset = 0;
+  for (const entry of entries) {
+    if (entry.offset !== expectedOffset) return null;
+    posts.push(...entry.value);
+    if (entry.value.length < API_PAGE_SIZE) break;
+    expectedOffset += API_PAGE_SIZE;
+    if (posts.length >= MAX_CACHE_POSTS) break;
+  }
+  return posts.slice(0, MAX_CACHE_POSTS);
+}
 
 async function fetchJson(url) {
   try {
@@ -508,6 +642,10 @@ function CreatorPage({
   activeFilter,
   onUpdateFilter,
 }) {
+  const cachePrefKey = getCachePreferenceKey(service, creatorId);
+  const [useCache, setUseCache] = useState(() => readBooleanPreference(cachePrefKey, false));
+  const [cacheData, setCacheData] = useState(() => loadCreatorCache(service, creatorId));
+  const [cacheReloadApplied, setCacheReloadApplied] = useState(0);
   const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);
   const [offset, setOffset] = useState(0);
@@ -537,6 +675,33 @@ function CreatorPage({
   const [searchPage, setSearchPage] = useState(1);
   const [searchCapped, setSearchCapped] = useState(false);
   const filterStorageKey = `kemono.filterFields.${service}.${creatorId}`;
+  const updateCache = useCallback(
+    (updater, { updateTimestamp = true } = {}) => {
+      setCacheData((prev) => {
+        const base = prev && prev.version === CACHE_VERSION ? prev : { version: CACHE_VERSION };
+        const nextBase = typeof updater === "function" ? updater(base) : updater;
+        if (!nextBase) {
+          writeCreatorCache(service, creatorId, null);
+          return null;
+        }
+        const next = { ...base, ...nextBase, version: CACHE_VERSION };
+        if (updateTimestamp) {
+          next.updatedAt = Date.now();
+        } else if (typeof next.updatedAt !== "number") {
+          next.updatedAt = base.updatedAt ?? Date.now();
+        }
+        if (next.chunks) {
+          next.chunks = pruneCacheChunks(next.chunks);
+        }
+        if (next.postDetails) {
+          next.postDetails = pruneCachePostDetails(next.postDetails);
+        }
+        writeCreatorCache(service, creatorId, next);
+        return next;
+      });
+    },
+    [service, creatorId],
+  );
   const getDefaultFilterFields = () => ({ title: true, tags: true, body: true });
   const loadStoredFilterFields = () => {
     if (typeof window === "undefined" || !window.localStorage) return getDefaultFilterFields();
@@ -561,6 +726,27 @@ function CreatorPage({
   const [compactPagination, setCompactPagination] = useState(false);
   const searchTokenRef = useRef(0);
   const prevFilterStorageKeyRef = useRef(filterStorageKey);
+  const cacheFresh = useCache && cacheData ? isCacheFresh(cacheData) : false;
+
+  useEffect(() => {
+    setUseCache(readBooleanPreference(cachePrefKey, false));
+    setCacheData(loadCreatorCache(service, creatorId));
+    setCacheReloadApplied(0);
+  }, [cachePrefKey, service, creatorId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(cachePrefKey, useCache ? "true" : "false");
+    } catch {
+      // ignore preference persistence failures
+    }
+  }, [useCache, cachePrefKey]);
+
+  useEffect(() => {
+    if (!useCache) return;
+    setCacheData((prev) => (prev ? prev : loadCreatorCache(service, creatorId)));
+  }, [useCache, service, creatorId]);
 
   useEffect(
     () => () => {
@@ -585,16 +771,46 @@ function CreatorPage({
 
   useEffect(() => {
     let alive = true;
+    const cachedProfile = useCache && cacheData?.profile ? cacheData.profile : null;
+    if (cachedProfile) {
+      setProfile(cachedProfile);
+      setLoadingProfile(false);
+    } else {
+      setLoadingProfile(true);
+    }
+
+    const shouldFetch =
+      !useCache ||
+      !cachedProfile ||
+      !cacheFresh ||
+      cacheReloadApplied !== reloadKey;
+
+    if (!shouldFetch) {
+      return () => {
+        alive = false;
+      };
+    }
+
     setLoadingProfile(true);
     fetchJson(`${API_BASE}/${service}/user/${creatorId}/profile`).then((data) => {
       if (!alive) return;
       setProfile(data);
       setLoadingProfile(false);
+      if (useCache) {
+        if (data) {
+          updateCache((prev) => ({
+            ...prev,
+            profile: data,
+            totalPosts: typeof data?.post_count === "number" ? data.post_count : prev.totalPosts,
+          }));
+        }
+        setCacheReloadApplied(reloadKey);
+      }
     });
     return () => {
       alive = false;
     };
-  }, [service, creatorId]);
+  }, [service, creatorId, useCache, cacheData, cacheFresh, cacheReloadApplied, reloadKey, updateCache]);
 
   useEffect(() => {
     try {
@@ -693,6 +909,70 @@ function CreatorPage({
       normalizedFields.tags = true;
       normalizedFields.body = true;
       setFilterFields({ ...normalizedFields });
+    }
+
+    if (useCache && cacheFresh) {
+      const cachedPostsForSearch = collectCachedPosts(cacheData);
+      if (cachedPostsForSearch && cachedPostsForSearch.length > 0) {
+        const tokens = textQuery
+          ? textQuery
+              .toLowerCase()
+              .split(/\s+/)
+              .map((token) => token.trim())
+              .filter(Boolean)
+          : [];
+        const lowerTagTokens = tagTokens.map((token) => token.toLowerCase());
+        const results = cachedPostsForSearch.filter((post) => {
+          if (!post) return false;
+          if (lowerTagTokens.length > 0) {
+            const postTags = Array.isArray(post.tags)
+              ? post.tags.map((tag) => String(tag).toLowerCase())
+              : [];
+            const matchesAllTags = lowerTagTokens.every((token) => postTags.includes(token));
+            if (!matchesAllTags) return false;
+          }
+          if (tokens.length === 0) return true;
+          const haystacks = [];
+          if (normalizedFields.title) {
+            if (typeof post.title === "string") haystacks.push(post.title);
+            if (typeof post.id === "string") haystacks.push(post.id);
+          }
+          if (normalizedFields.body) {
+            const bodyCandidates = [
+              post.excerpt,
+              post.snippet,
+              post.summary,
+              post.match,
+              post.content,
+              post.body,
+              post.text,
+              post.description,
+            ];
+            bodyCandidates.forEach((candidate) => {
+              if (!candidate) return;
+              if (typeof candidate === "string") {
+                haystacks.push(candidate);
+              } else if (typeof candidate === "object") {
+                Object.values(candidate).forEach((value) => {
+                  if (typeof value === "string") {
+                    haystacks.push(value);
+                  }
+                });
+              }
+            });
+          }
+          if (haystacks.length === 0) return false;
+          const normalizedHaystacks = haystacks.map((value) => value.toLowerCase());
+          return tokens.every((token) => normalizedHaystacks.some((hay) => hay.includes(token)));
+        });
+        const capped = Boolean(
+          cacheData?.totalPosts && cacheData.totalPosts > cachedPostsForSearch.length,
+        );
+        setSearchResults(results);
+        setSearchCapped(capped);
+        setSearchLoading(false);
+        return;
+      }
     }
 
     const token = (searchTokenRef.current += 1);
@@ -805,10 +1085,8 @@ function CreatorPage({
       setLoadingPosts(false);
       return;
     }
-    let alive = true;
-    setLoadingPosts(true);
-    setHasNextPage(false);
 
+    let alive = true;
     const start = offset;
     const requested = limit > 0 ? limit : API_PAGE_SIZE;
     const firstChunkOffset = Math.floor(start / API_PAGE_SIZE) * API_PAGE_SIZE;
@@ -821,44 +1099,107 @@ function CreatorPage({
     }
     if (chunkOffsets.length === 0) chunkOffsets.push(0);
 
-    Promise.all(
-      chunkOffsets.map((chunkOffset) =>
-        fetchJson(`${API_BASE}/${service}/user/${creatorId}/posts?o=${chunkOffset}&n=${API_PAGE_SIZE}`),
-      ),
-    )
-      .then((responses) => {
-        if (!alive) return;
+    const cachedChunks = useCache && cacheData?.chunks ? cacheData.chunks : null;
+    const responsesFromCache = cachedChunks
+      ? chunkOffsets.map((chunkOffset) => cachedChunks[String(chunkOffset)])
+      : [];
+    const allChunksCached =
+      useCache && cachedChunks ? responsesFromCache.every((chunk) => Array.isArray(chunk)) : false;
 
-        const combined = responses.reduce((acc, data) => {
-          if (Array.isArray(data) && data.length) {
-            acc.push(...data);
-          }
-      return acc;
-    }, []);
+    const sliceFromResponses = (responses) => {
+      const combined = responses.reduce((acc, data) => {
+        if (Array.isArray(data) && data.length) {
+          acc.push(...data);
+        }
+        return acc;
+      }, []);
+      const sliceStart = start - chunkOffsets[0];
+      const slice = combined.slice(sliceStart, sliceStart + requested);
+      const totalKnown =
+        typeof profile?.post_count === "number"
+          ? profile.post_count
+          : typeof cacheData?.totalPosts === "number"
+            ? cacheData.totalPosts
+            : null;
+      const lastResponse = responses[responses.length - 1];
+      const lastChunkLength = Array.isArray(lastResponse) ? lastResponse.length : 0;
+      const availableFromStart = Math.max(0, combined.length - sliceStart);
+      const hasMore =
+        typeof totalKnown === "number"
+          ? start + slice.length < totalKnown
+          : availableFromStart > slice.length || lastChunkLength === API_PAGE_SIZE;
+      return { combined, slice, hasMore };
+    };
 
-    const sliceStart = start - chunkOffsets[0];
-    const slice = combined.slice(sliceStart, sliceStart + requested);
-    setPosts(slice);
+    if (allChunksCached) {
+      const { slice, hasMore } = sliceFromResponses(responsesFromCache);
+      setPosts(slice);
+      setHasNextPage(hasMore);
+      if (cacheFresh && cacheReloadApplied === reloadKey) {
+        setLoadingPosts(false);
+        return () => {
+          alive = false;
+        };
+      }
+      // continue to refresh cache if requested
+    }
 
-    const lastResponse = responses[responses.length - 1];
-    const lastChunkLength = Array.isArray(lastResponse) ? lastResponse.length : 0;
-    const availableFromStart = Math.max(0, combined.length - sliceStart);
-    const hasMore = availableFromStart > slice.length || lastChunkLength === API_PAGE_SIZE;
-    setHasNextPage(hasMore);
-    setLoadingPosts(false);
-  })
-  .catch((error) => {
-      console.error("Failed to load posts", error);
-      if (!alive) return;
-      setPosts([]);
-      setHasNextPage(false);
+    const shouldBypassCache = !useCache || !cacheFresh || cacheReloadApplied !== reloadKey;
+    const offsetsToFetch = shouldBypassCache
+      ? chunkOffsets
+      : chunkOffsets.filter((chunkOffset) => !Array.isArray(cachedChunks?.[String(chunkOffset)]));
+
+    if (offsetsToFetch.length === 0 && allChunksCached) {
       setLoadingPosts(false);
-    });
+      return () => {
+        alive = false;
+      };
+    }
+
+    setLoadingPosts(true);
+
+    const fetchPromises = offsetsToFetch.map((chunkOffset) =>
+      fetchJson(`${API_BASE}/${service}/user/${creatorId}/posts?o=${chunkOffset}&n=${API_PAGE_SIZE}`).then(
+        (data) => ({ offset: chunkOffset, data }),
+      ),
+    );
+
+    Promise.all(fetchPromises)
+      .then((fetchedChunks) => {
+        if (!alive) return;
+        const mergedChunks = { ...(cachedChunks || {}) };
+        fetchedChunks.forEach(({ offset, data }) => {
+          mergedChunks[String(offset)] = Array.isArray(data) ? data : [];
+        });
+        const responses = chunkOffsets.map((chunkOffset) => mergedChunks[String(chunkOffset)] ?? []);
+        const { slice, hasMore } = sliceFromResponses(responses);
+        setPosts(slice);
+        setHasNextPage(hasMore);
+        setLoadingPosts(false);
+        if (useCache) {
+          updateCache((prev) => ({
+            ...prev,
+            chunks: mergedChunks,
+            totalPosts:
+              typeof profile?.post_count === "number"
+                ? profile.post_count
+                : prev.totalPosts ?? cacheData?.totalPosts,
+          }));
+          setCacheReloadApplied(reloadKey);
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to load posts", error);
+        if (!alive) return;
+        setPosts([]);
+        setHasNextPage(false);
+        setLoadingPosts(false);
+      });
 
     return () => {
       alive = false;
     };
-  }, [service, creatorId, offset, limit, reloadKey, activeFilter]);
+  }, [service, creatorId, offset, limit, reloadKey, activeFilter, useCache, cacheData, cacheFresh, cacheReloadApplied, profile?.post_count, updateCache]);
 
   const normalizedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
   const isFilterActive = normalizedFilter.length > 0;
@@ -872,6 +1213,11 @@ function CreatorPage({
   const pageStart = isFilterActive ? Math.max(0, (clampedSearchPage - 1) * effectiveLimit) : 0;
   const displayedPosts = isFilterActive ? searchResults.slice(pageStart, pageStart + effectiveLimit) : posts;
   const listLoading = isFilterActive ? searchLoading && displayedPosts.length === 0 : loadingPosts;
+  const cacheUpdatedAt = useCache && cacheData?.updatedAt ? cacheData.updatedAt : null;
+  const cacheUpdatedStamp = cacheUpdatedAt ? formatDate(cacheUpdatedAt) : null;
+  const cacheUpdatedLabel = cacheUpdatedStamp
+    ? `${cacheUpdatedStamp.date}${cacheUpdatedStamp.time ? ` ${cacheUpdatedStamp.time}` : ""}`
+    : null;
 
   useEffect(() => {
     if (!isFilterActive) return;
@@ -1156,6 +1502,13 @@ function CreatorPage({
           <div className="card-col">
             <h3 className="title">Recent posts</h3>
             <span className="label">{summaryLabel}</span>
+            {useCache && (
+              <span className="muted small">
+                {cacheFresh && cacheUpdatedLabel
+                  ? `Cached locally • updated ${cacheUpdatedLabel}`
+                  : "Cache refreshing from source..."}
+              </span>
+            )}
           </div>
           <div className="controls">
             <label
@@ -1184,6 +1537,18 @@ function CreatorPage({
                 <span className="filter-toggle-thumb" />
               </span>
               Tags
+            </label>
+            <label className={`filter-toggle${useCache ? " filter-toggle-active" : ""}`} htmlFor="use-cache">
+              <input
+                id="use-cache"
+                type="checkbox"
+                checked={useCache}
+                onChange={(event) => setUseCache(event.target.checked)}
+              />
+              <span className="filter-toggle-track">
+                <span className="filter-toggle-thumb" />
+              </span>
+              Cache data
             </label>
             <label className="label" htmlFor="page-size">
               Page size
@@ -1317,6 +1682,42 @@ function CreatorPage({
 }
 
 function PostView({ service, creatorId, creatorName, postId, activeFilter, onBack, onNavigate }) {
+  const cachePrefKey = getCachePreferenceKey(service, creatorId);
+  const [useCache, setUseCacheState] = useState(() => readBooleanPreference(cachePrefKey, false));
+  const [cacheData, setCacheData] = useState(() => loadCreatorCache(service, creatorId));
+  const cacheFresh = useCache && cacheData ? isCacheFresh(cacheData) : false;
+  const updateCache = useCallback(
+    (updater, { updateTimestamp = true } = {}) => {
+      setCacheData((prev) => {
+        const base = prev && prev.version === CACHE_VERSION ? prev : { version: CACHE_VERSION };
+        const nextBase = typeof updater === "function" ? updater(base) : updater;
+        if (!nextBase) {
+          writeCreatorCache(service, creatorId, null);
+          return null;
+        }
+        const next = { ...base, ...nextBase, version: CACHE_VERSION };
+        if (updateTimestamp) {
+          next.updatedAt = Date.now();
+        } else if (typeof next.updatedAt !== "number") {
+          next.updatedAt = base.updatedAt ?? Date.now();
+        }
+        if (next.chunks) {
+          next.chunks = pruneCacheChunks(next.chunks);
+        }
+        if (next.postDetails) {
+          next.postDetails = pruneCachePostDetails(next.postDetails);
+        }
+        writeCreatorCache(service, creatorId, next);
+        return next;
+      });
+    },
+    [service, creatorId],
+  );
+
+  useEffect(() => {
+    setUseCacheState(readBooleanPreference(cachePrefKey, false));
+    setCacheData(loadCreatorCache(service, creatorId));
+  }, [cachePrefKey, service, creatorId]);
   const [post, setPost] = useState(null);
   const [loading, setLoading] = useState(true);
   const [neighbors, setNeighbors] = useState({ newerId: null, olderId: null });
@@ -1347,16 +1748,44 @@ function PostView({ service, creatorId, creatorName, postId, activeFilter, onBac
 
   useEffect(() => {
     let alive = true;
+    const cachedEntry =
+      useCache && cacheData?.postDetails && cacheData.postDetails[postId]
+        ? cacheData.postDetails[postId]
+        : null;
+    if (cachedEntry?.data) {
+      setPost(cachedEntry.data);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+
+    const shouldFetch = !useCache || !cachedEntry?.data || !cacheFresh;
+    if (!shouldFetch) {
+      return () => {
+        alive = false;
+      };
+    }
+
     setLoading(true);
     fetchJson(`${API_BASE}/${service}/user/${creatorId}/post/${postId}`).then((data) => {
       if (!alive) return;
-      setPost(data?.post || null);
+      const nextPost = data?.post || null;
+      setPost(nextPost);
       setLoading(false);
+      if (useCache && nextPost) {
+        updateCache((prev) => ({
+          ...prev,
+          postDetails: {
+            ...(prev.postDetails || {}),
+            [postId]: { data: nextPost, updatedAt: Date.now() },
+          },
+        }));
+      }
     });
     return () => {
       alive = false;
     };
-  }, [service, creatorId, postId]);
+  }, [service, creatorId, postId, useCache, cacheData, cacheFresh, updateCache]);
 
   useEffect(() => {
     let alive = true;
