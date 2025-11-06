@@ -452,6 +452,7 @@ body {
   line-height: 1.6;
   margin: 6px 0 0;
   display: -webkit-box;
+  line-clamp: 4;
   -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
