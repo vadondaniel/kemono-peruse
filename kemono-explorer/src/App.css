@@ -457,6 +457,25 @@ body {
   gap: 4px;
 }
 
+.list-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.list-edit {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+}
+
+.list-edit-input {
+  flex: 1;
+  min-width: 0;
+}
+
 .list-title {
   font-size: 16px;
   text-align: left;

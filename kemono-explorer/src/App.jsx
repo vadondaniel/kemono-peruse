@@ -167,6 +167,15 @@ function App() {
                   return exists ? prev : [...prev, entry];
                 })
               }
+              onRenameCreator={(entry) =>
+                setSavedCreators((prev) =>
+                  prev.map((c) => {
+                    if (c.service !== entry.service || c.id !== entry.id) return c;
+                    const nextName = typeof entry.name === "string" ? entry.name.trim() : "";
+                    return { ...c, name: nextName };
+                  })
+                )
+              }
               onRemoveCreator={(service, id) =>
                 setSavedCreators((prev) => prev.filter((c) => !(c.service === service && c.id === id)))
               }
@@ -225,10 +234,12 @@ function App() {
   );
 }
 
-function Home({ savedCreators, onSaveCreator, onRemoveCreator, onOpenCreator }) {
+function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, onOpenCreator }) {
   const [service, setService] = useState("patreon");
   const [creatorId, setCreatorId] = useState("");
   const [creatorName, setCreatorName] = useState("");
+  const [editingCreator, setEditingCreator] = useState(null);
+  const [editingName, setEditingName] = useState("");
 
   const handleSave = (event) => {
     event.preventDefault();
@@ -237,6 +248,28 @@ function Home({ savedCreators, onSaveCreator, onRemoveCreator, onOpenCreator }) 
     onSaveCreator({ service, id, name: creatorName.trim() });
     setCreatorId("");
     setCreatorName("");
+  };
+
+  const beginRename = (creator) => {
+    setEditingCreator({ service: creator.service, id: creator.id });
+    setEditingName(creator.name || "");
+  };
+
+  const cancelRename = () => {
+    setEditingCreator(null);
+    setEditingName("");
+  };
+
+  const handleRenameSubmit = (event) => {
+    event.preventDefault();
+    if (!editingCreator) return;
+    onRenameCreator({
+      service: editingCreator.service,
+      id: editingCreator.id,
+      name: editingName.trim(),
+    });
+    setEditingCreator(null);
+    setEditingName("");
   };
 
   const handleOpen = (event) => {
@@ -261,17 +294,44 @@ function Home({ savedCreators, onSaveCreator, onRemoveCreator, onOpenCreator }) 
         <ul className="list">
           {savedCreators.map((c) => (
             <li className="list-item" key={`${c.service}-${c.id}`}>
-              <div className="list-details">
-                <button className="link list-title" onClick={() => onOpenCreator(c.service, c.id, c.name)}>
-                  {c.name || c.id}
-                </button>
-                <span className="muted small">
-                  {c.service} - {c.id}
-                </span>
-              </div>
-              <button className="btn subtle" onClick={() => onRemoveCreator(c.service, c.id)}>
-                Remove
-              </button>
+              {editingCreator && editingCreator.service === c.service && editingCreator.id === c.id ? (
+                <form className="list-edit" onSubmit={handleRenameSubmit}>
+                  <input
+                    className="input list-edit-input"
+                    value={editingName}
+                    onChange={(event) => setEditingName(event.target.value)}
+                    placeholder="Display name"
+                    autoFocus
+                  />
+                  <div className="list-actions">
+                    <button className="btn subtle" type="button" onClick={cancelRename}>
+                      Cancel
+                    </button>
+                    <button className="btn primary" type="submit">
+                      Save
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <>
+                  <div className="list-details">
+                    <button className="link list-title" onClick={() => onOpenCreator(c.service, c.id, c.name)}>
+                      {c.name || c.id}
+                    </button>
+                    <span className="muted small">
+                      {c.service} - {c.id}
+                    </span>
+                  </div>
+                  <div className="list-actions">
+                    <button className="btn subtle" type="button" onClick={() => beginRename(c)}>
+                      Rename
+                    </button>
+                    <button className="btn subtle" type="button" onClick={() => onRemoveCreator(c.service, c.id)}>
+                      Remove
+                    </button>
+                  </div>
+                </>
+              )}
             </li>
           ))}
           {savedCreators.length === 0 && <li className="muted empty-state">Save creators to keep them handy.</li>}
