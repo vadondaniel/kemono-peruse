@@ -1678,13 +1678,16 @@ function CreatorPage({
     activeTags.length > 0
       ? `${activeTags.length} tag${activeTags.length === 1 ? "" : "s"}`
       : `"${normalizedFilter}"`;
-  const totalLabel = searchCapped ? `${totalFilteredPosts}+` : `${totalFilteredPosts}`;
+  const limitedByResultCap = searchCapped && totalFilteredPosts >= MAX_SEARCH_RESULTS;
+  const totalLabel = limitedByResultCap ? `${totalFilteredPosts}+` : `${totalFilteredPosts}`;
   const summaryLabel = isFilterActive
     ? listLoading
       ? `Filtering ${filterDescriptor}...`
       : totalFilteredPosts === 0
         ? `No posts match ${filterDescriptor}.`
-        : `${totalLabel} post${totalFilteredPosts === 1 ? "" : "s"} match ${filterDescriptor}${searchCapped ? ` (showing first ${MAX_SEARCH_RESULTS})` : ""}`
+        : `${totalLabel} post${totalFilteredPosts === 1 ? "" : "s"} match ${filterDescriptor}${
+            limitedByResultCap ? ` (showing first ${MAX_SEARCH_RESULTS})` : ""
+          }`
     : loadingPosts
       ? "Loading..."
       : `Showing ${posts.length} items`;
