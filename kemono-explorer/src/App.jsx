@@ -130,6 +130,102 @@ function decodePathSegment(value) {
   }
 }
 
+function normalizePostHtml(rawHtml, options = {}) {
+  if (!rawHtml || typeof rawHtml !== "string") return "";
+
+  const { service, attachments, mediaBase } = options;
+  let html = rawHtml.replace(/src=(["'])\/(?!\/)/gi, 'src=$1https://kemono.cr/');
+
+  const isFanbox = (service || "").toLowerCase() === "fanbox";
+  const canUseDomParser =
+    typeof window !== "undefined" && typeof window.DOMParser !== "undefined" && typeof document !== "undefined";
+
+  if (!isFanbox || !canUseDomParser || !mediaBase || !Array.isArray(attachments) || attachments.length === 0) {
+    return html;
+  }
+
+  try {
+    const parser = new window.DOMParser();
+    const doc = parser.parseFromString(html, "text/html");
+    if (doc?.body) {
+      const mutated = convertFanboxAnchorsToImages(doc, attachments, mediaBase);
+      if (mutated) {
+        return doc.body.innerHTML;
+      }
+    }
+  } catch (error) {
+    console.warn("Failed to normalize Fanbox HTML", error);
+  }
+
+  return html;
+}
+
+function convertFanboxAnchorsToImages(doc, attachments, mediaBase) {
+  const anchors = Array.from(doc.querySelectorAll("a[href]"));
+  if (anchors.length === 0) return false;
+
+  const lookup = buildAttachmentLookup(attachments);
+  if (lookup.size === 0) return false;
+
+  let mutated = false;
+
+  anchors.forEach((anchor) => {
+    const href = anchor.getAttribute("href") || "";
+    const key = extractFanboxFilenameFromHref(href);
+    if (!key) return;
+    const attachment = lookup.get(key);
+    if (!attachment?.path) return;
+
+    const img = doc.createElement("img");
+    img.setAttribute("src", `${mediaBase}${attachment.path}`);
+    img.setAttribute("alt", attachment.name || attachment.path.split("/").pop() || "");
+    img.setAttribute("loading", "lazy");
+    img.classList.add("inline-media");
+
+    anchor.replaceWith(img);
+    mutated = true;
+  });
+
+  return mutated;
+}
+
+function buildAttachmentLookup(attachments) {
+  const lookup = new Map();
+  attachments.forEach((item) => {
+    if (!item) return;
+    const keys = [
+      normalizeAttachmentKey(item.name),
+      normalizeAttachmentKey(item.path ? item.path.split("/").pop() : null),
+    ].filter(Boolean);
+
+    keys.forEach((key) => {
+      if (key && !lookup.has(key)) {
+        lookup.set(key, item);
+      }
+    });
+  });
+  return lookup;
+}
+
+function normalizeAttachmentKey(value) {
+  if (!value || typeof value !== "string") return null;
+  return value.trim().toLowerCase();
+}
+
+function extractFanboxFilenameFromHref(href) {
+  if (!href || typeof href !== "string") return null;
+  try {
+    const url = href.startsWith("http") ? new URL(href) : new URL(href, "https://downloads.fanbox.cc");
+    if (url.hostname !== "downloads.fanbox.cc") return null;
+    const segments = url.pathname.split("/").filter(Boolean);
+    if (segments.length === 0) return null;
+    const filename = segments[segments.length - 1];
+    return normalizeAttachmentKey(filename);
+  } catch {
+    return null;
+  }
+}
+
 function encodePathSegment(value) {
   if (typeof value !== "string") {
     return "";
@@ -2572,12 +2668,12 @@ function PostView({
     );
   }
 
+  const attachments = Array.isArray(post.attachments) ? post.attachments : [];
   const bodyHtml = post.content || post.body || post.text || "";
   const normalizedHtml = bodyHtml
-    ? bodyHtml.replace(/src=(["'])\/(?!\/)/gi, 'src=$1https://kemono.cr/')
+    ? normalizePostHtml(bodyHtml, { service: post.service || service, attachments, mediaBase: MEDIA_BASE })
     : "";
   const heroImage = post.file?.path ? `${MEDIA_BASE}${post.file.path}` : null;
-  const attachments = Array.isArray(post.attachments) ? post.attachments : [];
   const readerCardClassName = [
     "card post-card",
     `reader-width-${readerSettings.widthMode}`,
