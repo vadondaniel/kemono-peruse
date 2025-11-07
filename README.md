@@ -16,7 +16,7 @@ npm install
 
 ## Run the Proxy
 
-From the project root, start the proxy in its own terminal:
+From the project root, start the proxy in its own terminal (use the `.env.example` file described below if you want different ports):
 
 ```bash
 node proxy-server.js
@@ -30,10 +30,10 @@ Defaults:
 
 Env overrides:
 
-- `PORT` – proxy port (default `3001`)
-- `KEMONO_HOST` – upstream host (default `https://kemono.cr`)
-- `KEMONO_BASE_PATH` – upstream API prefix (default `/api/v1`)
-- `KEMONO_ACCEPT` – custom `Accept` header (default `text/css`)
+- `PROXY_PORT` (falls back to `PORT`) - proxy port (default `3001`)
+- `KEMONO_HOST` - upstream host (default `https://kemono.cr`)
+- `KEMONO_BASE_PATH` - upstream API prefix (default `/api/v1`)
+- `KEMONO_ACCEPT` - custom `Accept` header (default `text/css`)
 
 Media URLs such as `/data/…` are also tunneled automatically via `/api/proxy/kemono/media/…`.
 
@@ -46,7 +46,18 @@ cd kemono-explorer
 npm run dev
 ```
 
-Vite serves at `http://localhost:5173` and proxies `/api/proxy/kemono` requests to the Node proxy, so keep both processes running.
+Vite serves at `http://localhost:5173` (set `VITE_DEV_SERVER_PORT` or `VITE_PORT` to change it) and proxies `/api/proxy/kemono` requests to the Node proxy, so keep both processes running. The dev proxy target automatically honors the `PROXY_PORT` value.
+
+### Environment file
+
+Copy `kemono-explorer/.env.example` to `kemono-explorer/.env.local` (or `.env`) and tweak the values if you want to run on different ports:
+
+```ini
+PROXY_PORT=4000
+VITE_DEV_SERVER_PORT=5175
+```
+
+Start the proxy (`node proxy-server.js`) and Vite (`npm run dev`) after saving the file so both processes pick up the new ports.
 
 ## Production Build
 

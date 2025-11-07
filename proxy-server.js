@@ -10,7 +10,7 @@
 const http = require("node:http");
 const { URL } = require("node:url");
 
-const PORT = Number(process.env.PORT || 3001);
+const PROXY_PORT = Number(process.env.PROXY_PORT || process.env.PORT || 3001);
 const API_PROXY_PREFIX = "/api/proxy/kemono";
 const KEMONO_API_HOST = process.env.KEMONO_HOST || "https://kemono.cr";
 const KEMONO_API_BASE_PATH = process.env.KEMONO_BASE_PATH || "/api/v1";
@@ -94,9 +94,9 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-server.listen(PORT, () => {
+server.listen(PROXY_PORT, () => {
   console.log(
-    `Kemono proxy listening on http://localhost:${PORT}${API_PROXY_PREFIX} -> ${KEMONO_API_HOST}${KEMONO_API_BASE_PATH}`,
+    `Kemono proxy listening on http://localhost:${PROXY_PORT}${API_PROXY_PREFIX} -> ${KEMONO_API_HOST}${KEMONO_API_BASE_PATH}`,
   );
 });
 
