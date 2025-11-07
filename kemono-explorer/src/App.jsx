@@ -40,7 +40,7 @@ const READER_ALIGNMENT_OPTIONS = [
 ];
 const READER_INDENT_OPTIONS = [
   { value: "none", label: "Off" },
-  { value: "medium", label: "Relaxed" },
+  { value: "medium", label: "On" },
 ];
 const READER_TEXT_SCALE_VALUES = READER_TEXT_SCALE_OPTIONS.map((option) => option.value);
 const READER_LINE_SPACING_VALUES = READER_LINE_SPACING_OPTIONS.map((option) => option.value);
@@ -683,6 +683,7 @@ function App() {
     }
     return "light";
   });
+  const [readerSettingsOpen, setReaderSettingsOpen] = useState(false);
   const activeTheme = themeMode === "auto" ? systemTheme : themeMode;
 
   useEffect(() => {
@@ -714,6 +715,12 @@ function App() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (view.name !== "post" && readerSettingsOpen) {
+      setReaderSettingsOpen(false);
+    }
+  }, [view, readerSettingsOpen]);
 
   const handleResolvePostTitle = useCallback(
     (resolvedTitle) => {
@@ -776,6 +783,15 @@ function App() {
                 Kemono Explorer
               </button>
             </h1>
+            {view.name === "post" && (
+              <button
+                type="button"
+                className="btn ghost reader-settings-button header-reader-button"
+                onClick={() => setReaderSettingsOpen(true)}
+              >
+                Reader settings
+              </button>
+            )}
             <div className="theme-switcher">
               <label className="theme-label" htmlFor="theme-select">
                 Theme
@@ -857,6 +873,8 @@ function App() {
               creatorName={view.creatorName}
               postId={view.postId}
               activeFilter={getCreatorFilter(view.service, view.creatorId)}
+              readerSettingsOpen={readerSettingsOpen}
+              onCloseReaderSettings={() => setReaderSettingsOpen(false)}
               onBack={() =>
                 navigate({
                   name: "creator",
@@ -2212,6 +2230,8 @@ function PostView({
   creatorName,
   postId,
   activeFilter,
+  readerSettingsOpen,
+  onCloseReaderSettings,
   onBack,
   onNavigate,
   onResolvePostTitle,
@@ -2220,7 +2240,6 @@ function PostView({
   const [useCache, setUseCacheState] = useState(() => readBooleanPreference(cachePrefKey, false));
   const [cacheData, setCacheData] = useState(() => loadCreatorCache(service, creatorId));
   const [readerSettings, setReaderSettings] = useState(getInitialReaderSettings);
-  const [showReaderSettings, setShowReaderSettings] = useState(false);
   const cacheFresh = useCache && cacheData ? isCacheFresh(cacheData) : false;
   const updateCache = useCallback(
     (updater, { updateTimestamp = true } = {}) => {
@@ -2265,27 +2284,27 @@ function PostView({
   }, [readerSettings]);
 
   useEffect(() => {
-    if (!showReaderSettings) return undefined;
+    if (!readerSettingsOpen) return undefined;
     const handleKeyDown = (event) => {
-      if (event.key === "Escape") {
-        setShowReaderSettings(false);
+      if (event.key === "Escape" && typeof onCloseReaderSettings === "function") {
+        onCloseReaderSettings();
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
-  }, [showReaderSettings]);
+  }, [readerSettingsOpen, onCloseReaderSettings]);
 
   useEffect(() => {
     if (typeof document === "undefined") return undefined;
-    if (!showReaderSettings) return undefined;
+    if (!readerSettingsOpen) return undefined;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [showReaderSettings]);
+  }, [readerSettingsOpen]);
 
   const updateReaderSetting = (key, value) => {
     setReaderSettings((prev) => {
@@ -2555,22 +2574,13 @@ function PostView({
             Next &rarr;
           </button>
       </div>
-        <div className="reader-settings-bar">
-          <button
-            type="button"
-            className={`btn ghost reader-settings-button${showReaderSettings ? " active" : ""}`}
-            onClick={() => setShowReaderSettings(true)}
-            aria-haspopup="dialog"
-            aria-expanded={showReaderSettings}
-          >
-            Reader settings
-          </button>
-        </div>
-        {showReaderSettings && (
+        {readerSettingsOpen && (
           <div
             className="reader-modal-overlay"
             role="presentation"
-            onClick={() => setShowReaderSettings(false)}
+            onClick={() => {
+              if (typeof onCloseReaderSettings === "function") onCloseReaderSettings();
+            }}
           >
             <div
               className="reader-modal"
@@ -2584,7 +2594,9 @@ function PostView({
                 <button
                   type="button"
                   className="btn ghost reader-modal-close"
-                  onClick={() => setShowReaderSettings(false)}
+                  onClick={() => {
+                    if (typeof onCloseReaderSettings === "function") onCloseReaderSettings();
+                  }}
                 >
                   Close
                 </button>

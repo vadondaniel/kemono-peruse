@@ -1139,13 +1139,6 @@ body {
   }
 }
 
-.reader-settings-bar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 6px 0 10px;
-}
-
 .reader-settings-button {
   flex: 0 0 auto;
   padding: 6px 14px;
@@ -1155,6 +1148,10 @@ body {
 .reader-settings-button.active {
   background: var(--ghost-bg-hover);
   border-color: var(--ghost-border-hover);
+}
+
+.header-reader-button {
+  margin-left: 12px;
 }
 
 .reader-modal-overlay {
