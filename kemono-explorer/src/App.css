@@ -261,6 +261,78 @@ body {
   flex-wrap: wrap;
 }
 
+.cache-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.post-controls {
+  justify-content: flex-end;
+  gap: 18px;
+}
+
+.display-toggle-group,
+.order-size-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.page-size-control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 60px;
+}
+
+.btn-compact {
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: 999px;
+}
+
+.btn-compact.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.order-toggle {
+  border: none;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color 160ms ease, background 160ms ease;
+}
+
+.order-toggle:hover {
+  background: rgba(148, 163, 184, 0.15);
+  color: var(--text-primary);
+}
+
+.order-toggle-active {
+  background: rgba(59, 130, 246, 0.12);
+  color: var(--text-primary);
+}
+
+.order-arrow {
+  font-size: 14px;
+  transition: transform 160ms ease;
+}
+
+.order-toggle-active .order-arrow {
+  transform: translateY(-1px);
+}
+
 .pagination {
   display: flex;
   align-items: center;
@@ -287,7 +359,10 @@ body {
 .pagination-meta {
   margin: 0;
   display: flex;
-  justify-content: center;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .pagination-meta .label {
@@ -855,8 +930,13 @@ body {
 .creator-heading-meta {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
+  gap: 12px;
+}
+
+.creator-meta-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .creator-service-badge {
@@ -1078,6 +1158,26 @@ body {
   }
   .controls {
     justify-content: flex-start;
+    width: 100%;
+  }
+
+  .cache-actions {
+    width: 100%;
+  }
+
+  .post-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .display-toggle-group,
+  .order-size-group {
+    justify-content: flex-start;
+  }
+
+  .page-size-control {
+    width: 100%;
   }
 }
 
@@ -1110,6 +1210,28 @@ body {
 
   .controls {
     gap: 8px;
+    width: 100%;
+  }
+
+  .cache-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .post-controls {
+    gap: 10px;
+  }
+
+  .order-size-group {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .btn-compact {
+    width: 100%;
+    justify-content: center;
   }
 
   .search-input {

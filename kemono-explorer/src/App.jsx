@@ -1728,6 +1728,18 @@ function CreatorPage({
           <span className="label">
             Page <strong>{paginationState.currentPage}</strong> of {paginationState.totalPages}
           </span>
+          <button
+            type="button"
+            className={`order-toggle${reverseOrder ? " order-toggle-active" : ""}`}
+            onClick={() => setReverseOrder((prev) => !prev)}
+            aria-pressed={reverseOrder}
+            title={reverseOrder ? "Sorted oldest to newest" : "Sorted newest to oldest"}
+          >
+            <span className="order-label">{reverseOrder ? "Oldest first" : "Newest first"}</span>
+            <span className="order-arrow" aria-hidden="true">
+              {reverseOrder ? "↑" : "↓"}
+            </span>
+          </button>
         </div>
         <nav className="pagination">
           {!compactPagination && (
@@ -1796,26 +1808,51 @@ function CreatorPage({
                 }}
               />
             </div>
-            <div className="creator-heading-text">
-              <h2 className="title">{creatorName || creatorId}</h2>
-              <div className="creator-heading-meta">
-                {serviceLabel ? <span className="creator-service-badge">{serviceLabel}</span> : null}
-                <span className="muted small">
-                  {loadingProfile ? "Loading profile..." : `${profile?.post_count ?? "-"} posts indexed`}
-                </span>
+              <div className="creator-heading-text">
+                <h2 className="title">{creatorName || creatorId}</h2>
+                <div className="creator-heading-meta">
+                  {serviceLabel ? <span className="creator-service-badge">{serviceLabel}</span> : null}
+                  <div className="creator-meta-stats">
+                    <span className="muted small">
+                      {loadingProfile ? "Loading profile..." : `${profile?.post_count ?? "-"} posts indexed`}
+                    </span>
+                    {canUseCacheUi && useCache && (
+                      <span className="muted small cache-status-line">
+                        {cacheFresh && cacheUpdatedLabel
+                          ? `Cached locally • updated ${cacheUpdatedLabel}`
+                          : "Cache refreshing from source..."}
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
-          <div className="card-actions">
-            {canUseCacheUi && useCache && (
-              <button
-                className="btn"
-                onClick={() => {
-                  setReloadKey((value) => value + 1);
-                }}
-              >
-                Refresh posts
-              </button>
+            <div className="card-actions">
+              {canUseCacheUi && (
+                <div className="cache-actions">
+                  {useCache && (
+                    <button
+                      className="btn"
+                    onClick={() => {
+                      setReloadKey((value) => value + 1);
+                    }}
+                  >
+                    Refresh posts
+                  </button>
+                )}
+                <label className={`filter-toggle${useCache ? " filter-toggle-active" : ""}`} htmlFor="use-cache-toggle">
+                  <input
+                    id="use-cache-toggle"
+                    type="checkbox"
+                    checked={useCache}
+                    onChange={(event) => setUseCache(event.target.checked)}
+                  />
+                  <span className="filter-toggle-track">
+                    <span className="filter-toggle-thumb" />
+                  </span>
+                  Cache data
+                </label>
+              </div>
             )}
             {!alreadySaved && (
               <button className="btn primary" onClick={onSave}>
@@ -1829,96 +1866,7 @@ function CreatorPage({
         )}
       </section>
 
-      <section className="card">
-        <div className="card-row header-row">
-          <div className="card-col">
-            <h3 className="title">Posts</h3>
-            <span className="label">{summaryLabel}</span>
-            {canUseCacheUi && useCache && (
-              <span className="muted small">
-                {cacheFresh && cacheUpdatedLabel
-                  ? `Cached locally • updated ${cacheUpdatedLabel}`
-                  : "Cache refreshing from source..."}
-              </span>
-            )}
-          </div>
-          <div className="controls">
-            <label
-              className={`filter-toggle${showExcerpts ? " filter-toggle-active" : ""}`}
-              htmlFor="show-excerpts"
-            >
-              <input
-                id="show-excerpts"
-                type="checkbox"
-                checked={showExcerpts}
-                onChange={(event) => setShowExcerpts(event.target.checked)}
-              />
-              <span className="filter-toggle-track">
-                <span className="filter-toggle-thumb" />
-              </span>
-              Excerpts
-            </label>
-            <label className={`filter-toggle${showTags ? " filter-toggle-active" : ""}`} htmlFor="show-tags">
-              <input
-                id="show-tags"
-                type="checkbox"
-                checked={showTags}
-                onChange={(event) => setShowTags(event.target.checked)}
-              />
-              <span className="filter-toggle-track">
-                <span className="filter-toggle-thumb" />
-              </span>
-              Tags
-            </label>
-            {canUseCacheUi && (
-              <label className={`filter-toggle${useCache ? " filter-toggle-active" : ""}`} htmlFor="use-cache">
-                <input
-                  id="use-cache"
-                  type="checkbox"
-                  checked={useCache}
-                  onChange={(event) => setUseCache(event.target.checked)}
-                />
-                <span className="filter-toggle-track">
-                  <span className="filter-toggle-thumb" />
-                </span>
-                Cache data
-              </label>
-            )}
-            <label className={`filter-toggle${reverseOrder ? " filter-toggle-active" : ""}`} htmlFor="reverse-order">
-              <input
-                id="reverse-order"
-                type="checkbox"
-                checked={reverseOrder}
-                onChange={(event) => setReverseOrder(event.target.checked)}
-              />
-              <span className="filter-toggle-track">
-                <span className="filter-toggle-thumb" />
-              </span>
-              Reverse order
-            </label>
-            <label className="label" htmlFor="page-size">
-              Page size
-            </label>
-            <select
-              id="page-size"
-              className="input small"
-              value={limit}
-              onChange={(event) => {
-                const parsed = parseInt(event.target.value, 10);
-                const nextLimit = PAGE_SIZE_OPTIONS.includes(parsed) ? parsed : API_PAGE_SIZE;
-                setOffset(0);
-                setLimit(nextLimit);
-                setSearchPage(1);
-              }}
-            >
-              {PAGE_SIZE_OPTIONS.map((count) => (
-                <option key={count} value={count}>
-                  {count}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
+      <section className="card filter-card">
         <div className="filter-row">
           <div className="filter-controls">
             <form className="search-form" onSubmit={handleSearchSubmit}>
@@ -1983,6 +1931,71 @@ function CreatorPage({
                 </span>
                 Body text
               </label>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="card">
+        <div className="card-row header-row">
+          <div className="card-col">
+            <h3 className="title">Posts</h3>
+            <span className="label">{summaryLabel}</span>
+          </div>
+          <div className="controls post-controls">
+            <div className="display-toggle-group">
+              <label
+                className={`filter-toggle${showExcerpts ? " filter-toggle-active" : ""}`}
+                htmlFor="show-excerpts"
+              >
+                <input
+                  id="show-excerpts"
+                  type="checkbox"
+                  checked={showExcerpts}
+                  onChange={(event) => setShowExcerpts(event.target.checked)}
+                />
+                <span className="filter-toggle-track">
+                  <span className="filter-toggle-thumb" />
+                </span>
+                Excerpts
+              </label>
+              <label className={`filter-toggle${showTags ? " filter-toggle-active" : ""}`} htmlFor="show-tags">
+                <input
+                  id="show-tags"
+                  type="checkbox"
+                  checked={showTags}
+                  onChange={(event) => setShowTags(event.target.checked)}
+                />
+                <span className="filter-toggle-track">
+                  <span className="filter-toggle-thumb" />
+                </span>
+                Tags
+              </label>
+            </div>
+            <div className="order-size-group">
+              <div className="page-size-control">
+                <label className="label" htmlFor="page-size">
+                  Page size
+                </label>
+                <select
+                  id="page-size"
+                  className="input small"
+                  value={limit}
+                  onChange={(event) => {
+                    const parsed = parseInt(event.target.value, 10);
+                    const nextLimit = PAGE_SIZE_OPTIONS.includes(parsed) ? parsed : API_PAGE_SIZE;
+                    setOffset(0);
+                    setLimit(nextLimit);
+                    setSearchPage(1);
+                  }}
+                >
+                  {PAGE_SIZE_OPTIONS.map((count) => (
+                    <option key={count} value={count}>
+                      {count}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
         </div>
