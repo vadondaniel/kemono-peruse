@@ -12,6 +12,8 @@ const CACHE_VERSION = 1;
 const CACHE_MAX_AGE_MS = 1000 * 60 * 60 * 24;
 const CACHE_PREF_PREFIX = "kemono.cache.pref";
 const CACHE_DATA_PREFIX = "kemono.cache";
+const PAGE_SIZE_OPTIONS = [25, 50, 75, 100, 125, 150];
+const PAGE_SIZE_KEY = "kemono.pageSize";
 
 const SERVICE_LABELS = {
   patreon: "Patreon",
@@ -225,6 +227,21 @@ function getInitialView() {
 
 function buildHistoryState(view) {
   return { view: { ...ensureView(view) } };
+}
+
+function getInitialPageSize() {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return API_PAGE_SIZE;
+  }
+  try {
+    const stored = parseInt(window.localStorage.getItem(PAGE_SIZE_KEY) || "", 10);
+    if (PAGE_SIZE_OPTIONS.includes(stored)) {
+      return stored;
+    }
+  } catch {
+    // ignore invalid persisted values
+  }
+  return API_PAGE_SIZE;
 }
 
 function getCachePreferenceKey(service, creatorId) {
@@ -945,7 +962,16 @@ function CreatorPage({
   const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);
   const [offset, setOffset] = useState(0);
-  const [limit, setLimit] = useState(50);
+  const [limit, setLimit] = useState(getInitialPageSize);
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.localStorage) return;
+    if (!PAGE_SIZE_OPTIONS.includes(limit)) return;
+    try {
+      window.localStorage.setItem(PAGE_SIZE_KEY, String(limit));
+    } catch {
+      // ignore persistence issues
+    }
+  }, [limit]);
   const [showExcerpts, setShowExcerpts] = useState(() => {
     try {
       const stored = localStorage.getItem("kemono.showExcerpts");
@@ -1873,13 +1899,14 @@ function CreatorPage({
               className="input small"
               value={limit}
               onChange={(event) => {
-                const nextLimit = parseInt(event.target.value, 10);
+                const parsed = parseInt(event.target.value, 10);
+                const nextLimit = PAGE_SIZE_OPTIONS.includes(parsed) ? parsed : API_PAGE_SIZE;
                 setOffset(0);
                 setLimit(nextLimit);
                 setSearchPage(1);
               }}
             >
-              {[25, 50, 75, 100, 125, 150].map((count) => (
+              {PAGE_SIZE_OPTIONS.map((count) => (
                 <option key={count} value={count}>
                   {count}
                 </option>
