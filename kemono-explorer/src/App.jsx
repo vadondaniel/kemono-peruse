@@ -945,9 +945,9 @@ function App() {
               </select>
             </div>
           </div>
-          <p className="muted">
+          {/* <p className="muted">
             Browse kemono.cr with a tidy reader. Save creators you follow, scan their latest posts, and dive into content without leaving the page.
-          </p>
+          </p> */}
         </div>
       </header>
 
