@@ -190,19 +190,24 @@ function getTitleForView(view) {
   if (normalized.name === "creator") {
     const creatorLabel = normalized.creatorName || normalized.creatorId || "Creator";
     const serviceLabel = SERVICE_LABELS[normalized.service] || normalized.service || "";
-    const dynamic = serviceLabel ? `${creatorLabel} - ${serviceLabel}` : creatorLabel;
+    const dynamic = serviceLabel ? `${creatorLabel} (${serviceLabel})` : creatorLabel;
     return `${dynamic} | ${BASE_TITLE}`;
   }
   if (normalized.name === "post") {
-    const parts = [normalized.postTitle || normalized.postId || "Post"];
-    if (normalized.creatorName || normalized.creatorId) {
-      parts.push(normalized.creatorName || normalized.creatorId);
-    }
+    const title = normalized.postTitle || normalized.postId || "Post";
+    const creatorLabel = normalized.creatorName || normalized.creatorId || "";
     const serviceLabel = SERVICE_LABELS[normalized.service] || normalized.service || "";
-    if (serviceLabel) {
-      parts.push(serviceLabel);
+    const creatorPart = creatorLabel
+      ? serviceLabel
+        ? `${creatorLabel} (${serviceLabel})`
+        : creatorLabel
+      : serviceLabel;
+    const segments = [title];
+    if (creatorPart) {
+      segments.push(creatorPart);
     }
-    return `${parts.join(" - ")} | ${BASE_TITLE}`;
+    segments.push(BASE_TITLE);
+    return segments.join(" | ");
   }
   return BASE_TITLE;
 }
