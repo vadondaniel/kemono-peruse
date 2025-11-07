@@ -1806,14 +1806,16 @@ function CreatorPage({
             </div>
           </div>
           <div className="card-actions">
-            <button
-              className="btn"
-              onClick={() => {
-                setReloadKey((value) => value + 1);
-              }}
-            >
-              Refresh posts
-            </button>
+            {useCache && (
+              <button
+                className="btn"
+                onClick={() => {
+                  setReloadKey((value) => value + 1);
+                }}
+              >
+                Refresh posts
+              </button>
+            )}
             {!alreadySaved && (
               <button className="btn primary" onClick={onSave}>
                 Save creator
