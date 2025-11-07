@@ -1051,6 +1051,7 @@ function CreatorPage({
   const searchTokenRef = useRef(0);
   const prevFilterStorageKeyRef = useRef(filterStorageKey);
   const cacheFresh = useCache && cacheData ? isCacheFresh(cacheData) : false;
+  const canUseCacheUi = alreadySaved;
 
   useEffect(() => {
     setUseCache(readBooleanPreference(cachePrefKey, false));
@@ -1806,7 +1807,7 @@ function CreatorPage({
             </div>
           </div>
           <div className="card-actions">
-            {useCache && (
+            {canUseCacheUi && useCache && (
               <button
                 className="btn"
                 onClick={() => {
@@ -1833,7 +1834,7 @@ function CreatorPage({
           <div className="card-col">
             <h3 className="title">Posts</h3>
             <span className="label">{summaryLabel}</span>
-            {useCache && (
+            {canUseCacheUi && useCache && (
               <span className="muted small">
                 {cacheFresh && cacheUpdatedLabel
                   ? `Cached locally • updated ${cacheUpdatedLabel}`
@@ -1869,18 +1870,20 @@ function CreatorPage({
               </span>
               Tags
             </label>
-            <label className={`filter-toggle${useCache ? " filter-toggle-active" : ""}`} htmlFor="use-cache">
-              <input
-                id="use-cache"
-                type="checkbox"
-                checked={useCache}
-                onChange={(event) => setUseCache(event.target.checked)}
-              />
-              <span className="filter-toggle-track">
-                <span className="filter-toggle-thumb" />
-              </span>
-              Cache data
-            </label>
+            {canUseCacheUi && (
+              <label className={`filter-toggle${useCache ? " filter-toggle-active" : ""}`} htmlFor="use-cache">
+                <input
+                  id="use-cache"
+                  type="checkbox"
+                  checked={useCache}
+                  onChange={(event) => setUseCache(event.target.checked)}
+                />
+                <span className="filter-toggle-track">
+                  <span className="filter-toggle-thumb" />
+                </span>
+                Cache data
+              </label>
+            )}
             <label className={`filter-toggle${reverseOrder ? " filter-toggle-active" : ""}`} htmlFor="reverse-order">
               <input
                 id="reverse-order"
