@@ -1623,7 +1623,7 @@ function CreatorPage({
       ? `Filtering ${filterDescriptor}...`
       : totalFilteredPosts === 0
         ? `No posts match ${filterDescriptor}.`
-        : `Page ${clampedSearchPage} of ${filteredTotalPages} • ${totalLabel} post${totalFilteredPosts === 1 ? "" : "s"} match ${filterDescriptor}${searchCapped ? ` (showing first ${MAX_SEARCH_RESULTS})` : ""}`
+        : `${totalLabel} post${totalFilteredPosts === 1 ? "" : "s"} match ${filterDescriptor}${searchCapped ? ` (showing first ${MAX_SEARCH_RESULTS})` : ""}`
     : loadingPosts
       ? "Loading..."
       : `Showing ${posts.length} items`;
