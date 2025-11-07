@@ -79,6 +79,22 @@ function safeString(value) {
   return typeof value === "string" ? value : "";
 }
 
+function toNumericCount(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "bigint") {
+    return Number(value);
+  }
+  if (typeof value === "string") {
+    const digits = value.replace(/[^\d]/g, "");
+    if (!digits) return null;
+    const parsed = Number(digits);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
 function toViewOrNull(raw) {
   if (!raw || typeof raw !== "object") return null;
   if (raw.name === "home") {
@@ -1052,6 +1068,9 @@ function CreatorPage({
   const prevFilterStorageKeyRef = useRef(filterStorageKey);
   const cacheFresh = useCache && cacheData ? isCacheFresh(cacheData) : false;
   const canUseCacheUi = alreadySaved;
+  const resolvedProfileCount = toNumericCount(profile?.post_count);
+  const resolvedCacheCount = toNumericCount(cacheData?.totalPosts);
+  const totalPosts = resolvedProfileCount ?? resolvedCacheCount ?? null;
 
   useEffect(() => {
     setUseCache(readBooleanPreference(cachePrefKey, false));
@@ -1133,10 +1152,11 @@ function CreatorPage({
       setLoadingProfile(false);
       if (useCache) {
         if (data) {
+          const numericCount = toNumericCount(data?.post_count);
           updateCache((prev) => ({
             ...prev,
             profile: data,
-            totalPosts: typeof data?.post_count === "number" ? data.post_count : prev.totalPosts,
+            totalPosts: numericCount ?? prev.totalPosts,
           }));
         }
         setCacheReloadApplied(reloadKey);
@@ -1294,9 +1314,8 @@ function CreatorPage({
           const normalizedHaystacks = haystacks.map((value) => value.toLowerCase());
           return tokens.every((token) => normalizedHaystacks.some((hay) => hay.includes(token)));
         });
-        const capped = Boolean(
-          cacheData?.totalPosts && cacheData.totalPosts > cachedPostsForSearch.length,
-        );
+        const cacheTotalPosts = toNumericCount(cacheData?.totalPosts);
+        const capped = Boolean(cacheTotalPosts && cacheTotalPosts > cachedPostsForSearch.length);
         setSearchResults(results);
         setSearchCapped(capped);
         setSearchLoading(false);
@@ -1416,8 +1435,31 @@ function CreatorPage({
     }
 
     let alive = true;
-    const start = offset;
-    const requested = limit > 0 ? limit : API_PAGE_SIZE;
+    const baseRequested = limit > 0 ? limit : API_PAGE_SIZE;
+    const canReverseChunks = reverseOrder && typeof totalPosts === "number" && totalPosts > 0;
+    let requested = baseRequested;
+    let start = offset;
+
+    if (canReverseChunks) {
+      const remaining = Math.max(0, totalPosts - offset);
+      if (remaining > 0) {
+        requested = Math.min(baseRequested, remaining);
+        start = Math.max(0, totalPosts - offset - requested);
+      } else {
+        requested = 0;
+        start = 0;
+      }
+    }
+
+    if (requested === 0) {
+      setPosts([]);
+      setHasNextPage(false);
+      setLoadingPosts(false);
+      return () => {
+        alive = false;
+      };
+    }
+
     const firstChunkOffset = Math.floor(start / API_PAGE_SIZE) * API_PAGE_SIZE;
     const lastIndexNeeded = Math.max(start, start + requested - 1);
     const lastChunkOffset = Math.floor(lastIndexNeeded / API_PAGE_SIZE) * API_PAGE_SIZE;
@@ -1444,12 +1486,7 @@ function CreatorPage({
       }, []);
       const sliceStart = start - chunkOffsets[0];
       const slice = combined.slice(sliceStart, sliceStart + requested);
-      const totalKnown =
-        typeof profile?.post_count === "number"
-          ? profile.post_count
-          : typeof cacheData?.totalPosts === "number"
-            ? cacheData.totalPosts
-            : null;
+      const totalKnown = typeof totalPosts === "number" ? totalPosts : null;
       const lastResponse = responses[responses.length - 1];
       const lastChunkLength = Array.isArray(lastResponse) ? lastResponse.length : 0;
       const availableFromStart = Math.max(0, combined.length - sliceStart);
@@ -1506,13 +1543,12 @@ function CreatorPage({
         setHasNextPage(hasMore);
         setLoadingPosts(false);
         if (useCache) {
+          const profileCount = toNumericCount(profile?.post_count);
+          const cacheCount = toNumericCount(cacheData?.totalPosts);
           updateCache((prev) => ({
             ...prev,
             chunks: mergedChunks,
-            totalPosts:
-              typeof profile?.post_count === "number"
-                ? profile.post_count
-                : prev.totalPosts ?? cacheData?.totalPosts,
+            totalPosts: profileCount ?? cacheCount ?? prev.totalPosts ?? null,
           }));
           setCacheReloadApplied(reloadKey);
         }
@@ -1528,7 +1564,21 @@ function CreatorPage({
     return () => {
       alive = false;
     };
-  }, [service, creatorId, offset, limit, reloadKey, activeFilter, useCache, cacheData, cacheFresh, cacheReloadApplied, profile?.post_count, updateCache]);
+  }, [
+    service,
+    creatorId,
+    offset,
+    limit,
+    reloadKey,
+    activeFilter,
+    useCache,
+    cacheData,
+    cacheFresh,
+    cacheReloadApplied,
+    totalPosts,
+    reverseOrder,
+    updateCache,
+  ]);
 
   const normalizedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
   const isFilterActive = normalizedFilter.length > 0;
@@ -1540,9 +1590,10 @@ function CreatorPage({
     : 1;
   const clampedSearchPage = isFilterActive ? Math.min(Math.max(searchPage, 1), filteredTotalPages) : 1;
   const pageStart = isFilterActive ? Math.max(0, (clampedSearchPage - 1) * effectiveLimit) : 0;
-  const displayedPosts = isFilterActive ? searchResults.slice(pageStart, pageStart + effectiveLimit) : posts;
+  const baseSearchResults = reverseOrder ? [...searchResults].reverse() : searchResults;
+  const displayedPosts = isFilterActive ? baseSearchResults.slice(pageStart, pageStart + effectiveLimit) : posts;
   const listLoading = isFilterActive ? searchLoading && displayedPosts.length === 0 : loadingPosts;
-  const orderedPosts = reverseOrder ? [...displayedPosts].reverse() : displayedPosts;
+  const orderedPosts = !isFilterActive && reverseOrder ? [...displayedPosts].reverse() : displayedPosts;
   const cacheUpdatedAt = useCache && cacheData?.updatedAt ? cacheData.updatedAt : null;
   const cacheUpdatedStamp = cacheUpdatedAt ? formatDate(cacheUpdatedAt) : null;
   const cacheUpdatedLabel = cacheUpdatedStamp
@@ -1601,13 +1652,8 @@ function CreatorPage({
   }, [showTags, isFilterActive, posts, service, creatorId, postTagMap]);
 
   const hasPrev = offset > 0;
-  const totalPosts =
-    typeof profile?.post_count === "number"
-      ? profile.post_count
-      : Number.isFinite(Number(profile?.post_count))
-        ? Number(profile?.post_count)
-        : null;
-  const derivedTotalPages = totalPosts && limit > 0 ? Math.max(1, Math.ceil(totalPosts / limit)) : null;
+  const derivedTotalPages =
+    typeof totalPosts === "number" && limit > 0 ? Math.max(1, Math.ceil(totalPosts / limit)) : null;
   const currentPage = limit > 0 ? Math.floor(offset / limit) + 1 : 1;
   const hasNext = derivedTotalPages ? offset + limit < totalPosts : hasNextPage;
   const totalPages = derivedTotalPages ?? currentPage + (hasNext ? 1 : 0);
@@ -1683,6 +1729,15 @@ function CreatorPage({
         }
       : null;
 
+  const handleOrderToggle = () => {
+    if (isFilterActive) {
+      setSearchPage(1);
+    } else {
+      setOffset(0);
+    }
+    setReverseOrder((prev) => !prev);
+  };
+
   const renderPagination = () => {
     if (!paginationState) return null;
     if (paginationState.totalPages <= 1) return null;
@@ -1731,7 +1786,7 @@ function CreatorPage({
           <button
             type="button"
             className={`order-toggle${reverseOrder ? " order-toggle-active" : ""}`}
-            onClick={() => setReverseOrder((prev) => !prev)}
+            onClick={handleOrderToggle}
             aria-pressed={reverseOrder}
             title={reverseOrder ? "Sorted oldest to newest" : "Sorted newest to oldest"}
           >
