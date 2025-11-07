@@ -400,9 +400,11 @@ function formatDate(ts) {
 function Timestamp({ value, prefix }) {
   const { date, time } = formatDate(value);
   if (!date) return null;
+  const label = typeof prefix === "string" ? prefix.trim() : "";
   return (
     <span className="timestamp">
-      <span className="timestamp-date">{prefix ? `${prefix} ${date}` : date}</span>
+      {label ? <span className="timestamp-label">{label}</span> : null}
+      <span className="timestamp-date">{date}</span>
       {time ? <span className="timestamp-time">{time}</span> : null}
     </span>
   );
