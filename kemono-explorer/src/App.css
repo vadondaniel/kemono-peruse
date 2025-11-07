@@ -1,3 +1,5 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=Source+Sans+3:wght@400;600&family=Merriweather:wght@400;600&family=Cormorant+Garamond:wght@400;600&family=Literata:wght@400;600&display=swap");
+
 /* Kemono Explorer styling - clean cards, flexible layout, no external deps */
 :root {
   color-scheme: light;
@@ -30,6 +32,7 @@
   --header-bg: linear-gradient(120deg, rgba(255, 255, 255, 0.92), rgba(226, 232, 240, 0.72));
   --header-border: rgba(148, 163, 184, 0.25);
   --header-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+  --reader-font-default: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
 html[data-theme="dark"] {
@@ -1158,7 +1161,7 @@ body {
   position: fixed;
   inset: 0;
   background: rgba(15, 23, 42, 0.65);
-  backdrop-filter: blur(2px);
+  /*backdrop-filter: blur(2px);*/
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1236,15 +1239,19 @@ body {
 
 .reader-pill-group {
   display: flex;
-  width: 100%;
-  gap: 8px;
   flex-direction: column;
+  gap: 8px;
+  width: 100%;
 }
 
-@media (min-width: 640px) {
-  .reader-pill-group {
-    flex-direction: row;
-  }
+.reader-pill-group.font-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.reader-pill-group.font-grid .reader-pill {
+  width: 100%;
 }
 
 .reader-pill {
@@ -1259,7 +1266,7 @@ body {
   transition: background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
   white-space: nowrap;
   text-align: center;
-  flex: 1 1 0;
+  width: 100%;
 }
 
 .reader-pill:hover {
@@ -1307,10 +1314,6 @@ body {
     flex: none;
     box-sizing: border-box;
   }
-
-  .reader-pill-group {
-    flex-direction: column;
-  }
 }
 
 .prose {
@@ -1348,9 +1351,34 @@ body {
   line-height: 1.9;
 }
 
-.post-card.reader-serif .prose {
-  font-family: "Source Serif 4", "PT Serif", "Georgia", "Times New Roman", serif;
+.post-card.reader-font-default .prose {
+  font-family: var(--reader-font-default);
   color: var(--text-primary);
+}
+
+.post-card.reader-font-source-sans .prose {
+  font-family: "Source Sans 3", var(--reader-font-default);
+}
+
+.post-card.reader-font-ibm-plex .prose {
+  font-family: "IBM Plex Sans", var(--reader-font-default);
+  letter-spacing: 0.01em;
+}
+
+.post-card.reader-font-merriweather .prose {
+  font-family: "Merriweather", "Source Serif 4", "PT Serif", "Georgia", "Times New Roman", serif;
+  color: var(--text-primary);
+}
+
+.post-card.reader-font-cormorant .prose {
+  font-family: "Cormorant Garamond", "Merriweather", "Georgia", "Times New Roman", serif;
+  font-size: 1.05em;
+  line-height: 1.8;
+}
+
+.post-card.reader-font-literata .prose {
+  font-family: "Literata", "Merriweather", "Georgia", serif;
+  line-height: 1.85;
 }
 
 .post-card.reader-align-left .prose {
@@ -1569,10 +1597,6 @@ body {
   .reader-control-group {
     min-width: 100%;
     width: 100%;
-  }
-
-  .reader-pill-group {
-    flex-direction: column;
   }
 }
 

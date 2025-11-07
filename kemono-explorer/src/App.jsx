@@ -30,9 +30,14 @@ const READER_WIDTH_OPTIONS = [
   { value: "full", label: "Full" },
 ];
 const READER_TYPEFACE_OPTIONS = [
-  { value: false, label: "Sans" },
-  { value: true, label: "Serif" },
+  { value: "default", label: "Default" },
+  { value: "source-sans", label: "Source Sans 3" },
+  { value: "ibm-plex", label: "IBM Plex Sans" },
+  { value: "merriweather", label: "Merriweather" },
+  { value: "cormorant", label: "Cormorant" },
+  { value: "literata", label: "Literata" },
 ];
+const READER_TYPEFACE_VALUES = READER_TYPEFACE_OPTIONS.map((option) => option.value);
 const READER_ALIGNMENT_OPTIONS = [
   { value: "left", label: "Left" },
   { value: "center", label: "Center" },
@@ -52,10 +57,24 @@ const DEFAULT_READER_SETTINGS = {
   textScale: "base",
   lineSpacing: "normal",
   widthMode: "full",
-  serifBody: false,
+  typeface: "default",
   textAlign: "left",
   textIndent: "none",
 };
+
+const TYPEFACE_PREVIEW_MAP = {
+  default: 'var(--reader-font-default, "Inter", system-ui, -apple-system, "Segoe UI", sans-serif)',
+  "source-sans": '"Source Sans 3", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif',
+  "ibm-plex": '"IBM Plex Sans", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif',
+  merriweather: '"Merriweather", "Source Serif 4", "Georgia", serif',
+  cormorant: '"Cormorant Garamond", "Merriweather", "Georgia", serif',
+  literata: '"Literata", "Merriweather", "Georgia", serif',
+};
+
+function getTypefacePreviewStyle(value) {
+  const family = TYPEFACE_PREVIEW_MAP[value];
+  return family ? { fontFamily: family } : undefined;
+}
 
 const SERVICE_LABELS = {
   patreon: "Patreon",
@@ -314,18 +333,37 @@ function normalizeReaderSettings(raw) {
   if (READER_WIDTH_VALUES.includes(raw.widthMode)) {
     normalized.widthMode = raw.widthMode;
   }
+  if (raw.typeface && typeof raw.typeface === "string") {
+    if (READER_TYPEFACE_VALUES.includes(raw.typeface)) {
+      normalized.typeface = raw.typeface;
+    } else {
+      const legacyMap = {
+        sans: "default",
+        serif: "merriweather",
+        "system-sans": "default",
+        "system-serif": "merriweather",
+        plex: "ibm-plex",
+        "plex-sans": "ibm-plex",
+        garamond: "cormorant",
+        "source-sans": "source-sans",
+        merriweather: "merriweather",
+        cormorant: "cormorant",
+        literata: "literata",
+      };
+      if (legacyMap[raw.typeface]) {
+        normalized.typeface = legacyMap[raw.typeface];
+      }
+    }
+  } else if (raw.serifBody === true) {
+    normalized.typeface = "merriweather";
+  } else if (raw.serifBody === false) {
+    normalized.typeface = "default";
+  }
   if (READER_ALIGNMENT_VALUES.includes(raw.textAlign)) {
     normalized.textAlign = raw.textAlign;
   }
   if (READER_INDENT_VALUES.includes(raw.textIndent)) {
     normalized.textIndent = raw.textIndent;
-  }
-  if (raw.serifBody === true || raw.serifBody === false) {
-    normalized.serifBody = raw.serifBody;
-  } else if (raw.serifBody === "true") {
-    normalized.serifBody = true;
-  } else if (raw.serifBody === "false") {
-    normalized.serifBody = false;
   }
   return normalized;
 }
@@ -786,7 +824,7 @@ function App() {
             {view.name === "post" && (
               <button
                 type="button"
-                className="btn ghost reader-settings-button header-reader-button"
+                className={`btn ghost reader-settings-button header-reader-button${readerSettingsOpen ? " active" : ""}`}
                 onClick={() => setReaderSettingsOpen(true)}
               >
                 Reader settings
@@ -2326,12 +2364,11 @@ function PostView({
         }
         return { ...prev, widthMode: value };
       }
-      if (key === "serifBody") {
-        const nextValue = Boolean(value);
-        if (prev.serifBody === nextValue) {
+      if (key === "typeface") {
+        if (!READER_TYPEFACE_VALUES.includes(value) || prev.typeface === value) {
           return prev;
         }
-        return { ...prev, serifBody: nextValue };
+        return { ...prev, typeface: value };
       }
       if (key === "textAlign") {
         if (!READER_ALIGNMENT_VALUES.includes(value) || prev.textAlign === value) {
@@ -2545,7 +2582,7 @@ function PostView({
     `reader-leading-${readerSettings.lineSpacing}`,
     `reader-align-${readerSettings.textAlign}`,
     `reader-indent-${readerSettings.textIndent}`,
-    readerSettings.serifBody ? "reader-serif" : null,
+    `reader-font-${readerSettings.typeface}`,
   ]
     .filter(Boolean)
     .join(" ");
@@ -2661,16 +2698,17 @@ function PostView({
                 </div>
                 <div className="reader-control-group">
                   <span className="reader-control-label">Typeface</span>
-                  <div className="reader-pill-group" role="group" aria-label="Typeface">
+                  <div className="reader-pill-group font-grid" role="group" aria-label="Typeface">
                     {READER_TYPEFACE_OPTIONS.map((option) => {
-                      const isActive = readerSettings.serifBody === option.value;
+                      const isActive = readerSettings.typeface === option.value;
                       return (
                         <button
-                          key={String(option.value)}
+                          key={option.value}
                           type="button"
                           className={`reader-pill${isActive ? " active" : ""}`}
-                          onClick={() => updateReaderSetting("serifBody", option.value)}
+                            onClick={() => updateReaderSetting("typeface", option.value)}
                           aria-pressed={isActive}
+                          style={getTypefacePreviewStyle(option.value)}
                         >
                           {option.label}
                         </button>
