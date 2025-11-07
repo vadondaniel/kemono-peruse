@@ -1358,6 +1358,16 @@ function CreatorPage({
           exhausted = true;
           break;
         }
+        if (useCache && chunk.length > 0) {
+          updateCache((prev) => {
+            const prevChunks = prev?.chunks ? { ...prev.chunks } : {};
+            prevChunks[String(offset)] = chunk.slice();
+            return {
+              ...prev,
+              chunks: pruneCacheChunks(prevChunks),
+            };
+          });
+        }
         workingResults = workingResults.concat(chunk);
         offset += API_PAGE_SIZE;
         if (chunk.length < API_PAGE_SIZE) {
