@@ -14,6 +14,48 @@ const CACHE_PREF_PREFIX = "kemono.cache.pref";
 const CACHE_DATA_PREFIX = "kemono.cache";
 const PAGE_SIZE_OPTIONS = [25, 50, 75, 100, 125, 150];
 const PAGE_SIZE_KEY = "kemono.pageSize";
+const READER_TEXT_SCALE_OPTIONS = [
+  { value: "small", label: "Small" },
+  { value: "base", label: "Default" },
+  { value: "large", label: "Large" },
+];
+const READER_LINE_SPACING_OPTIONS = [
+  { value: "tight", label: "Tight" },
+  { value: "normal", label: "Normal" },
+  { value: "relaxed", label: "Relaxed" },
+];
+const READER_WIDTH_OPTIONS = [
+  { value: "compact", label: "Compact" },
+  { value: "comfortable", label: "Comfortable" },
+  { value: "full", label: "Full" },
+];
+const READER_TYPEFACE_OPTIONS = [
+  { value: false, label: "Sans" },
+  { value: true, label: "Serif" },
+];
+const READER_ALIGNMENT_OPTIONS = [
+  { value: "left", label: "Left" },
+  { value: "center", label: "Center" },
+  { value: "justify", label: "Justify" },
+];
+const READER_INDENT_OPTIONS = [
+  { value: "none", label: "Off" },
+  { value: "medium", label: "Relaxed" },
+];
+const READER_TEXT_SCALE_VALUES = READER_TEXT_SCALE_OPTIONS.map((option) => option.value);
+const READER_LINE_SPACING_VALUES = READER_LINE_SPACING_OPTIONS.map((option) => option.value);
+const READER_WIDTH_VALUES = READER_WIDTH_OPTIONS.map((option) => option.value);
+const READER_ALIGNMENT_VALUES = READER_ALIGNMENT_OPTIONS.map((option) => option.value);
+const READER_INDENT_VALUES = READER_INDENT_OPTIONS.map((option) => option.value);
+const READER_SETTINGS_KEY = "kemono.readerSettings";
+const DEFAULT_READER_SETTINGS = {
+  textScale: "base",
+  lineSpacing: "normal",
+  widthMode: "full",
+  serifBody: false,
+  textAlign: "left",
+  textIndent: "none",
+};
 
 const SERVICE_LABELS = {
   patreon: "Patreon",
@@ -258,6 +300,48 @@ function getInitialPageSize() {
     // ignore invalid persisted values
   }
   return API_PAGE_SIZE;
+}
+
+function normalizeReaderSettings(raw) {
+  const normalized = { ...DEFAULT_READER_SETTINGS };
+  if (!raw || typeof raw !== "object") return normalized;
+  if (READER_TEXT_SCALE_VALUES.includes(raw.textScale)) {
+    normalized.textScale = raw.textScale;
+  }
+  if (READER_LINE_SPACING_VALUES.includes(raw.lineSpacing)) {
+    normalized.lineSpacing = raw.lineSpacing;
+  }
+  if (READER_WIDTH_VALUES.includes(raw.widthMode)) {
+    normalized.widthMode = raw.widthMode;
+  }
+  if (READER_ALIGNMENT_VALUES.includes(raw.textAlign)) {
+    normalized.textAlign = raw.textAlign;
+  }
+  if (READER_INDENT_VALUES.includes(raw.textIndent)) {
+    normalized.textIndent = raw.textIndent;
+  }
+  if (raw.serifBody === true || raw.serifBody === false) {
+    normalized.serifBody = raw.serifBody;
+  } else if (raw.serifBody === "true") {
+    normalized.serifBody = true;
+  } else if (raw.serifBody === "false") {
+    normalized.serifBody = false;
+  }
+  return normalized;
+}
+
+function getInitialReaderSettings() {
+  if (typeof window === "undefined" || !window.localStorage) {
+    return { ...DEFAULT_READER_SETTINGS };
+  }
+  try {
+    const stored = window.localStorage.getItem(READER_SETTINGS_KEY);
+    if (!stored) return { ...DEFAULT_READER_SETTINGS };
+    const parsed = JSON.parse(stored);
+    return normalizeReaderSettings(parsed);
+  } catch {
+    return { ...DEFAULT_READER_SETTINGS };
+  }
 }
 
 function getCachePreferenceKey(service, creatorId) {
@@ -2135,6 +2219,8 @@ function PostView({
   const cachePrefKey = getCachePreferenceKey(service, creatorId);
   const [useCache, setUseCacheState] = useState(() => readBooleanPreference(cachePrefKey, false));
   const [cacheData, setCacheData] = useState(() => loadCreatorCache(service, creatorId));
+  const [readerSettings, setReaderSettings] = useState(getInitialReaderSettings);
+  const [showReaderSettings, setShowReaderSettings] = useState(false);
   const cacheFresh = useCache && cacheData ? isCacheFresh(cacheData) : false;
   const updateCache = useCallback(
     (updater, { updateTimestamp = true } = {}) => {
@@ -2168,6 +2254,82 @@ function PostView({
     setUseCacheState(readBooleanPreference(cachePrefKey, false));
     setCacheData(loadCreatorCache(service, creatorId));
   }, [cachePrefKey, service, creatorId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.localStorage) return;
+    try {
+      window.localStorage.setItem(READER_SETTINGS_KEY, JSON.stringify(readerSettings));
+    } catch {
+      // ignore preference persistence issues
+    }
+  }, [readerSettings]);
+
+  useEffect(() => {
+    if (!showReaderSettings) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setShowReaderSettings(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [showReaderSettings]);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return undefined;
+    if (!showReaderSettings) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [showReaderSettings]);
+
+  const updateReaderSetting = (key, value) => {
+    setReaderSettings((prev) => {
+      if (key === "textScale") {
+        if (!READER_TEXT_SCALE_VALUES.includes(value) || prev.textScale === value) {
+          return prev;
+        }
+        return { ...prev, textScale: value };
+      }
+      if (key === "lineSpacing") {
+        if (!READER_LINE_SPACING_VALUES.includes(value) || prev.lineSpacing === value) {
+          return prev;
+        }
+        return { ...prev, lineSpacing: value };
+      }
+      if (key === "widthMode") {
+        if (!READER_WIDTH_VALUES.includes(value) || prev.widthMode === value) {
+          return prev;
+        }
+        return { ...prev, widthMode: value };
+      }
+      if (key === "serifBody") {
+        const nextValue = Boolean(value);
+        if (prev.serifBody === nextValue) {
+          return prev;
+        }
+        return { ...prev, serifBody: nextValue };
+      }
+      if (key === "textAlign") {
+        if (!READER_ALIGNMENT_VALUES.includes(value) || prev.textAlign === value) {
+          return prev;
+        }
+        return { ...prev, textAlign: value };
+      }
+      if (key === "textIndent") {
+        if (!READER_INDENT_VALUES.includes(value) || prev.textIndent === value) {
+          return prev;
+        }
+        return { ...prev, textIndent: value };
+      }
+      return prev;
+    });
+  };
+
   const [post, setPost] = useState(null);
   const [loading, setLoading] = useState(true);
   const [neighbors, setNeighbors] = useState({ newerId: null, olderId: null });
@@ -2357,10 +2519,21 @@ function PostView({
     : "";
   const heroImage = post.file?.path ? `${MEDIA_BASE}${post.file.path}` : null;
   const attachments = Array.isArray(post.attachments) ? post.attachments : [];
+  const readerCardClassName = [
+    "card post-card",
+    `reader-width-${readerSettings.widthMode}`,
+    `reader-scale-${readerSettings.textScale}`,
+    `reader-leading-${readerSettings.lineSpacing}`,
+    `reader-align-${readerSettings.textAlign}`,
+    `reader-indent-${readerSettings.textIndent}`,
+    readerSettings.serifBody ? "reader-serif" : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <div className="page">
-      <article className="card post-card">
+      <article className={readerCardClassName}>
         <div className="post-nav">
           <button
             className="btn ghost"
@@ -2381,7 +2554,160 @@ function PostView({
           >
             Next &rarr;
           </button>
+      </div>
+        <div className="reader-settings-bar">
+          <button
+            type="button"
+            className={`btn ghost reader-settings-button${showReaderSettings ? " active" : ""}`}
+            onClick={() => setShowReaderSettings(true)}
+            aria-haspopup="dialog"
+            aria-expanded={showReaderSettings}
+          >
+            Reader settings
+          </button>
         </div>
+        {showReaderSettings && (
+          <div
+            className="reader-modal-overlay"
+            role="presentation"
+            onClick={() => setShowReaderSettings(false)}
+          >
+            <div
+              className="reader-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Reader settings"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="reader-modal-header">
+                <h3 className="reader-modal-title">Reader settings</h3>
+                <button
+                  type="button"
+                  className="btn ghost reader-modal-close"
+                  onClick={() => setShowReaderSettings(false)}
+                >
+                  Close
+                </button>
+              </div>
+              <div className="reader-controls" role="region" aria-label="Reader settings options">
+                <div className="reader-control-group">
+                  <span className="reader-control-label">Text size</span>
+                  <div className="reader-pill-group" role="group" aria-label="Text size">
+                    {READER_TEXT_SCALE_OPTIONS.map((option) => {
+                      const isActive = readerSettings.textScale === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={`reader-pill${isActive ? " active" : ""}`}
+                          onClick={() => updateReaderSetting("textScale", option.value)}
+                          aria-pressed={isActive}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="reader-control-group">
+                  <span className="reader-control-label">Line spacing</span>
+                  <div className="reader-pill-group" role="group" aria-label="Line spacing">
+                    {READER_LINE_SPACING_OPTIONS.map((option) => {
+                      const isActive = readerSettings.lineSpacing === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={`reader-pill${isActive ? " active" : ""}`}
+                          onClick={() => updateReaderSetting("lineSpacing", option.value)}
+                          aria-pressed={isActive}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="reader-control-group">
+                  <span className="reader-control-label">Layout width</span>
+                  <div className="reader-pill-group" role="group" aria-label="Layout width">
+                    {READER_WIDTH_OPTIONS.map((option) => {
+                      const isActive = readerSettings.widthMode === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={`reader-pill${isActive ? " active" : ""}`}
+                          onClick={() => updateReaderSetting("widthMode", option.value)}
+                          aria-pressed={isActive}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="reader-control-group">
+                  <span className="reader-control-label">Typeface</span>
+                  <div className="reader-pill-group" role="group" aria-label="Typeface">
+                    {READER_TYPEFACE_OPTIONS.map((option) => {
+                      const isActive = readerSettings.serifBody === option.value;
+                      return (
+                        <button
+                          key={String(option.value)}
+                          type="button"
+                          className={`reader-pill${isActive ? " active" : ""}`}
+                          onClick={() => updateReaderSetting("serifBody", option.value)}
+                          aria-pressed={isActive}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="reader-control-group">
+                  <span className="reader-control-label">Alignment</span>
+                  <div className="reader-pill-group" role="group" aria-label="Text alignment">
+                    {READER_ALIGNMENT_OPTIONS.map((option) => {
+                      const isActive = readerSettings.textAlign === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={`reader-pill${isActive ? " active" : ""}`}
+                          onClick={() => updateReaderSetting("textAlign", option.value)}
+                          aria-pressed={isActive}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="reader-control-group">
+                  <span className="reader-control-label">Paragraph indent</span>
+                  <div className="reader-pill-group" role="group" aria-label="Paragraph indent">
+                    {READER_INDENT_OPTIONS.map((option) => {
+                      const isActive = readerSettings.textIndent === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={`reader-pill${isActive ? " active" : ""}`}
+                          onClick={() => updateReaderSetting("textIndent", option.value)}
+                          aria-pressed={isActive}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         <header className="post-header">
           <span className="muted small">{creatorDisplay}</span>
           <h2 className="title">{post.title || post.id}</h2>
