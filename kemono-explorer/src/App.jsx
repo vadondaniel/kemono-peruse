@@ -377,15 +377,12 @@ function collectCachedPosts(cache) {
     .sort((a, b) => a.offset - b.offset);
   if (!entries.length) return null;
   const posts = [];
-  let expectedOffset = 0;
   for (const entry of entries) {
-    if (entry.offset !== expectedOffset) return null;
     posts.push(...entry.value);
     if (entry.value.length < API_PAGE_SIZE) break;
-    expectedOffset += API_PAGE_SIZE;
     if (posts.length >= MAX_CACHE_POSTS) break;
   }
-  return posts.slice(0, MAX_CACHE_POSTS);
+  return posts.length ? posts.slice(0, MAX_CACHE_POSTS) : null;
 }
 
 async function fetchJson(url) {
@@ -1315,11 +1312,19 @@ function CreatorPage({
           return tokens.every((token) => normalizedHaystacks.some((hay) => hay.includes(token)));
         });
         const cacheTotalPosts = toNumericCount(cacheData?.totalPosts);
+        const cacheComplete =
+          typeof cacheTotalPosts === "number" &&
+          cacheTotalPosts > 0 &&
+          cacheTotalPosts <= MAX_CACHE_POSTS &&
+          cachedPostsForSearch.length >= cacheTotalPosts;
         const capped = Boolean(cacheTotalPosts && cacheTotalPosts > cachedPostsForSearch.length);
-        setSearchResults(results);
-        setSearchCapped(capped);
-        setSearchLoading(false);
-        return;
+        if (results.length > 0 || cacheComplete) {
+          setSearchResults(results);
+          setSearchCapped(capped);
+          setSearchLoading(false);
+          return;
+        }
+        // Fall through to API search when cache did not yield any hits and we cannot prove completeness.
       }
     }
 
