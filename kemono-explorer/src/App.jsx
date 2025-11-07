@@ -2017,33 +2017,36 @@ function CreatorPage({
           </div>
           <div className="controls post-controls">
             <div className="display-toggle-group">
-              <label
-                className={`filter-toggle${showExcerpts ? " filter-toggle-active" : ""}`}
-                htmlFor="show-excerpts"
-              >
-                <input
-                  id="show-excerpts"
-                  type="checkbox"
-                  checked={showExcerpts}
-                  onChange={(event) => setShowExcerpts(event.target.checked)}
-                />
-                <span className="filter-toggle-track">
-                  <span className="filter-toggle-thumb" />
-                </span>
-                Excerpts
-              </label>
-              <label className={`filter-toggle${showTags ? " filter-toggle-active" : ""}`} htmlFor="show-tags">
-                <input
-                  id="show-tags"
-                  type="checkbox"
-                  checked={showTags}
-                  onChange={(event) => setShowTags(event.target.checked)}
-                />
-                <span className="filter-toggle-track">
-                  <span className="filter-toggle-thumb" />
-                </span>
-                Tags
-              </label>
+              <span className="label display-label">Display</span>
+              <div className="display-toggle-options">
+                <label
+                  className={`filter-toggle${showExcerpts ? " filter-toggle-active" : ""}`}
+                  htmlFor="show-excerpts"
+                >
+                  <input
+                    id="show-excerpts"
+                    type="checkbox"
+                    checked={showExcerpts}
+                    onChange={(event) => setShowExcerpts(event.target.checked)}
+                  />
+                  <span className="filter-toggle-track">
+                    <span className="filter-toggle-thumb" />
+                  </span>
+                  Excerpts
+                </label>
+                <label className={`filter-toggle${showTags ? " filter-toggle-active" : ""}`} htmlFor="show-tags">
+                  <input
+                    id="show-tags"
+                    type="checkbox"
+                    checked={showTags}
+                    onChange={(event) => setShowTags(event.target.checked)}
+                  />
+                  <span className="filter-toggle-track">
+                    <span className="filter-toggle-thumb" />
+                  </span>
+                  Tags
+                </label>
+              </div>
             </div>
             <div className="order-size-group">
               <div className="page-size-control">

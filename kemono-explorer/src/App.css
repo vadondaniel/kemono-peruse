@@ -276,10 +276,30 @@ body {
 .display-toggle-group,
 .order-size-group {
   display: flex;
-  align-items: center;
-  gap: 10px;
   flex-wrap: wrap;
+  gap: 10px;
   justify-content: flex-end;
+}
+
+.display-label {
+  width: 100%;
+}
+
+.display-toggle-group {
+  flex-direction: column;
+  align-items: flex-start;
+  max-width: 240px;
+}
+
+.display-toggle-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.order-size-group {
+  align-items: center;
 }
 
 .page-size-control {
@@ -1167,6 +1187,11 @@ body {
     gap: 12px;
   }
 
+  .display-toggle-group {
+    width: 100%;
+    max-width: 100%;
+  }
+
   .display-toggle-group,
   .order-size-group {
     justify-content: flex-start;
@@ -1217,6 +1242,10 @@ body {
 
   .post-controls {
     gap: 10px;
+  }
+
+  .display-toggle-options {
+    width: 100%;
   }
 
   .order-size-group {
