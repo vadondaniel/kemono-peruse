@@ -22,6 +22,206 @@ const SERVICE_LABELS = {
   dlsite: "DLsite",
 };
 
+const RAW_BASE_PATH = (import.meta.env && import.meta.env.BASE_URL) || "/";
+const NORMALIZED_BASE_PATH = normalizeBasePath(RAW_BASE_PATH);
+const BASE_PATH_PREFIX = NORMALIZED_BASE_PATH === "/" ? "" : NORMALIZED_BASE_PATH.slice(0, -1);
+const BASE_TITLE = "Kemono Explorer";
+
+function normalizeBasePath(value) {
+  if (typeof value !== "string" || value.length === 0) {
+    return "/";
+  }
+  let next = value.trim();
+  if (!next.startsWith("/")) {
+    next = `/${next}`;
+  }
+  if (!next.endsWith("/")) {
+    next = `${next}/`;
+  }
+  return next.replace(/\/{2,}/g, "/");
+}
+
+function stripBasePath(pathname) {
+  if (typeof pathname !== "string" || pathname.length === 0) {
+    return "/";
+  }
+  if (!BASE_PATH_PREFIX) {
+    return pathname || "/";
+  }
+  if (pathname === BASE_PATH_PREFIX) {
+    return "/";
+  }
+  if (pathname.startsWith(`${BASE_PATH_PREFIX}/`)) {
+    const remainder = pathname.slice(BASE_PATH_PREFIX.length);
+    return remainder || "/";
+  }
+  return pathname || "/";
+}
+
+function decodePathSegment(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function encodePathSegment(value) {
+  if (typeof value !== "string") {
+    return "";
+  }
+  return encodeURIComponent(value);
+}
+
+function safeString(value) {
+  return typeof value === "string" ? value : "";
+}
+
+function toViewOrNull(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  if (raw.name === "home") {
+    return { name: "home" };
+  }
+  if (raw.name === "creator") {
+    const service = safeString(raw.service);
+    const creatorId = safeString(raw.creatorId);
+    if (!service || !creatorId) return null;
+    return {
+      name: "creator",
+      service,
+      creatorId,
+      creatorName: safeString(raw.creatorName),
+    };
+  }
+  if (raw.name === "post") {
+    const service = safeString(raw.service);
+    const creatorId = safeString(raw.creatorId);
+    const postId = safeString(raw.postId);
+    if (!service || !creatorId || !postId) return null;
+    return {
+      name: "post",
+      service,
+      creatorId,
+      creatorName: safeString(raw.creatorName),
+      postId,
+      postTitle: safeString(raw.postTitle),
+    };
+  }
+  return null;
+}
+
+function ensureView(raw) {
+  return toViewOrNull(raw) || { name: "home" };
+}
+
+function parseViewFromPath(pathname) {
+  const stripped = stripBasePath(pathname || "/");
+  if (!stripped || stripped === "/") {
+    return { name: "home" };
+  }
+  const segments = stripped.split("/").filter(Boolean).map(decodePathSegment);
+  if (segments.length >= 5 && segments[0] === "creator" && segments[3] === "post") {
+    return ensureView({
+      name: "post",
+      service: segments[1],
+      creatorId: segments[2],
+      creatorName: "",
+      postId: segments[4],
+    });
+  }
+  if (segments.length >= 3 && segments[0] === "creator") {
+    return ensureView({
+      name: "creator",
+      service: segments[1],
+      creatorId: segments[2],
+      creatorName: "",
+    });
+  }
+  return { name: "home" };
+}
+
+function getViewFromHistoryState(state, pathname) {
+  const fromState = toViewOrNull(state?.view);
+  if (fromState) {
+    return fromState;
+  }
+  return parseViewFromPath(pathname);
+}
+
+function viewsEqual(a, b) {
+  const viewA = ensureView(a);
+  const viewB = ensureView(b);
+  if (viewA.name !== viewB.name) return false;
+  if (viewA.name === "home") return true;
+  if (viewA.name === "creator") {
+    return (
+      viewA.service === viewB.service &&
+      viewA.creatorId === viewB.creatorId &&
+      viewA.creatorName === viewB.creatorName
+    );
+  }
+  if (viewA.name === "post") {
+    return (
+      viewA.service === viewB.service &&
+      viewA.creatorId === viewB.creatorId &&
+      viewA.postId === viewB.postId &&
+      viewA.creatorName === viewB.creatorName
+    );
+  }
+  return false;
+}
+
+function getUrlForView(view) {
+  const normalized = ensureView(view);
+  const segments = [];
+  if (normalized.name === "creator" || normalized.name === "post") {
+    segments.push("creator", normalized.service, normalized.creatorId);
+    if (normalized.name === "post") {
+      segments.push("post", normalized.postId);
+    }
+  }
+  const encodedSegments = segments.map(encodePathSegment);
+  const suffix = encodedSegments.length > 0 ? `/${encodedSegments.join("/")}` : "/";
+  return BASE_PATH_PREFIX ? `${BASE_PATH_PREFIX}${suffix}` : suffix;
+}
+
+function getTitleForView(view) {
+  const normalized = ensureView(view);
+  if (normalized.name === "creator") {
+    const creatorLabel = normalized.creatorName || normalized.creatorId || "Creator";
+    const serviceLabel = SERVICE_LABELS[normalized.service] || normalized.service || "";
+    const dynamic = serviceLabel ? `${creatorLabel} - ${serviceLabel}` : creatorLabel;
+    return `${dynamic} | ${BASE_TITLE}`;
+  }
+  if (normalized.name === "post") {
+    const parts = [normalized.postTitle || normalized.postId || "Post"];
+    if (normalized.creatorName || normalized.creatorId) {
+      parts.push(normalized.creatorName || normalized.creatorId);
+    }
+    const serviceLabel = SERVICE_LABELS[normalized.service] || normalized.service || "";
+    if (serviceLabel) {
+      parts.push(serviceLabel);
+    }
+    return `${parts.join(" - ")} | ${BASE_TITLE}`;
+  }
+  return BASE_TITLE;
+}
+
+function getInitialView() {
+  if (typeof window === "undefined") {
+    return { name: "home" };
+  }
+  const fromState = toViewOrNull(window.history?.state?.view);
+  if (fromState) {
+    return fromState;
+  }
+  return parseViewFromPath(window.location.pathname);
+}
+
+function buildHistoryState(view) {
+  return { view: { ...ensureView(view) } };
+}
+
 function getCachePreferenceKey(service, creatorId) {
   return `${CACHE_PREF_PREFIX}.${service}.${creatorId}`;
 }
@@ -258,7 +458,67 @@ function extractTagTokens(value) {
 }
 
 function App() {
-  const [view, setView] = useState({ name: "home" });
+  const [view, setViewState] = useState(getInitialView);
+  const viewRef = useRef(view);
+  const initialViewRef = useRef(view);
+
+  useEffect(() => {
+    viewRef.current = view;
+  }, [view]);
+
+  const navigate = useCallback((nextView, options = {}) => {
+    const normalized = ensureView(nextView);
+    const previous = viewRef.current;
+    setViewState(normalized);
+    viewRef.current = normalized;
+
+    if (typeof window === "undefined" || options.skipHistory) {
+      return normalized;
+    }
+
+    const sameView = viewsEqual(normalized, previous);
+    const url = getUrlForView(normalized);
+    const state = buildHistoryState(normalized);
+
+    try {
+      if (options.replace || sameView) {
+        window.history.replaceState(state, "", url);
+      } else {
+        window.history.pushState(state, "", url);
+      }
+    } catch (error) {
+      console.warn("Failed to update browser history", error);
+    }
+
+    return normalized;
+  }, []);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    document.title = getTitleForView(view);
+  }, [view]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const initialView = ensureView(initialViewRef.current);
+    try {
+      const url = getUrlForView(initialView);
+      window.history.replaceState(buildHistoryState(initialView), "", url);
+    } catch (error) {
+      console.warn("Failed to initialize browser history", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handlePopState = (event) => {
+      const next = getViewFromHistoryState(event.state, window.location.pathname);
+      navigate(next, { skipHistory: true });
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [navigate]);
+
   const [savedCreators, setSavedCreators] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("kemono.savedCreators") || "[]");
@@ -334,12 +594,31 @@ function App() {
     };
   }, []);
 
+  const handleResolvePostTitle = useCallback(
+    (resolvedTitle) => {
+      if (view.name !== "post") return;
+      const title = typeof resolvedTitle === "string" ? resolvedTitle : "";
+      navigate(
+        {
+          name: "post",
+          service: view.service,
+          creatorId: view.creatorId,
+          creatorName: view.creatorName,
+          postId: view.postId,
+          postTitle: title,
+        },
+        { replace: true },
+      );
+    },
+    [navigate, view.name, view.service, view.creatorId, view.creatorName, view.postId],
+  );
+
   const openCreator = (service, creatorId, creatorName) => {
-    setView({ name: "creator", service, creatorId, creatorName });
+    navigate({ name: "creator", service, creatorId, creatorName });
   };
 
-  const openPost = (service, creatorId, creatorName, postId) => {
-    setView({ name: "post", service, creatorId, creatorName, postId });
+  const openPost = (service, creatorId, creatorName, postId, postTitle) => {
+    navigate({ name: "post", service, creatorId, creatorName, postId, postTitle });
   };
 
   const isCreatorSaved = (service, creatorId) =>
@@ -372,7 +651,7 @@ function App() {
         <div className="app-header-inner">
           <div className="header-top">
             <h1 className="title">
-              <button className="brand-link" type="button" onClick={() => setView({ name: "home" })}>
+              <button className="brand-link" type="button" onClick={() => navigate({ name: "home" })}>
                 Kemono Explorer
               </button>
             </h1>
@@ -432,7 +711,9 @@ function App() {
               creatorId={view.creatorId}
               creatorName={view.creatorName}
               alreadySaved={isCreatorSaved(view.service, view.creatorId)}
-              onOpenPost={(postId) => openPost(view.service, view.creatorId, view.creatorName, postId)}
+              onOpenPost={(postId, postTitle) =>
+                openPost(view.service, view.creatorId, view.creatorName, postId, postTitle)
+              }
               onSave={() =>
                 setSavedCreators((prev) => {
                   const exists = prev.find((c) => c.service === view.service && c.id === view.creatorId);
@@ -456,7 +737,7 @@ function App() {
               postId={view.postId}
               activeFilter={getCreatorFilter(view.service, view.creatorId)}
               onBack={() =>
-                setView({
+                navigate({
                   name: "creator",
                   service: view.service,
                   creatorId: view.creatorId,
@@ -464,7 +745,7 @@ function App() {
                 })
               }
               onNavigate={(nextPostId) =>
-                setView({
+                navigate({
                   name: "post",
                   service: view.service,
                   creatorId: view.creatorId,
@@ -472,6 +753,7 @@ function App() {
                   postId: nextPostId,
                 })
               }
+              onResolvePostTitle={handleResolvePostTitle}
             />
           )}
         </main>
@@ -1514,7 +1796,7 @@ function CreatorPage({
       <section className="card">
         <div className="card-row header-row">
           <div className="card-col">
-            <h3 className="title">Recent posts</h3>
+            <h3 className="title">Posts</h3>
             <span className="label">{summaryLabel}</span>
             {useCache && (
               <span className="muted small">
@@ -1590,7 +1872,7 @@ function CreatorPage({
                 setSearchPage(1);
               }}
             >
-              {[25, 50, 75, 100].map((count) => (
+              {[25, 50, 75, 100, 125, 150].map((count) => (
                 <option key={count} value={count}>
                   {count}
                 </option>
@@ -1673,7 +1955,12 @@ function CreatorPage({
             const normalizedTags = Array.isArray(postTags) ? postTags : [];
             const hasTags = normalizedTags.length > 0;
             return (
-              <button className="post-item" key={post.id} type="button" onClick={() => onOpenPost(post.id)}>
+              <button
+                className="post-item"
+                key={post.id}
+                type="button"
+                onClick={() => onOpenPost(post.id, post.title || "")}
+              >
                 <div className="post-body">
                   <div className="post-head">
                     <span className="post-title">{post.title || post.id}</span>
@@ -1707,7 +1994,16 @@ function CreatorPage({
   );
 }
 
-function PostView({ service, creatorId, creatorName, postId, activeFilter, onBack, onNavigate }) {
+function PostView({
+  service,
+  creatorId,
+  creatorName,
+  postId,
+  activeFilter,
+  onBack,
+  onNavigate,
+  onResolvePostTitle,
+}) {
   const cachePrefKey = getCachePreferenceKey(service, creatorId);
   const [useCache, setUseCacheState] = useState(() => readBooleanPreference(cachePrefKey, false));
   const [cacheData, setCacheData] = useState(() => loadCreatorCache(service, creatorId));
@@ -1747,6 +2043,14 @@ function PostView({ service, creatorId, creatorName, postId, activeFilter, onBac
   const [post, setPost] = useState(null);
   const [loading, setLoading] = useState(true);
   const [neighbors, setNeighbors] = useState({ newerId: null, olderId: null });
+  const lastResolvedTitleRef = useRef(null);
+  useEffect(() => {
+    if (!post || typeof onResolvePostTitle !== "function") return;
+    const nextTitle = post.title || post.id || "";
+    if (lastResolvedTitleRef.current === nextTitle) return;
+    lastResolvedTitleRef.current = nextTitle;
+    onResolvePostTitle(nextTitle);
+  }, [post, onResolvePostTitle]);
   const getStoredFilterFields = () => {
     const defaults = { title: true, tags: true, body: true };
     if (typeof window === "undefined" || !window.localStorage) return defaults;
@@ -1944,9 +2248,9 @@ function PostView({ service, creatorId, creatorName, postId, activeFilter, onBac
           </button>
         </div>
         <header className="post-header">
+          <span className="muted small">{creatorName || creatorId}</span>
           <h2 className="title">{post.title || post.id}</h2>
           <Timestamp value={post.published} prefix="Published" />
-          <span className="muted small">{creatorName || creatorId}</span>
         </header>
 
         {attachments.length > 0 && (
@@ -1997,6 +2301,4 @@ function PostView({ service, creatorId, creatorName, postId, activeFilter, onBac
     </div>
   );
 }
-
 export default App;
-
