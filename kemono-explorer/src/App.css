@@ -1152,10 +1152,6 @@ body {
     align-items: flex-start;
   }
 
-  .creator-avatar-wrapper {
-    width: 56px;
-    height: 56px;
-  }
   .controls {
     justify-content: flex-start;
     width: 100%;
@@ -1299,11 +1295,6 @@ body {
   .hero-body {
     flex-direction: column;
     align-items: flex-start;
-  }
-
-  .creator-avatar-wrapper {
-    width: 48px;
-    height: 48px;
   }
 }
 
