@@ -31,8 +31,8 @@ const READER_WIDTH_OPTIONS = [
 ];
 const READER_TYPEFACE_OPTIONS = [
   { value: "default", label: "Default" },
-  { value: "source-sans", label: "Source Sans 3" },
-  { value: "ibm-plex", label: "IBM Plex Sans" },
+  { value: "source-sans", label: "Source Sans" },
+  { value: "ibm-plex", label: "IBM Plex" },
   { value: "merriweather", label: "Merriweather" },
   { value: "cormorant", label: "Cormorant" },
   { value: "literata", label: "Literata" },
@@ -44,8 +44,9 @@ const READER_ALIGNMENT_OPTIONS = [
   { value: "justify", label: "Justify" },
 ];
 const READER_INDENT_OPTIONS = [
-  { value: "none", label: "Off" },
-  { value: "medium", label: "On" },
+  { value: "none", label: "None" },
+  { value: "soft", label: "Soft" },
+  { value: "deep", label: "Deep" },
 ];
 const READER_TEXT_SCALE_VALUES = READER_TEXT_SCALE_OPTIONS.map((option) => option.value);
 const READER_LINE_SPACING_VALUES = READER_LINE_SPACING_OPTIONS.map((option) => option.value);
@@ -364,6 +365,8 @@ function normalizeReaderSettings(raw) {
   }
   if (READER_INDENT_VALUES.includes(raw.textIndent)) {
     normalized.textIndent = raw.textIndent;
+  } else if (raw.textIndent === "medium") {
+    normalized.textIndent = "soft";
   }
   return normalized;
 }

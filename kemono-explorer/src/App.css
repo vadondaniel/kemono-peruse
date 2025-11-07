@@ -1394,13 +1394,22 @@ body {
   text-align-last: left;
 }
 
-.post-card.reader-indent-medium .prose p {
-  text-indent: 1em;
+.post-card.reader-indent-soft .prose p,
+.post-card.reader-indent-deep .prose p {
   margin-top: 0;
   margin-bottom: 12px;
 }
 
-.post-card.reader-indent-medium .prose p + p {
+.post-card.reader-indent-soft .prose p {
+  text-indent: 1em;
+}
+
+.post-card.reader-indent-deep .prose p {
+  text-indent: 2em;
+}
+
+.post-card.reader-indent-soft .prose p + p,
+.post-card.reader-indent-deep .prose p + p {
   margin-top: 6px;
 }
 
