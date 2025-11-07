@@ -8,7 +8,11 @@
 // and forwards the request server-side with the Accept header Kemono expects.
 
 const http = require("node:http");
+const fs = require("node:fs");
+const path = require("node:path");
 const { URL } = require("node:url");
+
+loadEnvDefaults();
 
 const PROXY_PORT = Number(process.env.PROXY_PORT || process.env.PORT || 3001);
 const API_PROXY_PREFIX = "/api/proxy/kemono";
@@ -111,4 +115,51 @@ function corsHeaders() {
 function trimTrailingSlash(value) {
   if (!value) return "";
   return value.endsWith("/") ? value.slice(0, -1) : value;
+}
+
+function loadEnvDefaults() {
+  const candidateFiles = [
+    path.join(__dirname, ".env"),
+    path.join(__dirname, ".env.local"),
+    path.join(__dirname, "kemono-explorer", ".env"),
+    path.join(__dirname, "kemono-explorer", ".env.local"),
+  ];
+
+  for (const file of candidateFiles) {
+    applyEnvFromFile(file);
+  }
+}
+
+function applyEnvFromFile(filePath) {
+  try {
+    const content = fs.readFileSync(filePath, "utf8");
+    for (const line of content.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) continue;
+
+      const separatorIndex = trimmed.indexOf("=");
+      if (separatorIndex === -1) continue;
+
+      const key = trimmed.slice(0, separatorIndex).trim();
+      if (!key || process.env[key] !== undefined) continue;
+
+      const rawValue = trimmed.slice(separatorIndex + 1).trim();
+      process.env[key] = stripWrappingQuotes(rawValue);
+    }
+  } catch (error) {
+    if (error.code !== "ENOENT") {
+      console.warn(`Unable to load env file ${filePath}: ${error.message}`);
+    }
+  }
+}
+
+function stripWrappingQuotes(value) {
+  if (!value) return "";
+  if (
+    (value.startsWith('"') && value.endsWith('"')) ||
+    (value.startsWith("'") && value.endsWith("'"))
+  ) {
+    return value.slice(1, -1);
+  }
+  return value;
 }

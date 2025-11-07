@@ -16,7 +16,7 @@ npm install
 
 ## Run the Proxy
 
-From the project root, start the proxy in its own terminal (use the `.env.example` file described below if you want different ports):
+From the project root, start the proxy in its own terminal (create or edit `kemono-explorer/.env` first if you want different ports):
 
 ```bash
 node proxy-server.js
@@ -50,7 +50,7 @@ Vite serves at `http://localhost:5173` (set `VITE_DEV_SERVER_PORT` or `VITE_PORT
 
 ### Environment file
 
-Copy `kemono-explorer/.env.example` to `kemono-explorer/.env.local` (or `.env`) and tweak the values if you want to run on different ports:
+Copy `kemono-explorer/.env.example` to `kemono-explorer/.env` (or `.env.local`) and edit it to change both servers. The file stays untracked so your local ports remain yours:
 
 ```ini
 PROXY_PORT=4000
