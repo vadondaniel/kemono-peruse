@@ -990,6 +990,30 @@ body {
   gap: 6px;
 }
 
+@media (min-width: 960px) {
+  .post-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 4px 24px;
+    align-items: flex-start;
+  }
+
+  .post-header .title {
+    grid-column: 1 / 2;
+    margin-bottom: 0;
+  }
+
+  .post-header .muted.small {
+    grid-column: 1 / 2;
+  }
+
+  .post-header .timestamp {
+    grid-column: 2 / 3;
+    grid-row: 1 / 3;
+    justify-self: end;
+  }
+}
+
 .prose {
   line-height: 1.7;
   font-size: 15px;

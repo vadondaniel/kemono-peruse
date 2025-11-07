@@ -2048,6 +2048,13 @@ function PostView({
   const [post, setPost] = useState(null);
   const [loading, setLoading] = useState(true);
   const [neighbors, setNeighbors] = useState({ newerId: null, olderId: null });
+  const serviceLabel = getServiceLabel(service);
+  const creatorLabel = creatorName || creatorId || "";
+  const creatorDisplay = creatorLabel
+    ? serviceLabel
+      ? `${creatorLabel} (${serviceLabel})`
+      : creatorLabel
+    : serviceLabel;
   const lastResolvedTitleRef = useRef(null);
   useEffect(() => {
     if (!post || typeof onResolvePostTitle !== "function") return;
@@ -2253,7 +2260,7 @@ function PostView({
           </button>
         </div>
         <header className="post-header">
-          <span className="muted small">{creatorName || creatorId}</span>
+          <span className="muted small">{creatorDisplay}</span>
           <h2 className="title">{post.title || post.id}</h2>
           <Timestamp value={post.published} prefix="Published" />
         </header>
