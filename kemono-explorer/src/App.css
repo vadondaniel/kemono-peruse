@@ -1637,11 +1637,55 @@ html[data-theme="dark"] .hero-stat {
   border-radius: 14px;
   overflow: hidden;
   border: 1px solid rgba(148, 163, 184, 0.2);
+  position: relative;
+  background: var(--surface-muted);
 }
 
 .feature-image img {
   width: 100%;
   display: block;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.feature-image img.image-loaded {
+  opacity: 1;
+}
+
+.image-placeholder {
+  width: 100%;
+  padding-top: 56%;
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(148, 163, 184, 0.25),
+    rgba(148, 163, 184, 0.25) 12px,
+    rgba(148, 163, 184, 0.15) 12px,
+    rgba(148, 163, 184, 0.15) 24px
+  );
+  border-radius: inherit;
+  position: relative;
+  overflow: hidden;
+}
+
+.image-placeholder::after {
+  content: "Loading image…";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.thumbnail-placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1px dashed var(--border);
+  color: var(--muted);
+  font-size: 13px;
 }
 
 @media (max-width: 960px) {

@@ -161,6 +161,7 @@ function PostView({
   const [post, setPost] = useState(null);
   const [loading, setLoading] = useState(true);
   const [neighbors, setNeighbors] = useState({ newerId: null, olderId: null });
+  const [heroLoaded, setHeroLoaded] = useState(false);
   const serviceLabel = getServiceLabel(service);
   const creatorLabel = creatorName || creatorId || "";
   const creatorDisplay = creatorLabel
@@ -321,6 +322,20 @@ function PostView({
     };
   }, [service, creatorId, postId, activeFilter]);
 
+  const useOriginalAttachments = readerSettings.attachmentsMode === "original";
+  const heroFile = post?.file && (post.file.path || post.file.url || post.file.name) ? post.file : null;
+  const heroProxySrc = heroFile?.path ? `${MEDIA_BASE}${heroFile.path}` : null;
+  const heroOriginalSrc = heroFile?.url || (heroFile?.path ? `${ORIGINAL_MEDIA_BASE}${heroFile.path}` : null);
+  const heroImage = heroFile
+    ? useOriginalAttachments && heroOriginalSrc
+      ? heroOriginalSrc
+      : heroProxySrc || heroOriginalSrc
+    : null;
+
+  useEffect(() => {
+    setHeroLoaded(!heroImage);
+  }, [heroImage]);
+
   if (loading) {
     return (
       <div className="page">
@@ -342,11 +357,7 @@ function PostView({
   }
 
   const baseAttachments = Array.isArray(post.attachments) ? [...post.attachments] : [];
-  const useOriginalAttachments = readerSettings.attachmentsMode === "original";
   const attachmentMediaBase = useOriginalAttachments ? ORIGINAL_MEDIA_BASE : MEDIA_BASE;
-  const heroFile = post.file && (post.file.path || post.file.url || post.file.name) ? post.file : null;
-  const heroProxySrc = heroFile?.path ? `${MEDIA_BASE}${heroFile.path}` : null;
-  const heroOriginalSrc = heroFile?.url || (heroFile?.path ? `${ORIGINAL_MEDIA_BASE}${heroFile.path}` : null);
   const attachments = heroFile
     ? [
         {
@@ -360,11 +371,7 @@ function PostView({
       ]
     : baseAttachments;
   const bodyHtml = post.content || post.body || post.text || "";
-  const heroImage = heroFile
-    ? useOriginalAttachments && heroOriginalSrc
-      ? heroOriginalSrc
-      : heroProxySrc || heroOriginalSrc
-    : null;
+
   const normalizedHtml = bodyHtml
     ? normalizePostHtml(bodyHtml, { service: post.service || service, attachments, mediaBase: attachmentMediaBase })
     : "";
@@ -605,7 +612,14 @@ function PostView({
 
         {heroImage && (
           <div className="feature-image">
-            <img src={heroImage} alt="" />
+            {!heroLoaded && <div className="image-placeholder" aria-hidden="true" />}
+            <img
+              src={heroImage}
+              alt=""
+              className={heroLoaded ? "image-loaded" : ""}
+              onLoad={() => setHeroLoaded(true)}
+              onError={() => setHeroLoaded(true)}
+            />
           </div>
         )}
         <div className="post-nav">
