@@ -929,7 +929,7 @@ function CreatorPage({
     setReverseOrder((prev) => !prev);
   };
 
-  const renderPagination = () => {
+  const renderPagination = ({ showMeta = true } = {}) => {
     if (!paginationState) return null;
     if (paginationState.totalPages <= 1) return null;
 
@@ -968,25 +968,7 @@ function CreatorPage({
       pages.push(paginationState.totalPages);
     }
 
-    return (
-      <div className="pagination-block">
-        <div className="pagination-meta">
-          <span className="label">
-            Page <strong>{paginationState.currentPage}</strong> of {paginationState.totalPages}
-          </span>
-          <button
-            type="button"
-            className={`order-toggle${reverseOrder ? " order-toggle-active" : ""}`}
-            onClick={handleOrderToggle}
-            aria-pressed={reverseOrder}
-            title={reverseOrder ? "Sorted oldest to newest" : "Sorted newest to oldest"}
-          >
-            <span className="order-label">{reverseOrder ? "Oldest first" : "Newest first"}</span>
-            <span className="order-arrow" aria-hidden="true">
-              {reverseOrder ? "↑" : "↓"}
-            </span>
-          </button>
-        </div>
+    const paginationContent = (
         <nav className="pagination">
           {!compactPagination && (
             <button
@@ -1032,6 +1014,32 @@ function CreatorPage({
             </button>
           )}
         </nav>
+    );
+
+    const paginationMeta = showMeta ? (
+      <div className="pagination-meta">
+        <span className="label">
+          Page <strong>{paginationState.currentPage}</strong> of {paginationState.totalPages}
+        </span>
+        <button
+          type="button"
+          className={`order-toggle${reverseOrder ? " order-toggle-active" : ""}`}
+          onClick={handleOrderToggle}
+          aria-pressed={reverseOrder}
+          title={reverseOrder ? "Sorted oldest to newest" : "Sorted newest to oldest"}
+        >
+          <span className="order-label">{reverseOrder ? "Oldest first" : "Newest first"}</span>
+          <span className="order-arrow" aria-hidden="true">
+            {reverseOrder ? "↑" : "↓"}
+          </span>
+        </button>
+      </div>
+    ) : null;
+
+    return (
+      <div className="pagination-block">
+        {paginationMeta}
+        {paginationContent}
       </div>
     );
   };
@@ -1289,7 +1297,7 @@ function CreatorPage({
             {isFilterActive ? "No posts match your filter yet." : "No posts found for this page."}
           </div>
         )}
-        {renderPagination()}
+        {renderPagination({ showMeta: false })}
       </section>
     </div>
   );
