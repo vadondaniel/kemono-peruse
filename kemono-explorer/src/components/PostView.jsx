@@ -1035,6 +1035,19 @@ function PostView({
           <Timestamp value={post.published} prefix="Published" />
         </header>
 
+        {heroImage && (
+          <div className="feature-image">
+            {!heroLoaded && <div className="image-placeholder" aria-hidden="true" />}
+            <img
+              src={heroImage}
+              alt=""
+              className={heroLoaded ? "image-loaded" : ""}
+              onLoad={() => setHeroLoaded(true)}
+              onError={() => setHeroLoaded(true)}
+            />
+          </div>
+        )}
+
         {attachments.length > 0 && attachmentsExpanded && (
           <section className="attachments-panel">
             <div className="attachments">
@@ -1064,18 +1077,6 @@ function PostView({
 
         {processedHtml && <div className="prose" ref={proseRef} dangerouslySetInnerHTML={{ __html: processedHtml }} />}
 
-        {heroImage && (
-          <div className="feature-image">
-            {!heroLoaded && <div className="image-placeholder" aria-hidden="true" />}
-            <img
-              src={heroImage}
-              alt=""
-              className={heroLoaded ? "image-loaded" : ""}
-              onLoad={() => setHeroLoaded(true)}
-              onError={() => setHeroLoaded(true)}
-            />
-          </div>
-        )}
         <div className="post-nav">
           <button
             className="btn ghost"
