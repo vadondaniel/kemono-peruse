@@ -27,6 +27,7 @@ import { fetchJson } from "../utils/api.js";
 import { getCachePreferenceKey, loadCreatorCache, writeCreatorCache, isCacheFresh, pruneCacheChunks, pruneCachePostDetails } from "../utils/cache.js";
 import { extractTagTokens, getServiceLabel, normalizePostHtml } from "../utils/posts.js";
 import { getInitialReaderSettings, getTypefacePreviewStyle, readBooleanPreference } from "../utils/preferences.js";
+import { getUrlForView } from "../utils/navigation.js";
 
 function PostView({
   service,
@@ -491,13 +492,112 @@ function PostView({
       return images;
     };
 
+    const buildLocalPostHref = (postId) => {
+      if (!postId || !service || !creatorId) return null;
+      const path = getUrlForView({ name: "post", service, creatorId, postId });
+      if (!path) return null;
+      if (typeof window !== "undefined" && window.location?.origin) {
+        return `${window.location.origin}${path}`;
+      }
+      return path;
+    };
+
+    const resolvePatreonPostUrl = (href) => {
+      if (!href) return null;
+      let url;
+      try {
+        url = new URL(href, window.location.origin);
+      } catch {
+        return null;
+      }
+      const hostname = url.hostname.toLowerCase();
+      if (!hostname.endsWith("patreon.com")) return null;
+      const segments = url.pathname.split("/").filter(Boolean);
+      const postsIndex = segments.indexOf("posts");
+      if (postsIndex === -1 || postsIndex >= segments.length - 1) {
+        return null;
+      }
+      const rawSegment = (segments[postsIndex + 1] || "").replace(/\/+$/, "");
+      const matches = rawSegment.match(/\d+/g);
+      if (!matches || matches.length === 0) return null;
+      const postId = matches[matches.length - 1];
+      return buildLocalPostHref(postId);
+    };
+
+    const resolveFanboxPostUrl = (href) => {
+      if (!href) return null;
+      let url;
+      try {
+        url = new URL(href, window.location.origin);
+      } catch {
+        return null;
+      }
+      const hostname = url.hostname.toLowerCase();
+      if (!hostname.endsWith("fanbox.cc")) return null;
+      const segments = url.pathname.split("/").filter(Boolean);
+      const postsIndex = segments.indexOf("posts");
+      if (postsIndex === -1 || postsIndex >= segments.length - 1) {
+        return null;
+      }
+      const rawSegment = (segments[postsIndex + 1] || "").replace(/\/+$/, "");
+      const postIdMatch = rawSegment.match(/\d+/);
+      if (!postIdMatch) return null;
+      const postId = postIdMatch[0];
+      return buildLocalPostHref(postId);
+    };
+
+    const resolveInlinePostHref = (href) => {
+      if (!href) return null;
+      const serviceKey = typeof service === "string" ? service.toLowerCase() : "";
+      if (serviceKey === "patreon") {
+        return resolvePatreonPostUrl(href);
+      }
+      if (serviceKey === "fanbox") {
+        return resolveFanboxPostUrl(href);
+      }
+      return null;
+    };
+
+    const rewriteAnchor = (anchor) => {
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      const resolvedHref = resolveInlinePostHref(anchor.getAttribute("href") || "");
+      if (!resolvedHref) {
+        if (anchor.dataset) {
+          delete anchor.dataset.inlinePostLink;
+        }
+        return;
+      }
+      if (anchor.getAttribute("href") !== resolvedHref) {
+        anchor.setAttribute("href", resolvedHref);
+      }
+      if (anchor.dataset) {
+        anchor.dataset.inlinePostLink = "true";
+      }
+    };
+
+    const collectAnchors = (node) => {
+      const anchors = [];
+      if (!node || node.nodeType !== 1) {
+        return anchors;
+      }
+      if (node.tagName === "A") {
+        anchors.push(node);
+      }
+      node.querySelectorAll?.("a").forEach((anchor) => {
+        anchors.push(anchor);
+      });
+      return anchors;
+    };
+
     collectImages(container).forEach(bindImage);
+    collectAnchors(container).forEach(rewriteAnchor);
 
     const observer = new window.MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
         if (mutation.type === "childList") {
           mutation.addedNodes.forEach((node) => {
             collectImages(node).forEach(bindImage);
+            collectAnchors(node).forEach(rewriteAnchor);
           });
           mutation.removedNodes.forEach((node) => {
             collectImages(node).forEach((img) => {
@@ -509,12 +609,19 @@ function PostView({
           const target = mutation.target;
           if (target instanceof HTMLImageElement) {
             bindImage(target);
+          } else if (target instanceof HTMLAnchorElement && mutation.attributeName === "href") {
+            rewriteAnchor(target);
           }
         }
       });
     });
 
-    observer.observe(container, { childList: true, subtree: true, attributes: true, attributeFilter: ["src", "srcset"] });
+    observer.observe(container, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["src", "srcset", "href"],
+    });
 
     return () => {
       observer.disconnect();
@@ -523,7 +630,7 @@ function PostView({
       });
       listenerMap.clear();
     };
-  }, [processedHtml]);
+  }, [processedHtml, service, creatorId]);
 
   if (loading) {
     return (
