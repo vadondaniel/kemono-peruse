@@ -112,6 +112,7 @@ function CreatorPage({
   const [hasNextPage, setHasNextPage] = useState(false);
   const [compactPagination, setCompactPagination] = useState(false);
   const searchTokenRef = useRef(0);
+  const pendingTagFetchRef = useRef(new Set());
   const prevFilterStorageKeyRef = useRef(filterStorageKey);
   const cacheFresh = useCache && cacheData ? isCacheFresh(cacheData) : false;
   const canUseCacheUi = alreadySaved;
@@ -677,10 +678,50 @@ function CreatorPage({
     if (isFilterActive) return;
     if (!posts.length) return;
 
-    const missing = posts.filter(
-      (post) => !Array.isArray(post.tags) && !Array.isArray(postTagMap[post.id]),
-    );
+    const cachedDetails = useCache && cacheData?.postDetails ? cacheData.postDetails : null;
+    const pending = pendingTagFetchRef.current;
+    const cachedTagUpdates = {};
+    const missing = [];
+
+    posts.forEach((post) => {
+      if (Array.isArray(post.tags)) return;
+      if (Array.isArray(postTagMap[post.id])) return;
+      if (pending.has(post.id)) return;
+      const cachedEntry = cachedDetails?.[post.id]?.data;
+      const cachedTags = Array.isArray(cachedEntry?.tags)
+        ? cachedEntry.tags.map((tag) => String(tag))
+        : null;
+      if (cachedTags) {
+        cachedTagUpdates[post.id] = cachedTags;
+      } else {
+        missing.push(post);
+      }
+    });
+
+    const cachedIds = Object.keys(cachedTagUpdates);
+    if (cachedIds.length > 0) {
+      setPostTagMap((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        cachedIds.forEach((postId) => {
+          const nextTags = cachedTagUpdates[postId];
+          const previous = next[postId];
+          const differs =
+            !Array.isArray(previous) ||
+            previous.length !== nextTags.length ||
+            previous.some((value, index) => value !== nextTags[index]);
+          if (differs) {
+            next[postId] = nextTags;
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+    }
+
     if (missing.length === 0) return;
+
+    missing.forEach((post) => pending.add(post.id));
 
     let alive = true;
 
@@ -692,29 +733,66 @@ function CreatorPage({
             const tags = Array.isArray(data?.post?.tags)
               ? data.post.tags.map((tag) => String(tag))
               : [];
-            return { id: post.id, tags };
+            return { id: post.id, tags, postData: data?.post || null };
           } catch (error) {
             console.error("Failed to load tags for post", post.id, error);
-            return { id: post.id, tags: [] };
+            return { id: post.id, tags: [], postData: null };
           }
         }),
       );
-      if (!alive) return;
+      if (!alive || results.length === 0) return;
       setPostTagMap((prev) => {
+        let changed = false;
         const next = { ...prev };
-        for (const { id, tags } of results) {
-          if (!next[id] && Array.isArray(tags)) {
-            next[id] = tags;
+        results.forEach(({ id, tags }) => {
+          const normalized = Array.isArray(tags) ? tags : [];
+          const previous = next[id];
+          const differs =
+            !Array.isArray(previous) ||
+            previous.length !== normalized.length ||
+            previous.some((value, index) => value !== normalized[index]);
+          if (differs) {
+            next[id] = normalized;
+            changed = true;
           }
-        }
-        return next;
+        });
+        return changed ? next : prev;
       });
-    })();
+      if (useCache) {
+        const detailEntries = results.filter((entry) => entry.postData);
+        if (detailEntries.length > 0) {
+          const timestamp = Date.now();
+          updateCache(
+            (prev) => {
+              const nextDetails = { ...(prev.postDetails || {}) };
+              detailEntries.forEach(({ id, postData }) => {
+                nextDetails[id] = { data: postData, updatedAt: timestamp };
+              });
+              return { ...prev, postDetails: nextDetails };
+            },
+            { updateTimestamp: false },
+          );
+        }
+      }
+    })().finally(() => {
+      missing.forEach((post) => pending.delete(post.id));
+    });
 
     return () => {
       alive = false;
+      missing.forEach((post) => pending.delete(post.id));
     };
-  }, [showTags, isFilterActive, posts, service, creatorId, postTagMap]);
+  }, [
+    showTags,
+    isFilterActive,
+    posts,
+    service,
+    creatorId,
+    postTagMap,
+    useCache,
+    cacheData,
+    updateCache,
+  ]);
 
   const hasPrev = offset > 0;
   const derivedTotalPages =
