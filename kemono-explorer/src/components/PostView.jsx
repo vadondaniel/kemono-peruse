@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import Timestamp from "./Timestamp.jsx";
 import {
@@ -170,6 +170,7 @@ function PostView({
       : creatorLabel
     : serviceLabel;
   const lastResolvedTitleRef = useRef(null);
+  const proseRef = useRef(null);
   useEffect(() => {
     if (!post || typeof onResolvePostTitle !== "function") return;
     const nextTitle = post.title || post.id || "";
@@ -336,6 +337,122 @@ function PostView({
     setHeroLoaded(!heroImage);
   }, [heroImage]);
 
+  const baseAttachments = Array.isArray(post?.attachments) ? [...post.attachments] : [];
+  const attachmentMediaBase = useOriginalAttachments ? ORIGINAL_MEDIA_BASE : MEDIA_BASE;
+  const attachments = heroFile
+    ? [
+        {
+          ...heroFile,
+          path: heroFile.path || heroFile.file || null,
+          original: heroOriginalSrc || heroFile.original || heroFile.url || null,
+          name: heroFile.name || heroFile.title || "Feature image",
+          __heroAttachment: true,
+        },
+        ...baseAttachments,
+      ]
+    : baseAttachments;
+  const bodyHtml = post?.content || post?.body || post?.text || "";
+
+  const normalizedHtml = bodyHtml
+    ? normalizePostHtml(bodyHtml, { service: post?.service || service, attachments, mediaBase: attachmentMediaBase })
+    : "";
+
+  const enhanceInlineImages = (html) => {
+    if (!html) return "";
+    if (typeof window === "undefined" || typeof window.DOMParser === "undefined") return html;
+    try {
+      const parser = new window.DOMParser();
+      const doc = parser.parseFromString(html, "text/html");
+      if (!doc?.body) return html;
+      const images = Array.from(doc.body.querySelectorAll("img"));
+      if (images.length === 0) return html;
+      images.forEach((img) => {
+        if (!img) return;
+        if (img.closest(".inline-image-wrapper")) return;
+        const target = img.closest("picture") || img;
+        const parent = target.parentNode;
+        if (!parent) return;
+        const wrapper = doc.createElement("span");
+        wrapper.className = "inline-image-wrapper";
+        const placeholder = doc.createElement("span");
+        placeholder.className = "image-placeholder inline-image-placeholder";
+        placeholder.setAttribute("aria-hidden", "true");
+        wrapper.appendChild(placeholder);
+        parent.insertBefore(wrapper, target);
+        wrapper.appendChild(target);
+      });
+      return doc.body.innerHTML;
+    } catch {
+      return html;
+    }
+  };
+
+  const [processedHtml, setProcessedHtml] = useState(normalizedHtml);
+
+  useEffect(() => {
+    if (!normalizedHtml) {
+      setProcessedHtml("");
+      return;
+    }
+    const nextHtml = enhanceInlineImages(normalizedHtml);
+    setProcessedHtml(nextHtml ?? "");
+  }, [normalizedHtml]);
+
+  useLayoutEffect(() => {
+    if (!processedHtml) return undefined;
+    const container = proseRef.current;
+    if (!container) return undefined;
+    const wrappers = Array.from(container.querySelectorAll(".inline-image-wrapper"));
+    if (wrappers.length === 0) return undefined;
+
+    const cleanupFns = [];
+
+    wrappers.forEach((wrapper) => {
+      const targetImg = wrapper.querySelector("img");
+      if (!targetImg) return;
+
+      if (!targetImg.hasAttribute("loading")) {
+        targetImg.setAttribute("loading", "lazy");
+      }
+
+      const resolve = () => {
+        wrapper.classList.add("inline-image-loaded");
+      };
+
+      if (targetImg.complete && targetImg.naturalWidth > 0) {
+        resolve();
+        return;
+      }
+
+      wrapper.classList.remove("inline-image-loaded");
+
+      let settled = false;
+      const settleOnce = (handler) => {
+        if (settled) return;
+        settled = true;
+        handler();
+      };
+
+      const handleLoad = () => settleOnce(resolve);
+      const handleError = () => settleOnce(resolve);
+
+      targetImg.addEventListener("load", handleLoad);
+      targetImg.addEventListener("error", handleError);
+      cleanupFns.push(() => {
+        targetImg.removeEventListener("load", handleLoad);
+        targetImg.removeEventListener("error", handleError);
+      });
+
+      if (typeof targetImg.decode === "function") {
+        targetImg.decode().then(handleLoad).catch(handleError);
+      }
+    });
+
+    return () => {
+      cleanupFns.forEach((cleanup) => cleanup());
+    };
+  }, [processedHtml]);
+
   if (loading) {
     return (
       <div className="page">
@@ -356,25 +473,7 @@ function PostView({
     );
   }
 
-  const baseAttachments = Array.isArray(post.attachments) ? [...post.attachments] : [];
-  const attachmentMediaBase = useOriginalAttachments ? ORIGINAL_MEDIA_BASE : MEDIA_BASE;
-  const attachments = heroFile
-    ? [
-        {
-          ...heroFile,
-          path: heroFile.path || heroFile.file || null,
-          original: heroOriginalSrc || heroFile.original || heroFile.url || null,
-          name: heroFile.name || heroFile.title || "Feature image",
-          __heroAttachment: true,
-        },
-        ...baseAttachments,
-      ]
-    : baseAttachments;
-  const bodyHtml = post.content || post.body || post.text || "";
 
-  const normalizedHtml = bodyHtml
-    ? normalizePostHtml(bodyHtml, { service: post.service || service, attachments, mediaBase: attachmentMediaBase })
-    : "";
   const readerCardClassName = [
     "card post-card",
     `reader-width-${readerSettings.widthMode}`,
@@ -608,7 +707,7 @@ function PostView({
           </div>
         )}
 
-        {normalizedHtml && <div className="prose" dangerouslySetInnerHTML={{ __html: normalizedHtml }} />}
+        {processedHtml && <div className="prose" ref={proseRef} dangerouslySetInnerHTML={{ __html: processedHtml }} />}
 
         {heroImage && (
           <div className="feature-image">

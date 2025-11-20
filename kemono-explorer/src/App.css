@@ -1161,6 +1161,47 @@ html[data-theme="dark"] .hero-stat {
   background: var(--surface-muted);
 }
 
+.inline-image-wrapper {
+  display: block;
+  margin: 12px auto;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  background: var(--surface-muted);
+  overflow: hidden;
+  position: relative;
+}
+
+.inline-image-wrapper picture {
+  display: block;
+  margin: 0;
+}
+
+.inline-image-wrapper img {
+  display: block;
+  width: 100%;
+  margin: 0 !important;
+  border-radius: inherit;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  background: none;
+}
+
+.inline-image-wrapper .image-placeholder {
+  display: block;
+  width: 100%;
+  padding-top: 56%;
+  min-height: 120px;
+  max-height: 420px;
+}
+
+.inline-image-wrapper.inline-image-loaded img {
+  opacity: 1;
+}
+
+.inline-image-wrapper.inline-image-loaded .image-placeholder {
+  display: none;
+}
+
 .creator-heading-text {
   display: flex;
   flex-direction: column;
