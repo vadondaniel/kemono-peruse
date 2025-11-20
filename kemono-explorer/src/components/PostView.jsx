@@ -29,6 +29,82 @@ import { extractTagTokens, getServiceLabel, normalizePostHtml } from "../utils/p
 import { getInitialReaderSettings, getTypefacePreviewStyle, readBooleanPreference } from "../utils/preferences.js";
 import { getUrlForView } from "../utils/navigation.js";
 
+const sanitizeAttachmentPath = (value) => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+};
+
+const normalizeAttachmentItem = (item) => {
+  if (!item || typeof item !== "object") return null;
+  const path = sanitizeAttachmentPath(item.path);
+  const server = typeof item.server === "string" ? item.server.trim() : null;
+  const name = typeof item.name === "string" && item.name.trim() ? item.name.trim() : path?.split("/").pop() || "";
+  const original =
+    typeof item.original === "string"
+      ? item.original
+      : server && path
+        ? `${server}${path}`
+        : null;
+  const url = typeof item.url === "string" ? item.url : null;
+  return { ...item, name, path, original: original || null, url };
+};
+
+const mergeAttachmentLists = (primary, extras) => {
+  const seen = new Set();
+  const result = [];
+  const push = (entry) => {
+    const normalized = normalizeAttachmentItem(entry);
+    if (!normalized) return;
+    const key = normalized.path || `${normalized.name || ""}|${normalized.original || normalized.url || ""}`;
+    if (key && seen.has(key)) return;
+    if (key) seen.add(key);
+    result.push(normalized);
+  };
+  if (Array.isArray(primary)) {
+    primary.forEach(push);
+  }
+  if (Array.isArray(extras)) {
+    extras.forEach(push);
+  }
+  return result;
+};
+
+const normalizePostPayload = (payload) => {
+  if (!payload || typeof payload !== "object") return null;
+  if (payload.post) {
+    return {
+      ...payload.post,
+      attachments: mergeAttachmentLists(payload.post.attachments, payload.attachments),
+    };
+  }
+  return {
+    ...payload,
+    attachments: mergeAttachmentLists(payload.attachments, null),
+  };
+};
+
+const normalizeCachedPost = (postData) => {
+  if (!postData || typeof postData !== "object") return null;
+  if (Array.isArray(postData.attachments)) {
+    return { ...postData, attachments: mergeAttachmentLists(postData.attachments, null) };
+  }
+  return { ...postData, attachments: [] };
+};
+
+const sanitizeAttachmentKey = (value) => {
+  if (typeof value !== "string") return "";
+  return value.trim().replace(/\s+/g, " ").toLowerCase();
+};
+
+const stripFileExtension = (value) => {
+  if (typeof value !== "string") return "";
+  const index = value.lastIndexOf(".");
+  if (index <= 0) return value;
+  return value.slice(0, index);
+};
+
 function PostView({
   service,
   creatorId,
@@ -211,7 +287,7 @@ function PostView({
         ? cacheData.postDetails[postId]
         : null;
     if (cachedEntry?.data) {
-      setPost(cachedEntry.data);
+      setPost(normalizeCachedPost(cachedEntry.data));
       setLoading(false);
     } else {
       setLoading(true);
@@ -227,7 +303,7 @@ function PostView({
     setLoading(true);
     fetchJson(`${API_BASE}/${service}/user/${creatorId}/post/${postId}`).then((data) => {
       if (!alive) return;
-      const nextPost = data?.post || null;
+      const nextPost = normalizePostPayload(data);
       setPost(nextPost);
       setLoading(false);
       if (useCache && nextPost) {
@@ -502,6 +578,62 @@ function PostView({
       return path;
     };
 
+    const serviceKey = typeof service === "string" ? service.toLowerCase() : "";
+
+    const attachmentLookup = new Map();
+    const addAttachmentKey = (rawKey, attachment) => {
+      const key = sanitizeAttachmentKey(rawKey);
+      if (!key || !attachment || attachmentLookup.has(key)) return;
+      attachmentLookup.set(key, attachment);
+    };
+    const addAttachmentKeyVariants = (rawKey, attachment) => {
+      if (!rawKey) return;
+      addAttachmentKey(rawKey, attachment);
+      const base = stripFileExtension(rawKey);
+      if (base && base !== rawKey) {
+        addAttachmentKey(base, attachment);
+      }
+    };
+    if (serviceKey === "fanbox" && Array.isArray(attachments)) {
+      attachments.forEach((attachment) => {
+        if (!attachment) return;
+        if (typeof attachment.name === "string") {
+          addAttachmentKeyVariants(attachment.name, attachment);
+        }
+        if (typeof attachment.path === "string") {
+          const pathEnd = attachment.path.includes("/") ? attachment.path.split("/").pop() : attachment.path;
+          addAttachmentKeyVariants(pathEnd, attachment);
+        }
+        if (typeof attachment.original === "string") {
+          try {
+            const url = new URL(attachment.original, window.location.origin);
+            const parts = url.pathname.split("/").filter(Boolean);
+            if (parts.length > 0) {
+              const fileName = parts[parts.length - 1];
+              addAttachmentKeyVariants(fileName, attachment);
+            }
+          } catch {
+            // ignore URL parse failures
+          }
+        }
+        if (typeof attachment.stem === "string") {
+          addAttachmentKey(attachment.stem, attachment);
+        }
+      });
+    }
+
+    const resolveAttachmentHref = (attachment) => {
+      if (!attachment) return null;
+      const proxiedHref = attachment?.path ? `${MEDIA_BASE}${attachment.path}` : null;
+      const originalHrefCandidates = [
+        typeof attachment?.original === "string" ? attachment.original : null,
+        typeof attachment?.url === "string" ? attachment.url : null,
+        attachment?.path ? `${ORIGINAL_MEDIA_BASE}${attachment.path}` : null,
+      ].filter(Boolean);
+      const originalHref = originalHrefCandidates[0] || null;
+      return useOriginalAttachments ? originalHref || proxiedHref : proxiedHref || originalHref;
+    };
+
     const resolvePatreonPostUrl = (href) => {
       if (!href) return null;
       let url;
@@ -546,21 +678,47 @@ function PostView({
       return buildLocalPostHref(postId);
     };
 
-    const resolveInlinePostHref = (href) => {
+    const resolveFanboxDownloadUrl = (href, anchor) => {
+      if (!href || serviceKey !== "fanbox") return null;
+      let url;
+      try {
+        url = new URL(href, window.location.origin);
+      } catch {
+        return null;
+      }
+      const hostname = url.hostname.toLowerCase();
+      if (!hostname.endsWith("fanbox.cc")) return null;
+      if (!url.pathname.includes("/files/")) return null;
+      const segments = url.pathname.split("/").filter(Boolean);
+      if (segments.length === 0) return null;
+      const filename = segments[segments.length - 1];
+      if (!filename) return null;
+      let attachment = attachmentLookup.get(sanitizeAttachmentKey(filename));
+      if (!attachment && anchor) {
+        const label = anchor.textContent || "";
+        const labelKey = sanitizeAttachmentKey(label);
+        if (labelKey) {
+          attachment = attachmentLookup.get(labelKey);
+        }
+      }
+      if (!attachment) return null;
+      return resolveAttachmentHref(attachment);
+    };
+
+    const resolveInlinePostHref = (href, anchor) => {
       if (!href) return null;
-      const serviceKey = typeof service === "string" ? service.toLowerCase() : "";
       if (serviceKey === "patreon") {
         return resolvePatreonPostUrl(href);
       }
       if (serviceKey === "fanbox") {
-        return resolveFanboxPostUrl(href);
+        return resolveFanboxPostUrl(href) || resolveFanboxDownloadUrl(href, anchor);
       }
       return null;
     };
 
     const rewriteAnchor = (anchor) => {
       if (!(anchor instanceof HTMLAnchorElement)) return;
-      const resolvedHref = resolveInlinePostHref(anchor.getAttribute("href") || "");
+      const resolvedHref = resolveInlinePostHref(anchor.getAttribute("href") || "", anchor);
       if (!resolvedHref) {
         if (anchor.dataset) {
           delete anchor.dataset.inlinePostLink;
@@ -630,7 +788,7 @@ function PostView({
       });
       listenerMap.clear();
     };
-  }, [processedHtml, service, creatorId]);
+  }, [processedHtml, service, creatorId, attachments, useOriginalAttachments]);
 
   if (loading) {
     return (
