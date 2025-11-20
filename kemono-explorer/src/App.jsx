@@ -97,6 +97,22 @@ function App() {
     }
   }, [creatorFilters]);
 
+  const [creatorOffsets, setCreatorOffsets] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("kemono.creatorOffsets") || "{}");
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("kemono.creatorOffsets", JSON.stringify(creatorOffsets));
+    } catch {
+      // ignore persistence failures
+    }
+  }, [creatorOffsets]);
+
   const getInitialThemeMode = () => {
     if (typeof window !== "undefined" && window.localStorage) {
       const stored = window.localStorage.getItem("kemono.theme");
@@ -202,6 +218,23 @@ function App() {
     });
   };
 
+  const getCreatorOffset = (service, creatorId) => {
+    if (!service || !creatorId) return 0;
+    const key = `${service}:${creatorId}`;
+    const value = creatorOffsets[key];
+    return Number.isFinite(value) && value >= 0 ? value : 0;
+  };
+
+  const updateCreatorOffset = (service, creatorId, value) => {
+    if (!service || !creatorId) return;
+    const key = `${service}:${creatorId}`;
+    setCreatorOffsets((prev) => {
+      const nextValue = Number.isFinite(value) && value >= 0 ? value : 0;
+      if (prev[key] === nextValue) return prev;
+      return { ...prev, [key]: nextValue };
+    });
+  };
+
   return (
     <div className="app-root">
       <header className="app-header">
@@ -292,6 +325,8 @@ function App() {
               }
               activeFilter={getCreatorFilter(view.service, view.creatorId)}
               onUpdateFilter={(value) => updateCreatorFilter(view.service, view.creatorId, value)}
+              initialOffset={getCreatorOffset(view.service, view.creatorId)}
+              onOffsetChange={(nextOffset) => updateCreatorOffset(view.service, view.creatorId, nextOffset)}
             />
           )}
 

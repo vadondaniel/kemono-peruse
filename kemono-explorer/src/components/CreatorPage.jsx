@@ -18,6 +18,8 @@ function CreatorPage({
   onSave,
   activeFilter,
   onUpdateFilter,
+  initialOffset = 0,
+  onOffsetChange,
 }) {
   const cachePrefKey = getCachePreferenceKey(service, creatorId);
   const [useCache, setUseCache] = useState(() => readBooleanPreference(cachePrefKey, false));
@@ -25,7 +27,7 @@ function CreatorPage({
   const [cacheReloadApplied, setCacheReloadApplied] = useState(0);
   const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);
-  const [offset, setOffset] = useState(0);
+  const [offset, setOffset] = useState(() => (Number.isFinite(initialOffset) ? Math.max(0, initialOffset) : 0));
   const [limit, setLimit] = useState(getInitialPageSize);
   useEffect(() => {
     if (typeof window === "undefined" || !window.localStorage) return;
@@ -130,6 +132,16 @@ function CreatorPage({
   useEffect(() => {
     setResolvedCreatorName(() => getInitialCreatorName());
   }, [service, creatorId]);
+
+  useEffect(() => {
+    if (typeof onOffsetChange === "function") {
+      onOffsetChange(offset);
+    }
+  }, [offset, onOffsetChange]);
+
+  useEffect(() => {
+    setOffset(Number.isFinite(initialOffset) ? Math.max(0, initialOffset) : 0);
+  }, [service, creatorId, initialOffset]);
 
   useEffect(() => {
     setUseCache(readBooleanPreference(cachePrefKey, false));
