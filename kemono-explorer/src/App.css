@@ -1950,8 +1950,9 @@ html[data-theme="dark"] .hero-stat {
 
   .search-clear,
   .search-submit {
-    width: 100%;
+    width: 120px;
     justify-content: center;
+    margin: auto;
   }
 
   .search-footer {
