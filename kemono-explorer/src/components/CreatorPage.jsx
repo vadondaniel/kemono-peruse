@@ -6,6 +6,7 @@ import { fetchJson } from "../utils/api.js";
 import { getCachePreferenceKey, loadCreatorCache, writeCreatorCache, isCacheFresh, pruneCacheChunks, pruneCachePostDetails, collectCachedPosts } from "../utils/cache.js";
 import { formatDate } from "../utils/date.js";
 import { extractTagTokens, getPostExcerptHtml, getServiceLabel, toNumericCount } from "../utils/posts.js";
+import { cacheCreatorName, getCachedCreatorName, getSavedCreatorName, resolveProfileDisplayName } from "../utils/creators.js";
 import { getInitialPageSize, readBooleanPreference } from "../utils/preferences.js";
 
 function CreatorPage({
@@ -119,6 +120,16 @@ function CreatorPage({
   const resolvedProfileCount = toNumericCount(profile?.post_count);
   const resolvedCacheCount = toNumericCount(cacheData?.totalPosts);
   const totalPosts = resolvedProfileCount ?? resolvedCacheCount ?? null;
+  const getInitialCreatorName = () =>
+    getSavedCreatorName(service, creatorId) ||
+    (typeof creatorName === "string" ? creatorName.trim() : "") ||
+    getCachedCreatorName(service, creatorId) ||
+    "";
+  const [resolvedCreatorName, setResolvedCreatorName] = useState(() => getInitialCreatorName());
+
+  useEffect(() => {
+    setResolvedCreatorName(() => getInitialCreatorName());
+  }, [service, creatorId]);
 
   useEffect(() => {
     setUseCache(readBooleanPreference(cachePrefKey, false));
@@ -172,6 +183,25 @@ function CreatorPage({
   }, [service, creatorId]);
 
   useEffect(() => {
+    const savedName = getSavedCreatorName(service, creatorId);
+    const incomingName = typeof creatorName === "string" ? creatorName.trim() : "";
+    if (savedName && savedName !== resolvedCreatorName) {
+      setResolvedCreatorName(savedName);
+      return;
+    }
+    if (!savedName && incomingName && incomingName !== resolvedCreatorName) {
+      setResolvedCreatorName(incomingName);
+      return;
+    }
+    if (!savedName) {
+      const cachedName = getCachedCreatorName(service, creatorId);
+      if (cachedName && cachedName !== resolvedCreatorName) {
+        setResolvedCreatorName(cachedName);
+      }
+    }
+  }, [service, creatorId, creatorName, resolvedCreatorName]);
+
+  useEffect(() => {
     let alive = true;
     const cachedProfile = useCache && cacheData?.profile ? cacheData.profile : null;
     if (cachedProfile) {
@@ -214,6 +244,21 @@ function CreatorPage({
       alive = false;
     };
   }, [service, creatorId, useCache, cacheData, cacheFresh, cacheReloadApplied, reloadKey, updateCache]);
+
+  useEffect(() => {
+    if (!profile) return;
+    if (getSavedCreatorName(service, creatorId)) return;
+    const profileName = resolveProfileDisplayName(profile);
+    if (profileName && profileName !== resolvedCreatorName) {
+      setResolvedCreatorName(profileName);
+      cacheCreatorName(service, creatorId, profileName);
+    }
+  }, [profile, service, creatorId, resolvedCreatorName]);
+
+  useEffect(() => {
+    if (!resolvedCreatorName) return;
+    cacheCreatorName(service, creatorId, resolvedCreatorName);
+  }, [resolvedCreatorName, service, creatorId]);
 
   useEffect(() => {
     try {
@@ -1000,7 +1045,7 @@ function CreatorPage({
               <img
                 className="creator-avatar"
                 src={avatarUrl}
-                alt={`${creatorName || creatorId} avatar`}
+                alt={`${resolvedCreatorName || creatorId} avatar`}
                 loading="eager"
                 referrerPolicy="no-referrer"
                 onError={(event) => {
@@ -1010,7 +1055,7 @@ function CreatorPage({
               />
             </div>
               <div className="creator-heading-text">
-                <h2 className="title">{creatorName || creatorId}</h2>
+                <h2 className="title">{resolvedCreatorName || creatorId}</h2>
                 <div className="creator-heading-meta">
                   {serviceLabel ? <span className="creator-service-badge">{serviceLabel}</span> : null}
                   <div className="creator-meta-stats">
