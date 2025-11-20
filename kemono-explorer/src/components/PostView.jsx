@@ -1089,11 +1089,15 @@ function PostView({
             {attachments.length > 0 && (
               <button
                 type="button"
-                className="btn ghost attachment-count-toggle"
+                className="attachment-count-toggle"
                 aria-expanded={attachmentsExpanded}
                 onClick={() => setAttachmentsExpanded((prev) => !prev)}
               >
-                {attachments.length} {attachmentsExpanded ? "\u25BC" : "\u25B6"}
+                <span className="attachment-count">{attachments.length}</span>
+                <span className="attachment-indicator" aria-hidden="true">
+                  {attachmentsExpanded ? "\u25BC" : "\u25B6"}
+                </span>
+                <span className="sr-only">{attachmentsExpanded ? "Hide attachments" : "Show attachments"}</span>
               </button>
             )}
           </div>

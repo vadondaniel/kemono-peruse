@@ -1333,10 +1333,36 @@ html[data-theme="dark"] .hero-stat {
 }
 
 .attachment-count-toggle {
+  border: none;
+  background: transparent;
+  color: var(--muted);
   font-size: 13px;
-  padding: 0 8px;
-  height: 26px;
-  line-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.2s ease, background-color 0.2s ease;
+}
+
+.attachment-count-toggle:hover,
+.attachment-count-toggle:focus-visible {
+  color: var(--accent);
+  background: var(--ghost-bg);
+}
+
+.attachment-count-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.attachment-count {
+  font-weight: 600;
+}
+
+.attachment-indicator {
+  font-size: 12px;
 }
 
 .attachments-panel {
@@ -1356,6 +1382,18 @@ html[data-theme="dark"] .hero-stat {
   color: var(--accent);
   border-radius: 8px;
   padding: 4px 10px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .post-card {
