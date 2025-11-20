@@ -1,6 +1,10 @@
 import React, { useMemo, useRef, useState } from "react";
 
 import { SERVICE_LABELS } from "../constants.js";
+import { getUrlForView } from "../utils/navigation.js";
+
+const isModifiedClick = (event) =>
+  event.button !== 0 || event.metaKey || event.altKey || event.ctrlKey || event.shiftKey;
 
 const SERVICE_ORDER = ["patreon", "fanbox", "fantia", "discord", "gumroad", "dlsite"];
 
@@ -57,11 +61,45 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
     setEditingName("");
   };
 
+  const buildCreatorHref = (targetService, targetId, targetName) => {
+    const trimmedId = (targetId || "").trim();
+    if (!trimmedId) return "#";
+    const cleanedName = (targetName || "").trim();
+    return getUrlForView({
+      name: "creator",
+      service: targetService,
+      creatorId: trimmedId,
+      creatorName: cleanedName || trimmedId,
+    });
+  };
+
+  const openCreatorInline = (targetService, targetId, targetName) => {
+    const trimmedId = (targetId || "").trim();
+    if (!trimmedId) return false;
+    onOpenCreator(targetService, trimmedId, (targetName || "").trim());
+    return true;
+  };
+
   const handleOpen = (event) => {
     event.preventDefault();
-    const id = creatorId.trim();
-    if (!id) return;
-    onOpenCreator(service, id, creatorName.trim());
+    const success = openCreatorInline(service, creatorId, creatorName);
+    if (!success) {
+      focusCreatorInput();
+    }
+  };
+
+  const handleCreatorLink = (event, targetService, targetId, targetName, fallbackFocus = null) => {
+    const trimmedId = (targetId || "").trim();
+    if (!trimmedId) {
+      event.preventDefault();
+      if (typeof fallbackFocus === "function") fallbackFocus();
+      return;
+    }
+    if (isModifiedClick(event)) {
+      return;
+    }
+    event.preventDefault();
+    openCreatorInline(targetService, trimmedId, targetName);
   };
 
   const focusCreatorInput = () => creatorIdRef.current?.focus();
@@ -189,9 +227,13 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
           </p>
 
           <div className="form-actions">
-            <button className="btn primary" type="button" onClick={handleOpen}>
+            <a
+              className="btn primary"
+              href={buildCreatorHref(service, creatorId, creatorName)}
+              onClick={(event) => handleCreatorLink(event, service, creatorId, creatorName, focusCreatorInput)}
+            >
               View creator
-            </button>
+            </a>
             <button className="btn ghost" type="button" onClick={handleSave}>
               Save to list
             </button>
@@ -269,13 +311,15 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
                   return (
                     <div className="saved-item" key={key} role="listitem">
                       <div className="saved-meta">
-                        <button
+                        <a
                           className="saved-name"
-                          type="button"
-                          onClick={() => onOpenCreator(creator.service, creator.id, creator.name)}
+                          href={buildCreatorHref(creator.service, creator.id, creator.name)}
+                          onClick={(event) =>
+                            handleCreatorLink(event, creator.service, creator.id, creator.name)
+                          }
                         >
                           {creator.name || creator.id}
-                        </button>
+                        </a>
                         <span className="muted small">
                           {label} · {creator.id}
                         </span>
@@ -284,13 +328,15 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
                         <button className="btn subtle" type="button" onClick={() => beginRename(creator)}>
                           Rename
                         </button>
-                        <button
+                        <a
                           className="btn outline btn-compact"
-                          type="button"
-                          onClick={() => onOpenCreator(creator.service, creator.id, creator.name)}
+                          href={buildCreatorHref(creator.service, creator.id, creator.name)}
+                          onClick={(event) =>
+                            handleCreatorLink(event, creator.service, creator.id, creator.name)
+                          }
                         >
                           Open
-                        </button>
+                        </a>
                         <button
                           className="btn ghost"
                           type="button"

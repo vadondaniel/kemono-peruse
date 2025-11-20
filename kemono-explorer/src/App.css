@@ -93,6 +93,16 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+a:hover {
+  color: inherit;
+  text-decoration: none;
+}
+
+.prose a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 .app-root {
   min-height: 100vh;
   display: flex;
@@ -612,6 +622,9 @@ html[data-theme="dark"] .hero-stat {
 }
 
 .page-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-width: 32px;
   height: 32px;
   padding: 0 10px;
@@ -625,18 +638,20 @@ html[data-theme="dark"] .hero-stat {
   transition: all 0.15s ease;
 }
 
-.page-pill:hover:not(:disabled) {
+.page-pill:hover:not(.active) {
   border-color: var(--outlined-border-hover);
   color: var(--accent);
   box-shadow: var(--outlined-shadow-hover);
 }
 
-.page-pill:disabled {
+.page-pill.active,
+.page-pill[aria-current="page"] {
   cursor: default;
   background: var(--accent);
   color: #ffffff;
   border-color: transparent;
   box-shadow: 0 8px 16px rgba(59, 130, 246, 0.25);
+  pointer-events: none;
 }
 
 .pagination-ellipsis {
@@ -970,6 +985,13 @@ html[data-theme="dark"] .hero-stat {
   opacity: 0.55;
 }
 
+.btn.disabled,
+.btn[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
 .btn.primary {
   background: var(--accent);
   color: #fff;
@@ -1258,6 +1280,8 @@ html[data-theme="dark"] .hero-stat {
   text-align: left;
   cursor: pointer;
   transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  color: inherit;
+  text-decoration: none;
 }
 
 .post-item:hover {

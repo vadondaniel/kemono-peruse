@@ -8,6 +8,10 @@ import { formatDate } from "../utils/date.js";
 import { extractTagTokens, getPostExcerptHtml, getServiceLabel, toNumericCount } from "../utils/posts.js";
 import { cacheCreatorName, getCachedCreatorName, getSavedCreatorName, resolveProfileDisplayName } from "../utils/creators.js";
 import { getInitialPageSize, readBooleanPreference } from "../utils/preferences.js";
+import { getUrlForView } from "../utils/navigation.js";
+
+const isModifiedClick = (event) =>
+  event.button !== 0 || event.metaKey || event.altKey || event.ctrlKey || event.shiftKey;
 
 const resolveOffsetForPosition = (position, pageSize) => {
   if (!Number.isFinite(position) || !Number.isFinite(pageSize) || pageSize <= 0) return 0;
@@ -134,6 +138,17 @@ function CreatorPage({
     getCachedCreatorName(service, creatorId) ||
     "";
   const [resolvedCreatorName, setResolvedCreatorName] = useState(() => getInitialCreatorName());
+  const buildCreatorHref = useCallback(
+    (positionValue) =>
+      getUrlForView({
+        name: "creator",
+        service,
+        creatorId,
+        creatorName: resolvedCreatorName || creatorId,
+        position: Math.max(0, Number.isFinite(positionValue) ? Math.floor(positionValue) : 0),
+      }),
+    [service, creatorId, resolvedCreatorName],
+  );
 
   useEffect(() => {
     setResolvedCreatorName(() => getInitialCreatorName());
@@ -218,8 +233,8 @@ function CreatorPage({
       ctx.service !== service || ctx.creatorId !== creatorId || ctx.position !== initialPosition;
     if (!changed) return;
     positionContextRef.current = { service, creatorId, position: initialPosition };
-    setOffset(resolveOffsetForPosition(initialPosition, limit));
-  }, [service, creatorId, initialPosition, limit]);
+    setOffset(resolveOffsetForPosition(initialPosition, limit || initialPageSizeRef.current));
+  }, [service, creatorId, initialPosition]);
 
   useEffect(() => {
     let alive = true;
@@ -912,7 +927,11 @@ function CreatorPage({
 
   function goToPage(page) {
     if (!limit) return;
-    setOffset(Math.max(0, (page - 1) * limit));
+    const nextOffset = Math.max(0, (page - 1) * limit);
+    setOffset(nextOffset);
+    if (typeof onRememberPosition === "function" && !isFilterActive) {
+      onRememberPosition(nextOffset);
+    }
   }
 
   const goToSearchPage = (page) => {
@@ -994,52 +1013,79 @@ function CreatorPage({
       pages.push(paginationState.totalPages);
     }
 
+    const pageSize = isFilterActive ? effectiveLimit : limit || API_PAGE_SIZE;
+    const resolvePageHref = (pageNumber) => {
+      const positionValue = Math.max(0, (pageNumber - 1) * pageSize);
+      return buildCreatorHref(positionValue);
+    };
+
     const paginationContent = (
-        <nav className="pagination">
-          {!compactPagination && (
-            <button
-              className="btn ghost"
-              type="button"
-              disabled={!paginationState.hasPrev}
-              onClick={() => paginationState.hasPrev && paginationState.goTo(paginationState.currentPage - 1)}
-            >
-              &larr; Prev
-            </button>
-          )}
-          <div className="pagination-pages">
-            {pages.map((item) => {
-              if (typeof item === "string") {
-                return (
-                  <span key={item} className="pagination-ellipsis">
-                    …
-                  </span>
-                );
+      <nav className="pagination">
+        {!compactPagination && (
+          <a
+            className={`btn ghost${paginationState.hasPrev ? "" : " disabled"}`}
+            href={paginationState.hasPrev ? resolvePageHref(paginationState.currentPage - 1) : "#"}
+            aria-disabled={!paginationState.hasPrev}
+            onClick={(event) => {
+              if (!paginationState.hasPrev) {
+                event.preventDefault();
+                return;
               }
-              const isActive = item === paginationState.currentPage;
+              if (isModifiedClick(event)) return;
+              event.preventDefault();
+              paginationState.goTo(paginationState.currentPage - 1);
+            }}
+          >
+            &larr; Prev
+          </a>
+        )}
+        <div className="pagination-pages">
+          {pages.map((item) => {
+            if (typeof item === "string") {
               return (
-                <button
-                  key={item}
-                  className={`page-pill${isActive ? " active" : ""}`}
-                  type="button"
-                  onClick={() => paginationState.goTo(item)}
-                  disabled={isActive}
-                >
-                  {item}
-                </button>
+                <span key={item} className="pagination-ellipsis">
+                  …
+                </span>
               );
-            })}
-          </div>
-          {!compactPagination && (
-            <button
-              className="btn ghost"
-              type="button"
-              disabled={!paginationState.hasNext}
-              onClick={() => paginationState.hasNext && paginationState.goTo(paginationState.currentPage + 1)}
-            >
-              Next &rarr;
-            </button>
-          )}
-        </nav>
+            }
+            const isActive = item === paginationState.currentPage;
+            return (
+              <a
+                key={item}
+                className={`page-pill${isActive ? " active" : ""}`}
+                href={resolvePageHref(item)}
+                aria-current={isActive ? "page" : undefined}
+                onClick={(event) => {
+                  if (isModifiedClick(event)) return;
+                  event.preventDefault();
+                  if (isActive) return;
+                  paginationState.goTo(item);
+                }}
+              >
+                {item}
+              </a>
+            );
+          })}
+        </div>
+        {!compactPagination && (
+          <a
+            className={`btn ghost${paginationState.hasNext ? "" : " disabled"}`}
+            href={paginationState.hasNext ? resolvePageHref(paginationState.currentPage + 1) : "#"}
+            aria-disabled={!paginationState.hasNext}
+            onClick={(event) => {
+              if (!paginationState.hasNext) {
+                event.preventDefault();
+                return;
+              }
+              if (isModifiedClick(event)) return;
+              event.preventDefault();
+              paginationState.goTo(paginationState.currentPage + 1);
+            }}
+          >
+            Next &rarr;
+          </a>
+        )}
+      </nav>
     );
 
     const paginationMeta = showMeta ? (
@@ -1293,14 +1339,31 @@ function CreatorPage({
               if (!isFilterActive && typeof onRememberPosition === "function" && Number.isFinite(post?.__position)) {
                 onRememberPosition(post.__position);
               }
-              onOpenPost(post.id, post.title || "");
+              onOpenPost(post.id, post.title || "", Number.isFinite(post?.__position) ? post.__position : undefined);
             };
+            const postHref = getUrlForView({
+              name: "post",
+              service,
+              creatorId,
+              creatorName: resolvedCreatorName || creatorId,
+              postId: post.id,
+              position:
+                Number.isFinite(post?.__position) && !isFilterActive
+                  ? Math.max(0, Math.floor(post.__position))
+                  : undefined,
+            });
             return (
-              <button
+              <a
                 className="post-item"
                 key={post.id}
-                type="button"
-                onClick={handleOpenPost}
+                href={postHref}
+                onClick={(event) => {
+                  if (isModifiedClick(event)) {
+                    return;
+                  }
+                  event.preventDefault();
+                  handleOpenPost();
+                }}
               >
                 <div className="post-body">
                   <div className="post-head">
@@ -1320,7 +1383,7 @@ function CreatorPage({
                     <p className="excerpt" dangerouslySetInnerHTML={{ __html: excerptHtml }} />
                   )}
                 </div>
-              </button>
+              </a>
             );
           })}
         </div>

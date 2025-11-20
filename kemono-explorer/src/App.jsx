@@ -62,7 +62,7 @@ function App() {
   useEffect(() => {
     if (typeof window === "undefined") return;
     const handlePopState = (event) => {
-      const next = getViewFromHistoryState(event.state, window.location.pathname);
+      const next = getViewFromHistoryState(event.state, window.location.pathname, window.location.search);
       navigate(next, { skipHistory: true });
     };
     window.addEventListener("popstate", handlePopState);
@@ -130,6 +130,16 @@ function App() {
   });
   const [readerSettingsOpen, setReaderSettingsOpen] = useState(false);
   const activeTheme = themeMode === "auto" ? systemTheme : themeMode;
+  const handleLinkNavigation = useCallback(
+    (event, nextView) => {
+      if (event.button !== 0 || event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) {
+        return;
+      }
+      event.preventDefault();
+      navigate(nextView);
+    },
+    [navigate],
+  );
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -186,12 +196,34 @@ function App() {
     [navigate, view.name, view.service, view.creatorId, view.creatorName, view.postId],
   );
 
-  const openCreator = (service, creatorId, creatorName) => {
-    navigate({ name: "creator", service, creatorId, creatorName });
+  const openCreator = (service, creatorId, creatorName, positionOverride) => {
+    const effectivePosition =
+      typeof positionOverride === "number"
+        ? positionOverride
+        : getCreatorPosition(service, creatorId);
+    navigate({
+      name: "creator",
+      service,
+      creatorId,
+      creatorName,
+      position: effectivePosition > 0 ? effectivePosition : undefined,
+    });
   };
 
-  const openPost = (service, creatorId, creatorName, postId, postTitle) => {
-    navigate({ name: "post", service, creatorId, creatorName, postId, postTitle });
+  const openPost = (service, creatorId, creatorName, postId, postTitle, positionOverride) => {
+    const effectivePosition =
+      typeof positionOverride === "number"
+        ? positionOverride
+        : getCreatorPosition(service, creatorId);
+    navigate({
+      name: "post",
+      service,
+      creatorId,
+      creatorName,
+      postId,
+      postTitle,
+      position: effectivePosition > 0 ? effectivePosition : undefined,
+    });
   };
 
   const isCreatorSaved = (service, creatorId) =>
@@ -241,9 +273,13 @@ function App() {
         <div className="app-header-inner">
           <div className="header-top">
             <h1 className="title">
-              <button className="brand-link" type="button" onClick={() => navigate({ name: "home" })}>
+              <a
+                className="brand-link"
+                href={getUrlForView({ name: "home" })}
+                onClick={(event) => handleLinkNavigation(event, { name: "home" })}
+              >
                 Kemono Explorer
-              </button>
+              </a>
             </h1>
             {view.name === "post" && (
               <button
@@ -310,8 +346,8 @@ function App() {
               creatorId={view.creatorId}
               creatorName={view.creatorName}
               alreadySaved={isCreatorSaved(view.service, view.creatorId)}
-              onOpenPost={(postId, postTitle) =>
-                openPost(view.service, view.creatorId, view.creatorName, postId, postTitle)
+              onOpenPost={(postId, postTitle, position) =>
+                openPost(view.service, view.creatorId, view.creatorName, postId, postTitle, position)
               }
               onSave={() =>
                 setSavedCreators((prev) => {
@@ -325,7 +361,11 @@ function App() {
               }
               activeFilter={getCreatorFilter(view.service, view.creatorId)}
               onUpdateFilter={(value) => updateCreatorFilter(view.service, view.creatorId, value)}
-              initialPosition={getCreatorPosition(view.service, view.creatorId)}
+              initialPosition={
+                typeof view.position === "number"
+                  ? view.position
+                  : getCreatorPosition(view.service, view.creatorId)
+              }
               onRememberPosition={(position) => updateCreatorPosition(view.service, view.creatorId, position)}
             />
           )}
@@ -336,26 +376,41 @@ function App() {
               creatorId={view.creatorId}
               creatorName={view.creatorName}
               postId={view.postId}
+              creatorPosition={
+                typeof view.position === "number"
+                  ? view.position
+                  : getCreatorPosition(view.service, view.creatorId)
+              }
               activeFilter={getCreatorFilter(view.service, view.creatorId)}
               readerSettingsOpen={readerSettingsOpen}
               onCloseReaderSettings={() => setReaderSettingsOpen(false)}
-              onBack={() =>
+              onBack={() => {
+                const currentPosition =
+                  typeof view.position === "number"
+                    ? view.position
+                    : getCreatorPosition(view.service, view.creatorId);
                 navigate({
                   name: "creator",
                   service: view.service,
                   creatorId: view.creatorId,
                   creatorName: view.creatorName,
-                })
-              }
-              onNavigate={(nextPostId) =>
+                  position: currentPosition,
+                });
+              }}
+              onNavigate={(nextPostId) => {
+                const currentPosition =
+                  typeof view.position === "number"
+                    ? view.position
+                    : getCreatorPosition(view.service, view.creatorId);
                 navigate({
                   name: "post",
                   service: view.service,
                   creatorId: view.creatorId,
                   creatorName: view.creatorName,
                   postId: nextPostId,
-                })
-              }
+                  position: currentPosition,
+                });
+              }}
               onResolvePostTitle={handleResolvePostTitle}
               onResolveCreatorPosition={(position) => updateCreatorPosition(view.service, view.creatorId, position)}
             />

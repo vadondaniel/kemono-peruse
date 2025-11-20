@@ -106,11 +106,15 @@ const stripFileExtension = (value) => {
   return value.slice(0, index);
 };
 
+const isModifiedClick = (event) =>
+  event.button !== 0 || event.metaKey || event.altKey || event.ctrlKey || event.shiftKey;
+
 function PostView({
   service,
   creatorId,
   creatorName,
   postId,
+  creatorPosition,
   activeFilter,
   readerSettingsOpen,
   onCloseReaderSettings,
@@ -258,6 +262,8 @@ function PostView({
     : serviceLabel;
   const lastResolvedTitleRef = useRef(null);
   const proseRef = useRef(null);
+  const trimmedActiveFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
+  const hasActiveFilter = trimmedActiveFilter.length > 0;
   useEffect(() => {
     if (!post || typeof onResolvePostTitle !== "function") return;
     const nextTitle = post.title || post.id || "";
@@ -395,7 +401,7 @@ function PostView({
     let alive = true;
     setNeighbors({ newerId: null, olderId: null });
 
-    const trimmedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
+    const trimmedFilter = trimmedActiveFilter;
     const storedFields = getStoredFilterFields();
     const tagTokens = trimmedFilter ? extractTagTokens(trimmedFilter) : [];
     const textQueryEnabled = storedFields.title || storedFields.body;
@@ -447,7 +453,7 @@ function PostView({
               newerId: newerId ?? null,
               olderId: olderId ?? null,
             });
-            if (typeof onResolveCreatorPosition === "function") {
+            if (!hasActiveFilter && typeof onResolveCreatorPosition === "function") {
               const globalIndex = offset + idx;
               if (Number.isFinite(globalIndex) && globalIndex >= 0) {
                 onResolveCreatorPosition(globalIndex);
@@ -515,6 +521,77 @@ function PostView({
   useEffect(() => {
     setProcessedHtml(normalizedHtml || "");
   }, [normalizedHtml]);
+
+  const basePosition =
+    typeof creatorPosition === "number" && creatorPosition > 0
+      ? Math.floor(creatorPosition)
+      : undefined;
+
+  const creatorHref = getUrlForView({
+    name: "creator",
+    service,
+    creatorId,
+    creatorName: resolvedCreatorName || creatorId,
+    position: basePosition,
+  });
+
+  const buildPostHref = (targetPostId) =>
+    getUrlForView({
+      name: "post",
+      service,
+      creatorId,
+      creatorName: resolvedCreatorName || creatorId,
+      postId: targetPostId,
+      position: basePosition,
+    });
+
+  const renderNavigationControls = () => (
+    <div className="post-nav">
+      <a
+        className={`btn ghost${neighbors.olderId ? "" : " disabled"}`}
+        href={neighbors.olderId ? buildPostHref(neighbors.olderId) : "#"}
+        aria-disabled={!neighbors.olderId}
+        onClick={(event) => {
+          if (!neighbors.olderId || !onNavigate) {
+            event.preventDefault();
+            return;
+          }
+          if (isModifiedClick(event)) return;
+          event.preventDefault();
+          onNavigate(neighbors.olderId);
+        }}
+      >
+        &larr; Prev
+      </a>
+      <a
+        className="btn outline"
+        href={creatorHref}
+        onClick={(event) => {
+          if (typeof onBack !== "function" || isModifiedClick(event)) return;
+          event.preventDefault();
+          onBack();
+        }}
+      >
+        Posts
+      </a>
+      <a
+        className={`btn primary${neighbors.newerId ? "" : " disabled"}`}
+        href={neighbors.newerId ? buildPostHref(neighbors.newerId) : "#"}
+        aria-disabled={!neighbors.newerId}
+        onClick={(event) => {
+          if (!neighbors.newerId || !onNavigate) {
+            event.preventDefault();
+            return;
+          }
+          if (isModifiedClick(event)) return;
+          event.preventDefault();
+          onNavigate(neighbors.newerId);
+        }}
+      >
+        Next &rarr;
+      </a>
+    </div>
+  );
 
   useLayoutEffect(() => {
     if (!processedHtml) return undefined;
@@ -902,27 +979,7 @@ function PostView({
   return (
     <div className="page">
       <article className={readerCardClassName}>
-        <div className="post-nav">
-          <button
-            className="btn ghost"
-            type="button"
-            disabled={!neighbors.olderId}
-            onClick={() => neighbors.olderId && onNavigate && onNavigate(neighbors.olderId)}
-          >
-            &larr; Prev
-          </button>
-          <button className="btn outline" type="button" onClick={onBack}>
-            Posts
-          </button>
-          <button
-            className="btn primary"
-            type="button"
-            disabled={!neighbors.newerId}
-            onClick={() => neighbors.newerId && onNavigate && onNavigate(neighbors.newerId)}
-          >
-            Next &rarr;
-          </button>
-      </div>
+        {renderNavigationControls()}
         {readerSettingsOpen && (
           <div
             className="reader-modal-overlay"
@@ -1153,27 +1210,7 @@ function PostView({
 
         {processedHtml && <div className="prose" ref={proseRef} dangerouslySetInnerHTML={{ __html: processedHtml }} />}
 
-        <div className="post-nav">
-          <button
-            className="btn ghost"
-            type="button"
-            disabled={!neighbors.olderId}
-            onClick={() => neighbors.olderId && onNavigate && onNavigate(neighbors.olderId)}
-          >
-            &larr; Prev
-          </button>
-          <button className="btn outline" type="button" onClick={onBack}>
-            Posts
-          </button>
-          <button
-            className="btn primary"
-            type="button"
-            disabled={!neighbors.newerId}
-            onClick={() => neighbors.newerId && onNavigate && onNavigate(neighbors.newerId)}
-          >
-            Next &rarr;
-          </button>
-        </div>
+        {renderNavigationControls()}
       </article>
     </div>
   );

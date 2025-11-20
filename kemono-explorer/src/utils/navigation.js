@@ -55,6 +55,13 @@ function safeString(value) {
   return typeof value === "string" ? value : "";
 }
 
+function toPosition(value) {
+  if (value === undefined || value === null) return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return undefined;
+  return Math.floor(parsed);
+}
+
 function toViewOrNull(raw) {
   if (!raw || typeof raw !== "object") return null;
   if (raw.name === "home") {
@@ -69,6 +76,7 @@ function toViewOrNull(raw) {
       service,
       creatorId,
       creatorName: safeString(raw.creatorName),
+      position: toPosition(raw.position),
     };
   }
   if (raw.name === "post") {
@@ -83,6 +91,7 @@ function toViewOrNull(raw) {
       creatorName: safeString(raw.creatorName),
       postId,
       postTitle: safeString(raw.postTitle),
+      position: toPosition(raw.position),
     };
   }
   return null;
@@ -92,38 +101,48 @@ export function ensureView(raw) {
   return toViewOrNull(raw) || { name: "home" };
 }
 
-function parseViewFromPath(pathname) {
+function parseViewFromPath(pathname, search = "") {
   const stripped = stripBasePath(pathname || "/");
+  const params = new URLSearchParams(search || "");
+  const position = toPosition(params.get("pos"));
   if (!stripped || stripped === "/") {
     return { name: "home" };
   }
   const segments = stripped.split("/").filter(Boolean).map(decodePathSegment);
   if (segments.length >= 5 && segments[0] === "creator" && segments[3] === "post") {
-    return ensureView({
+    const baseView = ensureView({
       name: "post",
       service: segments[1],
       creatorId: segments[2],
       creatorName: "",
       postId: segments[4],
     });
+    if (typeof position === "number") {
+      baseView.position = position;
+    }
+    return baseView;
   }
   if (segments.length >= 3 && segments[0] === "creator") {
-    return ensureView({
+    const baseView = ensureView({
       name: "creator",
       service: segments[1],
       creatorId: segments[2],
       creatorName: "",
     });
+    if (typeof position === "number") {
+      baseView.position = position;
+    }
+    return baseView;
   }
   return { name: "home" };
 }
 
-export function getViewFromHistoryState(state, pathname) {
+export function getViewFromHistoryState(state, pathname, search = "") {
   const fromState = toViewOrNull(state?.view);
   if (fromState) {
     return fromState;
   }
-  return parseViewFromPath(pathname);
+  return parseViewFromPath(pathname, search);
 }
 
 export function viewsEqual(a, b) {
@@ -135,7 +154,8 @@ export function viewsEqual(a, b) {
     return (
       viewA.service === viewB.service &&
       viewA.creatorId === viewB.creatorId &&
-      viewA.creatorName === viewB.creatorName
+      viewA.creatorName === viewB.creatorName &&
+      (viewA.position ?? null) === (viewB.position ?? null)
     );
   }
   if (viewA.name === "post") {
@@ -143,7 +163,8 @@ export function viewsEqual(a, b) {
       viewA.service === viewB.service &&
       viewA.creatorId === viewB.creatorId &&
       viewA.postId === viewB.postId &&
-      viewA.creatorName === viewB.creatorName
+      viewA.creatorName === viewB.creatorName &&
+      (viewA.position ?? null) === (viewB.position ?? null)
     );
   }
   return false;
@@ -160,7 +181,16 @@ export function getUrlForView(view) {
   }
   const encodedSegments = segments.map(encodePathSegment);
   const suffix = encodedSegments.length > 0 ? `/${encodedSegments.join("/")}` : "/";
-  return BASE_PATH_PREFIX ? `${BASE_PATH_PREFIX}${suffix}` : suffix;
+  const query = [];
+  if (normalized.name === "creator" && typeof normalized.position === "number" && normalized.position > 0) {
+    query.push(`pos=${normalized.position}`);
+  }
+  if (normalized.name === "post" && typeof normalized.position === "number" && normalized.position > 0) {
+    query.push(`pos=${normalized.position}`);
+  }
+  const queryString = query.length ? `?${query.join("&")}` : "";
+  const base = BASE_PATH_PREFIX ? `${BASE_PATH_PREFIX}${suffix}` : suffix;
+  return `${base}${queryString}`;
 }
 
 export function getTitleForView(view) {
@@ -198,7 +228,7 @@ export function getInitialView() {
   if (fromState) {
     return fromState;
   }
-  return parseViewFromPath(window.location.pathname);
+  return parseViewFromPath(window.location.pathname, window.location.search);
 }
 
 export function buildHistoryState(view) {
