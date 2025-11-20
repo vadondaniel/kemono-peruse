@@ -357,99 +357,171 @@ function PostView({
     ? normalizePostHtml(bodyHtml, { service: post?.service || service, attachments, mediaBase: attachmentMediaBase })
     : "";
 
-  const enhanceInlineImages = (html) => {
-    if (!html) return "";
-    if (typeof window === "undefined" || typeof window.DOMParser === "undefined") return html;
-    try {
-      const parser = new window.DOMParser();
-      const doc = parser.parseFromString(html, "text/html");
-      if (!doc?.body) return html;
-      const images = Array.from(doc.body.querySelectorAll("img"));
-      if (images.length === 0) return html;
-      images.forEach((img) => {
-        if (!img) return;
-        if (img.closest(".inline-image-wrapper")) return;
-        const target = img.closest("picture") || img;
-        const parent = target.parentNode;
-        if (!parent) return;
-        const wrapper = doc.createElement("span");
-        wrapper.className = "inline-image-wrapper";
-        const placeholder = doc.createElement("span");
-        placeholder.className = "image-placeholder inline-image-placeholder";
-        placeholder.setAttribute("aria-hidden", "true");
-        wrapper.appendChild(placeholder);
-        parent.insertBefore(wrapper, target);
-        wrapper.appendChild(target);
-      });
-      return doc.body.innerHTML;
-    } catch {
-      return html;
-    }
-  };
-
-  const [processedHtml, setProcessedHtml] = useState(normalizedHtml);
+  const [processedHtml, setProcessedHtml] = useState(() => normalizedHtml || "");
 
   useEffect(() => {
-    if (!normalizedHtml) {
-      setProcessedHtml("");
-      return;
-    }
-    const nextHtml = enhanceInlineImages(normalizedHtml);
-    setProcessedHtml(nextHtml ?? "");
+    setProcessedHtml(normalizedHtml || "");
   }, [normalizedHtml]);
 
   useLayoutEffect(() => {
     if (!processedHtml) return undefined;
+    if (typeof window === "undefined" || typeof window.MutationObserver === "undefined") return undefined;
     const container = proseRef.current;
     if (!container) return undefined;
-    const wrappers = Array.from(container.querySelectorAll(".inline-image-wrapper"));
-    if (wrappers.length === 0) return undefined;
 
-    const cleanupFns = [];
+    const listenerMap = new Map();
 
-    wrappers.forEach((wrapper) => {
-      const targetImg = wrapper.querySelector("img");
-      if (!targetImg) return;
+    const ensurePlaceholder = (wrapper) => {
+      if (wrapper.querySelector(".image-placeholder")) return;
+      const placeholder = document.createElement("span");
+      placeholder.className = "image-placeholder inline-image-placeholder";
+      placeholder.setAttribute("aria-hidden", "true");
+      wrapper.insertBefore(placeholder, wrapper.firstChild || null);
+    };
 
-      if (!targetImg.hasAttribute("loading")) {
-        targetImg.setAttribute("loading", "lazy");
+    const ensureWrapper = (img) => {
+      const picture = img.closest("picture");
+      const target = picture || img;
+      if (!target || !target.parentNode) return null;
+      const existing = target.closest(".inline-image-wrapper");
+      if (existing) {
+        ensurePlaceholder(existing);
+        return existing;
+      }
+      const wrapper = document.createElement("span");
+      wrapper.className = "inline-image-wrapper";
+      ensurePlaceholder(wrapper);
+      target.parentNode.insertBefore(wrapper, target);
+      wrapper.appendChild(target);
+      return wrapper;
+    };
+
+    const getSignature = (img) => {
+      const srcAttr = img.getAttribute("src") || "";
+      const srcsetAttr = img.getAttribute("srcset") || "";
+      const currentSrc = img.currentSrc || img.src || "";
+      return `${currentSrc}|${srcAttr}|${srcsetAttr}`;
+    };
+
+    const cleanupImage = (img) => {
+      const cleanup = listenerMap.get(img);
+      if (cleanup) {
+        cleanup();
+        listenerMap.delete(img);
+      }
+      if (img?.dataset) {
+        delete img.dataset.inlinePlaceholderSig;
+      }
+    };
+
+    const bindImage = (img) => {
+      if (!(img instanceof HTMLImageElement)) return;
+      const wrapper = ensureWrapper(img);
+      if (!wrapper) return;
+
+      const previousSignature = img.dataset?.inlinePlaceholderSig || "";
+      const nextSignature = getSignature(img);
+      const signatureChanged = previousSignature !== nextSignature;
+      if (img.dataset) {
+        img.dataset.inlinePlaceholderSig = nextSignature;
       }
 
-      const resolve = () => {
-        wrapper.classList.add("inline-image-loaded");
-      };
+      if (!signatureChanged && listenerMap.has(img)) {
+        return;
+      }
 
-      if (targetImg.complete && targetImg.naturalWidth > 0) {
-        resolve();
+      const existingCleanup = listenerMap.get(img);
+      if (existingCleanup) {
+        existingCleanup();
+        listenerMap.delete(img);
+      }
+
+      if (!img.hasAttribute("loading")) {
+        img.setAttribute("loading", "lazy");
+      }
+
+      const alreadyLoaded = img.complete && img.naturalWidth > 0 && !signatureChanged;
+      if (alreadyLoaded) {
+        wrapper.classList.add("inline-image-loaded");
         return;
       }
 
       wrapper.classList.remove("inline-image-loaded");
 
       let settled = false;
-      const settleOnce = (handler) => {
+      function handleLoad() {
+        settle();
+      }
+      function handleError() {
+        settle();
+      }
+      function removeListeners() {
+        img.removeEventListener("load", handleLoad);
+        img.removeEventListener("error", handleError);
+      }
+      function settle() {
         if (settled) return;
         settled = true;
-        handler();
-      };
-
-      const handleLoad = () => settleOnce(resolve);
-      const handleError = () => settleOnce(resolve);
-
-      targetImg.addEventListener("load", handleLoad);
-      targetImg.addEventListener("error", handleError);
-      cleanupFns.push(() => {
-        targetImg.removeEventListener("load", handleLoad);
-        targetImg.removeEventListener("error", handleError);
-      });
-
-      if (typeof targetImg.decode === "function") {
-        targetImg.decode().then(handleLoad).catch(handleError);
+        removeListeners();
+        listenerMap.delete(img);
+        wrapper.classList.add("inline-image-loaded");
       }
+
+      img.addEventListener("load", handleLoad);
+      img.addEventListener("error", handleError);
+
+      if (typeof img.decode === "function") {
+        img.decode().then(handleLoad).catch(handleError);
+      }
+
+      listenerMap.set(img, removeListeners);
+    };
+
+    const collectImages = (node) => {
+      const images = [];
+      if (!node || node.nodeType !== 1) {
+        return images;
+      }
+      if (node.tagName === "IMG") {
+        images.push(node);
+      }
+      node.querySelectorAll?.("img").forEach((img) => {
+        images.push(img);
+      });
+      return images;
+    };
+
+    collectImages(container).forEach(bindImage);
+
+    const observer = new window.MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.type === "childList") {
+          mutation.addedNodes.forEach((node) => {
+            collectImages(node).forEach(bindImage);
+          });
+          mutation.removedNodes.forEach((node) => {
+            collectImages(node).forEach((img) => {
+              if (container.contains(img)) return;
+              cleanupImage(img);
+            });
+          });
+        } else if (mutation.type === "attributes") {
+          const target = mutation.target;
+          if (target instanceof HTMLImageElement) {
+            bindImage(target);
+          }
+        }
+      });
     });
 
+    observer.observe(container, { childList: true, subtree: true, attributes: true, attributeFilter: ["src", "srcset"] });
+
     return () => {
-      cleanupFns.forEach((cleanup) => cleanup());
+      observer.disconnect();
+      Array.from(listenerMap.keys()).forEach((img) => {
+        cleanupImage(img);
+      });
+      listenerMap.clear();
     };
   }, [processedHtml]);
 
