@@ -239,6 +239,7 @@ function PostView({
   const [loading, setLoading] = useState(true);
   const [neighbors, setNeighbors] = useState({ newerId: null, olderId: null });
   const [heroLoaded, setHeroLoaded] = useState(false);
+  const [attachmentsExpanded, setAttachmentsExpanded] = useState(false);
   const serviceLabel = getServiceLabel(service);
   const creatorLabel = creatorName || creatorId || "";
   const creatorDisplay = creatorLabel
@@ -255,6 +256,9 @@ function PostView({
     lastResolvedTitleRef.current = nextTitle;
     onResolvePostTitle(nextTitle);
   }, [post, onResolvePostTitle]);
+  useEffect(() => {
+    setAttachmentsExpanded(false);
+  }, [postId]);
   const getStoredFilterFields = () => {
     const defaults = { title: true, tags: true, body: true };
     if (typeof window === "undefined" || !window.localStorage) return defaults;
@@ -1015,33 +1019,47 @@ function PostView({
         )}
         <header className="post-header">
           <span className="muted small">{creatorDisplay}</span>
-          <h2 className="title">{post.title || post.id}</h2>
+          <div className="post-title-row">
+            <h2 className="title">{post.title || post.id}</h2>
+            {attachments.length > 0 && (
+              <button
+                type="button"
+                className="btn ghost attachment-count-toggle"
+                aria-expanded={attachmentsExpanded}
+                onClick={() => setAttachmentsExpanded((prev) => !prev)}
+              >
+                {attachments.length} {attachmentsExpanded ? "\u25BC" : "\u25B6"}
+              </button>
+            )}
+          </div>
           <Timestamp value={post.published} prefix="Published" />
         </header>
 
-        {attachments.length > 0 && (
-          <div className="attachments">
-            {attachments.map((item, index) => {
-              const proxiedHref = item?.path ? `${MEDIA_BASE}${item.path}` : null;
-              const originalHrefCandidates = [
-                typeof item?.original === "string" ? item.original : null,
-                typeof item?.url === "string" ? item.url : null,
-                item?.path ? `${attachmentMediaBase}${item.path}` : null,
-              ].filter(Boolean);
-              const href =
-                useOriginalAttachments && originalHrefCandidates.length
-                  ? originalHrefCandidates[0]
-                  : proxiedHref || originalHrefCandidates[0] || "#";
-              const attachmentKey =
-                item?.path || item?.original || item?.name || String(item?.id ?? `attachment-${index}`);
-              const label = item?.name || (item?.path ? item.path.split("/").pop() : originalHref) || "Attachment";
-              return (
-                <a className="tag attachment" href={href} target="_blank" rel="noreferrer" key={attachmentKey}>
-                  {label}
-                </a>
-              );
-            })}
-          </div>
+        {attachments.length > 0 && attachmentsExpanded && (
+          <section className="attachments-panel">
+            <div className="attachments">
+              {attachments.map((item, index) => {
+                const proxiedHref = item?.path ? `${MEDIA_BASE}${item.path}` : null;
+                const originalHrefCandidates = [
+                  typeof item?.original === "string" ? item.original : null,
+                  typeof item?.url === "string" ? item.url : null,
+                  item?.path ? `${attachmentMediaBase}${item.path}` : null,
+                ].filter(Boolean);
+                const href =
+                  useOriginalAttachments && originalHrefCandidates.length
+                    ? originalHrefCandidates[0]
+                    : proxiedHref || originalHrefCandidates[0] || "#";
+                const attachmentKey =
+                  item?.path || item?.original || item?.name || String(item?.id ?? `attachment-${index}`);
+                const label = item?.name || (item?.path ? item.path.split("/").pop() : originalHref) || "Attachment";
+                return (
+                  <a className="tag attachment" href={href} target="_blank" rel="noreferrer" key={attachmentKey}>
+                    {label}
+                  </a>
+                );
+              })}
+            </div>
+          </section>
         )}
 
         {processedHtml && <div className="prose" ref={proseRef} dangerouslySetInnerHTML={{ __html: processedHtml }} />}

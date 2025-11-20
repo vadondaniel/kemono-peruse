@@ -1326,13 +1326,32 @@ html[data-theme="dark"] .hero-stat {
   font-weight: 600;
 }
 
-.attachments {
+.post-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.attachment-count-toggle {
+  font-size: 13px;
+  padding: 0 8px;
+  height: 26px;
+  line-height: 26px;
+}
+
+.attachments-panel {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.attachment {
+.attachments-panel .attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.attachments-panel .attachment {
   background: var(--ghost-bg);
   color: var(--accent);
   border-radius: 8px;
