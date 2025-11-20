@@ -105,6 +105,90 @@ const stripFileExtension = (value) => {
   return value.slice(0, index);
 };
 
+const SAVED_CREATORS_STORAGE_KEY = "kemono.savedCreators";
+const CREATOR_NAME_CACHE_KEY = "kemono.creatorNameCache";
+
+const readSavedCreators = () => {
+  if (typeof window === "undefined" || !window.localStorage) return [];
+  try {
+    const raw = window.localStorage.getItem(SAVED_CREATORS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+};
+
+const findSavedCreatorEntry = (service, creatorId) => {
+  if (!service || !creatorId) return null;
+  const entries = readSavedCreators();
+  return entries.find((entry) => entry && entry.service === service && entry.id === creatorId) || null;
+};
+
+const getSavedCreatorName = (service, creatorId) => {
+  const entry = findSavedCreatorEntry(service, creatorId);
+  if (!entry) return null;
+  const trimmed = typeof entry.name === "string" ? entry.name.trim() : "";
+  if (trimmed) return trimmed;
+  return entry.id || null;
+};
+
+const readCreatorNameCache = () => {
+  if (typeof window === "undefined" || !window.localStorage) return {};
+  try {
+    const raw = window.localStorage.getItem(CREATOR_NAME_CACHE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const getCachedCreatorName = (service, creatorId) => {
+  if (!service || !creatorId) return null;
+  const cache = readCreatorNameCache();
+  const key = `${service}:${creatorId}`;
+  const value = cache[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+};
+
+const cacheCreatorName = (service, creatorId, name) => {
+  if (!service || !creatorId) return;
+  if (findSavedCreatorEntry(service, creatorId)) return;
+  if (typeof window === "undefined" || !window.localStorage) return;
+  const trimmed = typeof name === "string" ? name.trim() : "";
+  if (!trimmed) return;
+  try {
+    const cache = readCreatorNameCache();
+    const key = `${service}:${creatorId}`;
+    if (cache[key] === trimmed) return;
+    cache[key] = trimmed;
+    window.localStorage.setItem(CREATOR_NAME_CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    // ignore cache write failures
+  }
+};
+
+const resolveProfileDisplayName = (profile) => {
+  if (!profile || typeof profile !== "object") return null;
+  const candidates = [
+    profile.name,
+    profile.display_name,
+    profile.username,
+    profile.user,
+    profile.creator,
+    profile.title,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  return null;
+};
+
 function PostView({
   service,
   creatorId,
@@ -235,13 +319,20 @@ function PostView({
     });
   };
 
+  const getInitialCreatorName = () =>
+    getSavedCreatorName(service, creatorId) ||
+    (typeof creatorName === "string" ? creatorName.trim() : "") ||
+    getCachedCreatorName(service, creatorId) ||
+    "";
+
   const [post, setPost] = useState(null);
   const [loading, setLoading] = useState(true);
   const [neighbors, setNeighbors] = useState({ newerId: null, olderId: null });
   const [heroLoaded, setHeroLoaded] = useState(false);
   const [attachmentsExpanded, setAttachmentsExpanded] = useState(false);
+  const [resolvedCreatorName, setResolvedCreatorName] = useState(getInitialCreatorName);
   const serviceLabel = getServiceLabel(service);
-  const creatorLabel = creatorName || creatorId || "";
+  const creatorLabel = resolvedCreatorName || creatorId || "";
   const creatorDisplay = creatorLabel
     ? serviceLabel
       ? `${creatorLabel} (${serviceLabel})`
@@ -256,6 +347,59 @@ function PostView({
     lastResolvedTitleRef.current = nextTitle;
     onResolvePostTitle(nextTitle);
   }, [post, onResolvePostTitle]);
+
+  useEffect(() => {
+    const savedName = getSavedCreatorName(service, creatorId);
+    const incomingName = typeof creatorName === "string" ? creatorName.trim() : "";
+    if (savedName && savedName !== resolvedCreatorName) {
+      setResolvedCreatorName(savedName);
+      return;
+    }
+    if (!savedName && incomingName && incomingName !== resolvedCreatorName) {
+      setResolvedCreatorName(incomingName);
+      return;
+    }
+    if (!savedName) {
+      const cachedName = getCachedCreatorName(service, creatorId);
+      if (cachedName && cachedName !== resolvedCreatorName) {
+        setResolvedCreatorName(cachedName);
+      }
+    }
+  }, [service, creatorId, creatorName, resolvedCreatorName]);
+
+  useEffect(() => {
+    const savedName = getSavedCreatorName(service, creatorId);
+    if (savedName || resolvedCreatorName) return undefined;
+    const cachedName = getCachedCreatorName(service, creatorId);
+    if (cachedName) {
+      if (cachedName !== resolvedCreatorName) {
+        setResolvedCreatorName(cachedName);
+      }
+      return undefined;
+    }
+    if (!service || !creatorId) return undefined;
+    let alive = true;
+    fetchJson(`${API_BASE}/${service}/user/${creatorId}/profile`)
+      .then((profile) => {
+        if (!alive) return;
+        const profileName = resolveProfileDisplayName(profile);
+        if (profileName && profileName !== resolvedCreatorName) {
+          setResolvedCreatorName(profileName);
+          cacheCreatorName(service, creatorId, profileName);
+        }
+      })
+      .catch(() => {
+        // ignore profile fetch errors
+      });
+    return () => {
+      alive = false;
+    };
+  }, [service, creatorId, resolvedCreatorName]);
+
+  useEffect(() => {
+    if (!resolvedCreatorName) return;
+    cacheCreatorName(service, creatorId, resolvedCreatorName);
+  }, [resolvedCreatorName, service, creatorId]);
   useEffect(() => {
     setAttachmentsExpanded(false);
   }, [postId]);
@@ -1035,19 +1179,6 @@ function PostView({
           <Timestamp value={post.published} prefix="Published" />
         </header>
 
-        {heroImage && (
-          <div className="feature-image">
-            {!heroLoaded && <div className="image-placeholder" aria-hidden="true" />}
-            <img
-              src={heroImage}
-              alt=""
-              className={heroLoaded ? "image-loaded" : ""}
-              onLoad={() => setHeroLoaded(true)}
-              onError={() => setHeroLoaded(true)}
-            />
-          </div>
-        )}
-
         {attachments.length > 0 && attachmentsExpanded && (
           <section className="attachments-panel">
             <div className="attachments">
@@ -1073,6 +1204,19 @@ function PostView({
               })}
             </div>
           </section>
+        )}
+
+        {heroImage && (
+          <div className="feature-image">
+            {!heroLoaded && <div className="image-placeholder" aria-hidden="true" />}
+            <img
+              src={heroImage}
+              alt=""
+              className={heroLoaded ? "image-loaded" : ""}
+              onLoad={() => setHeroLoaded(true)}
+              onError={() => setHeroLoaded(true)}
+            />
+          </div>
         )}
 
         {processedHtml && <div className="prose" ref={proseRef} dangerouslySetInnerHTML={{ __html: processedHtml }} />}
