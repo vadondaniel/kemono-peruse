@@ -4,6 +4,7 @@ import {
   PAGE_SIZE_KEY,
   PAGE_SIZE_OPTIONS,
   READER_ALIGNMENT_VALUES,
+  READER_ATTACHMENT_LINK_VALUES,
   READER_INDENT_VALUES,
   READER_LINE_SPACING_VALUES,
   READER_SETTINGS_KEY,
@@ -85,6 +86,11 @@ export function normalizeReaderSettings(raw) {
     normalized.textIndent = raw.textIndent;
   } else if (raw.textIndent === "medium") {
     normalized.textIndent = "soft";
+  }
+  if (READER_ATTACHMENT_LINK_VALUES.includes(raw.attachmentsMode)) {
+    normalized.attachmentsMode = raw.attachmentsMode;
+  } else if (raw.useOriginalAttachments === true) {
+    normalized.attachmentsMode = "original";
   }
   return normalized;
 }

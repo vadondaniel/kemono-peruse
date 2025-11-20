@@ -1,7 +1,28 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import Timestamp from "./Timestamp.jsx";
-import { API_BASE, API_PAGE_SIZE, CACHE_VERSION, MEDIA_BASE, READER_ALIGNMENT_OPTIONS, READER_ALIGNMENT_VALUES, READER_INDENT_OPTIONS, READER_INDENT_VALUES, READER_LINE_SPACING_OPTIONS, READER_LINE_SPACING_VALUES, READER_TEXT_SCALE_OPTIONS, READER_TEXT_SCALE_VALUES, READER_TYPEFACE_OPTIONS, READER_TYPEFACE_VALUES, READER_WIDTH_OPTIONS, READER_WIDTH_VALUES } from "../constants.js";
+import {
+  API_BASE,
+  API_PAGE_SIZE,
+  CACHE_VERSION,
+  MEDIA_BASE,
+  READER_ALIGNMENT_OPTIONS,
+  READER_ALIGNMENT_VALUES,
+  READER_ATTACHMENT_LINK_OPTIONS,
+  READER_ATTACHMENT_LINK_VALUES,
+  READER_INDENT_OPTIONS,
+  READER_INDENT_VALUES,
+  READER_LINE_SPACING_OPTIONS,
+  READER_LINE_SPACING_VALUES,
+  READER_SETTINGS_KEY,
+  READER_TEXT_SCALE_OPTIONS,
+  READER_TEXT_SCALE_VALUES,
+  READER_TYPEFACE_OPTIONS,
+  READER_TYPEFACE_VALUES,
+  READER_WIDTH_OPTIONS,
+  READER_WIDTH_VALUES,
+  ORIGINAL_MEDIA_BASE,
+} from "../constants.js";
 import { fetchJson } from "../utils/api.js";
 import { getCachePreferenceKey, loadCreatorCache, writeCreatorCache, isCacheFresh, pruneCacheChunks, pruneCachePostDetails } from "../utils/cache.js";
 import { extractTagTokens, getServiceLabel, normalizePostHtml } from "../utils/posts.js";
@@ -126,6 +147,12 @@ function PostView({
           return prev;
         }
         return { ...prev, textIndent: value };
+      }
+      if (key === "attachmentsMode") {
+        if (!READER_ATTACHMENT_LINK_VALUES.includes(value) || prev.attachmentsMode === value) {
+          return prev;
+        }
+        return { ...prev, attachmentsMode: value };
       }
       return prev;
     });
@@ -314,12 +341,33 @@ function PostView({
     );
   }
 
-  const attachments = Array.isArray(post.attachments) ? post.attachments : [];
+  const baseAttachments = Array.isArray(post.attachments) ? [...post.attachments] : [];
+  const useOriginalAttachments = readerSettings.attachmentsMode === "original";
+  const attachmentMediaBase = useOriginalAttachments ? ORIGINAL_MEDIA_BASE : MEDIA_BASE;
+  const heroFile = post.file && (post.file.path || post.file.url || post.file.name) ? post.file : null;
+  const heroProxySrc = heroFile?.path ? `${MEDIA_BASE}${heroFile.path}` : null;
+  const heroOriginalSrc = heroFile?.url || (heroFile?.path ? `${ORIGINAL_MEDIA_BASE}${heroFile.path}` : null);
+  const attachments = heroFile
+    ? [
+        {
+          ...heroFile,
+          path: heroFile.path || heroFile.file || null,
+          original: heroOriginalSrc || heroFile.original || heroFile.url || null,
+          name: heroFile.name || heroFile.title || "Feature image",
+          __heroAttachment: true,
+        },
+        ...baseAttachments,
+      ]
+    : baseAttachments;
   const bodyHtml = post.content || post.body || post.text || "";
+  const heroImage = heroFile
+    ? useOriginalAttachments && heroOriginalSrc
+      ? heroOriginalSrc
+      : heroProxySrc || heroOriginalSrc
+    : null;
   const normalizedHtml = bodyHtml
-    ? normalizePostHtml(bodyHtml, { service: post.service || service, attachments, mediaBase: MEDIA_BASE })
+    ? normalizePostHtml(bodyHtml, { service: post.service || service, attachments, mediaBase: attachmentMediaBase })
     : "";
-  const heroImage = post.file?.path ? `${MEDIA_BASE}${post.file.path}` : null;
   const readerCardClassName = [
     "card post-card",
     `reader-width-${readerSettings.widthMode}`,
@@ -499,6 +547,25 @@ function PostView({
                     })}
                   </div>
                 </div>
+                <div className="reader-control-group">
+                  <span className="reader-control-label">Attachment links</span>
+                  <div className="reader-pill-group" role="group" aria-label="Attachment links">
+                    {READER_ATTACHMENT_LINK_OPTIONS.map((option) => {
+                      const isActive = readerSettings.attachmentsMode === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={`reader-pill${isActive ? " active" : ""}`}
+                          onClick={() => updateReaderSetting("attachmentsMode", option.value)}
+                          aria-pressed={isActive}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -511,17 +578,26 @@ function PostView({
 
         {attachments.length > 0 && (
           <div className="attachments">
-            {attachments.map((item) => (
-              <a
-                className="tag attachment"
-                href={`${MEDIA_BASE}${item.path}`}
-                target="_blank"
-                rel="noreferrer"
-                key={item.path}
-              >
-                {item.name || item.path.split("/").pop()}
-              </a>
-            ))}
+            {attachments.map((item, index) => {
+              const proxiedHref = item?.path ? `${MEDIA_BASE}${item.path}` : null;
+              const originalHrefCandidates = [
+                typeof item?.original === "string" ? item.original : null,
+                typeof item?.url === "string" ? item.url : null,
+                item?.path ? `${attachmentMediaBase}${item.path}` : null,
+              ].filter(Boolean);
+              const href =
+                useOriginalAttachments && originalHrefCandidates.length
+                  ? originalHrefCandidates[0]
+                  : proxiedHref || originalHrefCandidates[0] || "#";
+              const attachmentKey =
+                item?.path || item?.original || item?.name || String(item?.id ?? `attachment-${index}`);
+              const label = item?.name || (item?.path ? item.path.split("/").pop() : originalHref) || "Attachment";
+              return (
+                <a className="tag attachment" href={href} target="_blank" rel="noreferrer" key={attachmentKey}>
+                  {label}
+                </a>
+              );
+            })}
           </div>
         )}
 

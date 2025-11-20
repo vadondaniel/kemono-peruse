@@ -2,6 +2,10 @@ const rawApiBase = import.meta.env.VITE_API_BASE || "/api/proxy/kemono";
 
 export const API_BASE = rawApiBase.endsWith("/") ? rawApiBase.slice(0, -1) : rawApiBase;
 export const MEDIA_BASE = `${API_BASE}/media`;
+const rawOriginalMediaBase = import.meta.env.VITE_ORIGINAL_MEDIA_BASE || "https://kemono.cr/data";
+export const ORIGINAL_MEDIA_BASE = rawOriginalMediaBase.endsWith("/")
+  ? rawOriginalMediaBase.slice(0, -1)
+  : rawOriginalMediaBase;
 export const API_PAGE_SIZE = 50;
 export const MAX_SEARCH_RESULTS = 1000;
 export const MAX_CACHE_POSTS = 1000;
@@ -46,6 +50,10 @@ export const READER_INDENT_OPTIONS = [
   { value: "soft", label: "Soft" },
   { value: "deep", label: "Deep" },
 ];
+export const READER_ATTACHMENT_LINK_OPTIONS = [
+  { value: "proxy", label: "Proxy links" },
+  { value: "original", label: "Original host" },
+];
 
 export const READER_TYPEFACE_VALUES = READER_TYPEFACE_OPTIONS.map((option) => option.value);
 export const READER_TEXT_SCALE_VALUES = READER_TEXT_SCALE_OPTIONS.map((option) => option.value);
@@ -53,6 +61,7 @@ export const READER_LINE_SPACING_VALUES = READER_LINE_SPACING_OPTIONS.map((optio
 export const READER_WIDTH_VALUES = READER_WIDTH_OPTIONS.map((option) => option.value);
 export const READER_ALIGNMENT_VALUES = READER_ALIGNMENT_OPTIONS.map((option) => option.value);
 export const READER_INDENT_VALUES = READER_INDENT_OPTIONS.map((option) => option.value);
+export const READER_ATTACHMENT_LINK_VALUES = READER_ATTACHMENT_LINK_OPTIONS.map((option) => option.value);
 
 export const READER_SETTINGS_KEY = "kemono.readerSettings";
 export const DEFAULT_READER_SETTINGS = {
@@ -62,6 +71,7 @@ export const DEFAULT_READER_SETTINGS = {
   typeface: "default",
   textAlign: "left",
   textIndent: "none",
+  attachmentsMode: "original",
 };
 
 export const TYPEFACE_PREVIEW_MAP = {
