@@ -97,9 +97,9 @@ function App() {
     }
   }, [creatorFilters]);
 
-  const [creatorOffsets, setCreatorOffsets] = useState(() => {
+  const [creatorPositions, setCreatorPositions] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem("kemono.creatorOffsets") || "{}");
+      return JSON.parse(localStorage.getItem("kemono.creatorPositions") || "{}");
     } catch {
       return {};
     }
@@ -107,11 +107,11 @@ function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem("kemono.creatorOffsets", JSON.stringify(creatorOffsets));
+      localStorage.setItem("kemono.creatorPositions", JSON.stringify(creatorPositions));
     } catch {
       // ignore persistence failures
     }
-  }, [creatorOffsets]);
+  }, [creatorPositions]);
 
   const getInitialThemeMode = () => {
     if (typeof window !== "undefined" && window.localStorage) {
@@ -218,18 +218,18 @@ function App() {
     });
   };
 
-  const getCreatorOffset = (service, creatorId) => {
+  const getCreatorPosition = (service, creatorId) => {
     if (!service || !creatorId) return 0;
     const key = `${service}:${creatorId}`;
-    const value = creatorOffsets[key];
+    const value = creatorPositions[key];
     return Number.isFinite(value) && value >= 0 ? value : 0;
   };
 
-  const updateCreatorOffset = (service, creatorId, value) => {
+  const updateCreatorPosition = (service, creatorId, position) => {
     if (!service || !creatorId) return;
     const key = `${service}:${creatorId}`;
-    setCreatorOffsets((prev) => {
-      const nextValue = Number.isFinite(value) && value >= 0 ? value : 0;
+    setCreatorPositions((prev) => {
+      const nextValue = Number.isFinite(position) && position >= 0 ? Math.floor(position) : 0;
       if (prev[key] === nextValue) return prev;
       return { ...prev, [key]: nextValue };
     });
@@ -325,8 +325,8 @@ function App() {
               }
               activeFilter={getCreatorFilter(view.service, view.creatorId)}
               onUpdateFilter={(value) => updateCreatorFilter(view.service, view.creatorId, value)}
-              initialOffset={getCreatorOffset(view.service, view.creatorId)}
-              onOffsetChange={(nextOffset) => updateCreatorOffset(view.service, view.creatorId, nextOffset)}
+              initialPosition={getCreatorPosition(view.service, view.creatorId)}
+              onRememberPosition={(position) => updateCreatorPosition(view.service, view.creatorId, position)}
             />
           )}
 
@@ -357,6 +357,7 @@ function App() {
                 })
               }
               onResolvePostTitle={handleResolvePostTitle}
+              onResolveCreatorPosition={(position) => updateCreatorPosition(view.service, view.creatorId, position)}
             />
           )}
         </main>

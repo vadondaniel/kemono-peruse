@@ -117,6 +117,7 @@ function PostView({
   onBack,
   onNavigate,
   onResolvePostTitle,
+  onResolveCreatorPosition,
 }) {
   const cachePrefKey = getCachePreferenceKey(service, creatorId);
   const [useCache, setUseCacheState] = useState(() => readBooleanPreference(cachePrefKey, false));
@@ -446,6 +447,12 @@ function PostView({
               newerId: newerId ?? null,
               olderId: olderId ?? null,
             });
+            if (typeof onResolveCreatorPosition === "function") {
+              const globalIndex = offset + idx;
+              if (Number.isFinite(globalIndex) && globalIndex >= 0) {
+                onResolveCreatorPosition(globalIndex);
+              }
+            }
             return;
           }
 
@@ -467,7 +474,7 @@ function PostView({
     return () => {
       alive = false;
     };
-  }, [service, creatorId, postId, activeFilter]);
+  }, [service, creatorId, postId, activeFilter, onResolveCreatorPosition]);
 
   const useOriginalAttachments = readerSettings.attachmentsMode === "original";
   const heroFile = post?.file && (post.file.path || post.file.url || post.file.name) ? post.file : null;

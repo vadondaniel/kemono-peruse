@@ -114,7 +114,12 @@ export function collectCachedPosts(cache) {
   if (!entries.length) return null;
   const posts = [];
   for (const entry of entries) {
-    posts.push(...entry.value);
+    for (let index = 0; index < entry.value.length; index += 1) {
+      if (posts.length >= MAX_CACHE_POSTS) break;
+      const post = entry.value[index];
+      if (!post || typeof post !== "object") continue;
+      posts.push({ ...post, __position: entry.offset + index });
+    }
     if (entry.value.length < API_PAGE_SIZE) break;
     if (posts.length >= MAX_CACHE_POSTS) break;
   }

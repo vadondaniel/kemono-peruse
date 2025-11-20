@@ -9,6 +9,11 @@ import { extractTagTokens, getPostExcerptHtml, getServiceLabel, toNumericCount }
 import { cacheCreatorName, getCachedCreatorName, getSavedCreatorName, resolveProfileDisplayName } from "../utils/creators.js";
 import { getInitialPageSize, readBooleanPreference } from "../utils/preferences.js";
 
+const resolveOffsetForPosition = (position, pageSize) => {
+  if (!Number.isFinite(position) || !Number.isFinite(pageSize) || pageSize <= 0) return 0;
+  return Math.max(0, Math.floor(position / pageSize) * pageSize);
+};
+
 function CreatorPage({
   service,
   creatorId,
@@ -18,8 +23,8 @@ function CreatorPage({
   onSave,
   activeFilter,
   onUpdateFilter,
-  initialOffset = 0,
-  onOffsetChange,
+  initialPosition = 0,
+  onRememberPosition,
 }) {
   const cachePrefKey = getCachePreferenceKey(service, creatorId);
   const [useCache, setUseCache] = useState(() => readBooleanPreference(cachePrefKey, false));
@@ -27,8 +32,9 @@ function CreatorPage({
   const [cacheReloadApplied, setCacheReloadApplied] = useState(0);
   const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);
-  const [offset, setOffset] = useState(() => (Number.isFinite(initialOffset) ? Math.max(0, initialOffset) : 0));
-  const [limit, setLimit] = useState(getInitialPageSize);
+  const initialPageSizeRef = useRef(getInitialPageSize());
+  const [limit, setLimit] = useState(initialPageSizeRef.current);
+  const [offset, setOffset] = useState(() => resolveOffsetForPosition(initialPosition, initialPageSizeRef.current));
   useEffect(() => {
     if (typeof window === "undefined" || !window.localStorage) return;
     if (!PAGE_SIZE_OPTIONS.includes(limit)) return;
@@ -133,15 +139,6 @@ function CreatorPage({
     setResolvedCreatorName(() => getInitialCreatorName());
   }, [service, creatorId]);
 
-  useEffect(() => {
-    if (typeof onOffsetChange === "function") {
-      onOffsetChange(offset);
-    }
-  }, [offset, onOffsetChange]);
-
-  useEffect(() => {
-    setOffset(Number.isFinite(initialOffset) ? Math.max(0, initialOffset) : 0);
-  }, [service, creatorId, initialOffset]);
 
   useEffect(() => {
     setUseCache(readBooleanPreference(cachePrefKey, false));
@@ -194,6 +191,8 @@ function CreatorPage({
     });
   }, [service, creatorId]);
 
+  const positionContextRef = useRef({ service, creatorId, position: initialPosition });
+
   useEffect(() => {
     const savedName = getSavedCreatorName(service, creatorId);
     const incomingName = typeof creatorName === "string" ? creatorName.trim() : "";
@@ -212,6 +211,15 @@ function CreatorPage({
       }
     }
   }, [service, creatorId, creatorName, resolvedCreatorName]);
+
+  useEffect(() => {
+    const ctx = positionContextRef.current;
+    const changed =
+      ctx.service !== service || ctx.creatorId !== creatorId || ctx.position !== initialPosition;
+    if (!changed) return;
+    positionContextRef.current = { service, creatorId, position: initialPosition };
+    setOffset(resolveOffsetForPosition(initialPosition, limit));
+  }, [service, creatorId, initialPosition, limit]);
 
   useEffect(() => {
     let alive = true;
@@ -609,6 +617,12 @@ function CreatorPage({
       }, []);
       const sliceStart = start - chunkOffsets[0];
       const slice = combined.slice(sliceStart, sliceStart + requested);
+      const annotatedSlice = slice.map((item, index) => {
+        if (item && typeof item === "object") {
+          return { ...item, __position: chunkOffsets[0] + sliceStart + index };
+        }
+        return item;
+      });
       const totalKnown = typeof totalPosts === "number" ? totalPosts : null;
       const lastResponse = responses[responses.length - 1];
       const lastChunkLength = Array.isArray(lastResponse) ? lastResponse.length : 0;
@@ -617,7 +631,7 @@ function CreatorPage({
         typeof totalKnown === "number"
           ? start + slice.length < totalKnown
           : availableFromStart > slice.length || lastChunkLength === API_PAGE_SIZE;
-      return { combined, slice, hasMore };
+      return { combined, slice: annotatedSlice, hasMore };
     };
 
     if (allChunksCached) {
@@ -1275,12 +1289,18 @@ function CreatorPage({
             const postTags = Array.isArray(post.tags) ? post.tags : postTagMap[post.id];
             const normalizedTags = Array.isArray(postTags) ? postTags : [];
             const hasTags = normalizedTags.length > 0;
+            const handleOpenPost = () => {
+              if (!isFilterActive && typeof onRememberPosition === "function" && Number.isFinite(post?.__position)) {
+                onRememberPosition(post.__position);
+              }
+              onOpenPost(post.id, post.title || "");
+            };
             return (
               <button
                 className="post-item"
                 key={post.id}
                 type="button"
-                onClick={() => onOpenPost(post.id, post.title || "")}
+                onClick={handleOpenPost}
               >
                 <div className="post-body">
                   <div className="post-head">
