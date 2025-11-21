@@ -58,35 +58,62 @@ function CreatorPage({
       // ignore persistence issues
     }
   }, [limit]);
-  const [showExcerpts, setShowExcerpts] = useState(() => {
+  const defaultDisplaySettings = { excerpts: false, tags: false, featureBackgrounds: false };
+  const readDisplaySettings = (svc, id) => {
+    const base = { ...defaultDisplaySettings };
+    if (typeof window === "undefined" || !window.localStorage) return base;
+    if (!svc || !id) return base;
     try {
-      const stored = localStorage.getItem("kemono.showExcerpts");
-      if (stored === "true" || stored === "false") return stored === "true";
+      const stored = window.localStorage.getItem(`kemono.display.${svc}.${id}`);
+      if (!stored) return base;
+      const parsed = JSON.parse(stored);
+      return {
+        excerpts: Boolean(parsed?.excerpts),
+        tags: Boolean(parsed?.tags),
+        featureBackgrounds: Boolean(parsed?.featureBackgrounds),
+      };
+    } catch {
+      return base;
+    }
+  };
+  const writeDisplaySettings = (svc, id, settings) => {
+    if (typeof window === "undefined" || !window.localStorage) return;
+    if (!svc || !id) return;
+    try {
+      const current = readDisplaySettings(svc, id);
+      const next = { ...current, ...settings };
+      window.localStorage.setItem(`kemono.display.${svc}.${id}`, JSON.stringify(next));
     } catch {
       // ignore
     }
-    return true;
-  });
-  const [showTags, setShowTags] = useState(() => {
-    try {
-      const stored = localStorage.getItem("kemono.showTags");
-      if (stored === "true" || stored === "false") return stored === "true";
-    } catch {
-      // ignore
-    }
-    return true;
-  });
-  const [showFeatureBackgrounds, setShowFeatureBackgrounds] = useState(() => {
-    try {
-      const stored = localStorage.getItem("kemono.showFeatureBackgrounds");
-      if (stored === "true" || stored === "false") return stored === "true";
-    } catch {
-      // ignore
-    }
-    return false;
-  });
+  };
+  const [showExcerpts, setShowExcerpts] = useState(() => readDisplaySettings(service, creatorId).excerpts);
+  const [showTags, setShowTags] = useState(() => readDisplaySettings(service, creatorId).tags);
+  const [showFeatureBackgrounds, setShowFeatureBackgrounds] = useState(
+    () => readDisplaySettings(service, creatorId).featureBackgrounds,
+  );
+  useEffect(() => {
+    const settings = readDisplaySettings(service, creatorId);
+    setShowExcerpts(settings.excerpts);
+    setShowTags(settings.tags);
+    setShowFeatureBackgrounds(settings.featureBackgrounds);
+  }, [service, creatorId]);
+  useEffect(() => {
+    writeDisplaySettings(service, creatorId, { excerpts: showExcerpts });
+  }, [service, creatorId, showExcerpts]);
+  useEffect(() => {
+    writeDisplaySettings(service, creatorId, { tags: showTags });
+  }, [service, creatorId, showTags]);
+  useEffect(() => {
+    writeDisplaySettings(service, creatorId, { featureBackgrounds: showFeatureBackgrounds });
+  }, [service, creatorId, showFeatureBackgrounds]);
   const [postTagMap, setPostTagMap] = useState({});
   const [postDetailMap, setPostDetailMap] = useState({});
+
+  useEffect(() => {
+    setPostTagMap({});
+    setPostDetailMap({});
+  }, [service, creatorId]);
   const [searchInput, setSearchInput] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -314,31 +341,6 @@ function CreatorPage({
     if (!resolvedCreatorName) return;
     cacheCreatorName(service, creatorId, resolvedCreatorName);
   }, [resolvedCreatorName, service, creatorId]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem("kemono.showExcerpts", showExcerpts ? "true" : "false");
-    } catch {
-      // ignore
-    }
-  }, [showExcerpts]);
-  useEffect(() => {
-    try {
-      localStorage.setItem("kemono.showTags", showTags ? "true" : "false");
-    } catch {
-      // ignore
-    }
-  }, [showTags]);
-  useEffect(() => {
-    try {
-      localStorage.setItem("kemono.showFeatureBackgrounds", showFeatureBackgrounds ? "true" : "false");
-    } catch {
-      // ignore
-    }
-  }, [showFeatureBackgrounds]);
-  useEffect(() => {
-    setPostTagMap({});
-  }, [service, creatorId]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.localStorage) return;
