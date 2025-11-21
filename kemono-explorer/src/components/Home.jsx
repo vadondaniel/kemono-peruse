@@ -29,6 +29,10 @@ const normalizeTimestamp = (value) => {
 };
 
 const CREATOR_SEARCH_LIMIT = 30;
+const CREATOR_TOOL_TABS = [
+  { value: "search", label: "Creator search" },
+  { value: "quick-add", label: "Quick add" },
+];
 
 function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, onOpenCreator }) {
   const [service, setService] = useState("patreon");
@@ -42,6 +46,7 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
   const [creatorDirectory, setCreatorDirectory] = useState(null);
   const [creatorDirectoryStatus, setCreatorDirectoryStatus] = useState("idle");
   const [creatorDirectoryError, setCreatorDirectoryError] = useState("");
+  const [activeCreatorTool, setActiveCreatorTool] = useState("search");
   const formRef = useRef(null);
   const savedListRef = useRef(null);
   const creatorIdRef = useRef(null);
@@ -189,13 +194,18 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
   };
 
   const focusCreatorInput = () => creatorIdRef.current?.focus();
-  const scrollToForm = () => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const scrollToTools = () => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   const scrollToSaved = () => savedListRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   const resetCreatorDirectory = () => {
     creatorDirectoryTokenRef.current += 1;
     setCreatorDirectory(null);
     setCreatorDirectoryStatus("idle");
     setCreatorDirectoryError("");
+  };
+  const handleShowQuickAdd = () => {
+    setActiveCreatorTool("quick-add");
+    scrollToTools();
+    setTimeout(() => focusCreatorInput(), 0);
   };
 
   const filteredCreators = useMemo(() => {
@@ -319,7 +329,7 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
             </p>
           </div>
           <div className="hero-actions">
-            <button className="btn primary" type="button" onClick={() => { focusCreatorInput(); scrollToForm(); }}>
+            <button className="btn primary" type="button" onClick={handleShowQuickAdd}>
               Add a creator
             </button>
             <button
@@ -356,175 +366,190 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
       </section>
 
       <div className="home-grid">
-        <section className="card home-form-card" ref={formRef}>
+        <section className="card home-tools-card" ref={formRef}>
           <div className="card-row header-row">
             <div className="card-col">
-              <h2 className="title">Quick add</h2>
-              <span className="label">Jump straight to a creator or save them for later</span>
+              <h2 className="title">Creator tools</h2>
+              <span className="label">
+                {activeCreatorTool === "search"
+                  ? "Look up creators directly from kemono.cr"
+                  : "Jump straight to a creator or save them for later"}
+              </span>
             </div>
-          </div>
-
-          <div className="service-pills" role="group" aria-label="Service">
-            {SERVICE_OPTIONS.map((option) => (
-              <button
-                key={option.value}
-                type="button"
-                className={`service-pill${service === option.value ? " active" : ""}`}
-                onClick={() => setService(option.value)}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-
-          <form className="form-grid" onSubmit={handleOpen}>
-            <label className="field" htmlFor="creator-id">
-              <span className="label">Creator ID</span>
-              <input
-                id="creator-id"
-                ref={creatorIdRef}
-                className="input"
-                value={creatorId}
-                onChange={(event) => setCreatorId(event.target.value)}
-                placeholder="e.g. 1234567"
-              />
-            </label>
-            <label className="field" htmlFor="creator-name">
-              <span className="label">Display name (optional)</span>
-              <input
-                id="creator-name"
-                className="input"
-                value={creatorName}
-                onChange={(event) => setCreatorName(event.target.value)}
-                placeholder="Used locally for display"
-              />
-            </label>
-          </form>
-
-          <p className="home-hint">
-            Currently set to <strong>{activeServiceLabel}</strong>. You can paste IDs directly from Kemono links.
-          </p>
-
-          <div className="form-actions">
-            <a
-              className="btn primary"
-              href={buildCreatorHref(service, creatorId, creatorName)}
-              onClick={(event) => handleCreatorLink(event, service, creatorId, creatorName, focusCreatorInput)}
-            >
-              View creator
-            </a>
-            <button className="btn ghost" type="button" onClick={handleSave}>
-              Save to list
-            </button>
-          </div>
-        </section>
-
-        <section className="card home-search-card">
-          <div className="card-row header-row">
-            <div className="card-col">
-              <h2 className="title">Creator search</h2>
-              <span className="label">Look up creators directly from kemono.cr</span>
-            </div>
-            <label className="field creator-search-filter" htmlFor="creator-search-service">
-              <span className="label">Service</span>
-              <select
-                id="creator-search-service"
-                className="input"
-                value={creatorSearchService}
-                onChange={(event) => setCreatorSearchService(event.target.value)}
-              >
-                {SERVICE_FILTER_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <form className="search-form" onSubmit={(event) => event.preventDefault()}>
-            <label className="label" htmlFor="creator-search-input">
-              Search creators
-            </label>
-            <div className="search-field">
-              <input
-                id="creator-search-input"
-                className="search-input"
-                value={creatorSearchQuery}
-                onChange={(event) => setCreatorSearchQuery(event.target.value)}
-                placeholder="Type a name or ID (min 2 characters)"
-              />
-              {creatorSearchQuery && (
-                <button className="search-clear" type="button" onClick={handleSearchClear}>
-                  Clear
+            <div className="creator-tool-tabs" role="tablist" aria-label="Creator tools">
+              {CREATOR_TOOL_TABS.map((tab) => (
+                <button
+                  key={tab.value}
+                  type="button"
+                  role="tab"
+                  aria-selected={activeCreatorTool === tab.value}
+                  className={`creator-tool-tab${activeCreatorTool === tab.value ? " active" : ""}`}
+                  onClick={() => setActiveCreatorTool(tab.value)}
+                >
+                  {tab.label}
                 </button>
+              ))}
+            </div>
+          </div>
+
+          {activeCreatorTool === "search" ? (
+            <div className="creator-tool-panel">
+              <label className="field creator-search-filter" htmlFor="creator-search-service">
+                <span className="label">Service</span>
+                <select
+                  id="creator-search-service"
+                  className="input"
+                  value={creatorSearchService}
+                  onChange={(event) => setCreatorSearchService(event.target.value)}
+                >
+                  {SERVICE_FILTER_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <form className="search-form" onSubmit={(event) => event.preventDefault()}>
+                <label className="label" htmlFor="creator-search-input">
+                  Search creators
+                </label>
+                <div className="search-field">
+                  <input
+                    id="creator-search-input"
+                    className="search-input"
+                    value={creatorSearchQuery}
+                    onChange={(event) => setCreatorSearchQuery(event.target.value)}
+                    placeholder="Type a name or ID (min 2 characters)"
+                  />
+                  {creatorSearchQuery && (
+                    <button className="search-clear" type="button" onClick={handleSearchClear}>
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </form>
+
+              {(searchSummaryContent || searchStatusContent) && (
+                <div className="creator-search-status">{searchSummaryContent || searchStatusContent}</div>
+              )}
+
+              {creatorSearchResults.length > 0 && (
+                <div className="creator-search-results" role="list">
+                  {creatorSearchResults.map((entry) => {
+                    const key = `${entry.service}:${entry.id}`;
+                    const serviceLabel = formatServiceLabel(entry.service);
+                    const alreadySaved = savedCreatorKeys.has(key);
+                    return (
+                      <div className="creator-search-item" key={key} role="listitem">
+                        <div className="creator-search-meta">
+                          <a
+                            className="creator-search-name"
+                            href={buildCreatorHref(entry.service, entry.id, entry.name)}
+                            onClick={(event) =>
+                              handleCreatorLink(event, entry.service, entry.id, entry.name)
+                            }
+                          >
+                            {entry.name || entry.id}
+                          </a>
+                          <span className="muted small">
+                            {serviceLabel} · {entry.id}
+                          </span>
+                          {entry.favorited > 0 && (
+                            <span className="creator-search-favorites">
+                              {entry.favorited.toLocaleString()} favorites
+                            </span>
+                          )}
+                        </div>
+                        <div className="creator-search-actions">
+                          <button
+                            className="btn subtle"
+                            type="button"
+                            onClick={() => handleSearchSave(entry)}
+                            disabled={alreadySaved}
+                          >
+                            {alreadySaved ? "Saved" : "Save"}
+                          </button>
+                          <a
+                            className="btn outline btn-compact"
+                            href={buildCreatorHref(entry.service, entry.id, entry.name)}
+                            onClick={(event) =>
+                              handleCreatorLink(event, entry.service, entry.id, entry.name)
+                            }
+                          >
+                            Open
+                          </a>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {showSearchLimitNotice && creatorSearchResults.length > 0 && (
+                <p className="creator-search-note muted">
+                  Showing top {CREATOR_SEARCH_LIMIT} results. Refine your search to narrow it down.
+                </p>
               )}
             </div>
-          </form>
+          ) : (
+            <div className="creator-tool-panel">
+              <div className="service-pills" role="group" aria-label="Service">
+                {SERVICE_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`service-pill${service === option.value ? " active" : ""}`}
+                    onClick={() => setService(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
 
-          {(searchSummaryContent || searchStatusContent) && (
-            <div className="creator-search-status">{searchSummaryContent || searchStatusContent}</div>
-          )}
+              <form className="form-grid" onSubmit={handleOpen}>
+                <label className="field" htmlFor="creator-id">
+                  <span className="label">Creator ID</span>
+                  <input
+                    id="creator-id"
+                    ref={creatorIdRef}
+                    className="input"
+                    value={creatorId}
+                    onChange={(event) => setCreatorId(event.target.value)}
+                    placeholder="e.g. 1234567"
+                  />
+                </label>
+                <label className="field" htmlFor="creator-name">
+                  <span className="label">Display name (optional)</span>
+                  <input
+                    id="creator-name"
+                    className="input"
+                    value={creatorName}
+                    onChange={(event) => setCreatorName(event.target.value)}
+                    placeholder="Used locally for display"
+                  />
+                </label>
+              </form>
 
-          {creatorSearchResults.length > 0 && (
-            <div className="creator-search-results" role="list">
-              {creatorSearchResults.map((entry) => {
-                const key = `${entry.service}:${entry.id}`;
-                const serviceLabel = formatServiceLabel(entry.service);
-                const alreadySaved = savedCreatorKeys.has(key);
-                return (
-                  <div className="creator-search-item" key={key} role="listitem">
-                    <div className="creator-search-meta">
-                      <a
-                        className="creator-search-name"
-                        href={buildCreatorHref(entry.service, entry.id, entry.name)}
-                        onClick={(event) =>
-                          handleCreatorLink(event, entry.service, entry.id, entry.name)
-                        }
-                      >
-                        {entry.name || entry.id}
-                      </a>
-                      <span className="muted small">
-                        {serviceLabel} · {entry.id}
-                      </span>
-                      {entry.favorited > 0 && (
-                        <span className="creator-search-favorites">
-                          {entry.favorited.toLocaleString()} favorites
-                        </span>
-                      )}
-                    </div>
-                    <div className="creator-search-actions">
-                      <button
-                        className="btn subtle"
-                        type="button"
-                        onClick={() => handleSearchSave(entry)}
-                        disabled={alreadySaved}
-                      >
-                        {alreadySaved ? "Saved" : "Save"}
-                      </button>
-                      <a
-                        className="btn outline btn-compact"
-                        href={buildCreatorHref(entry.service, entry.id, entry.name)}
-                        onClick={(event) =>
-                          handleCreatorLink(event, entry.service, entry.id, entry.name)
-                        }
-                      >
-                        Open
-                      </a>
-                    </div>
-                  </div>
-                );
-              })}
+              <p className="home-hint">
+                Currently set to <strong>{activeServiceLabel}</strong>. You can paste IDs directly from Kemono links.
+              </p>
+
+              <div className="form-actions">
+                <a
+                  className="btn primary"
+                  href={buildCreatorHref(service, creatorId, creatorName)}
+                  onClick={(event) => handleCreatorLink(event, service, creatorId, creatorName, focusCreatorInput)}
+                >
+                  View creator
+                </a>
+                <button className="btn ghost" type="button" onClick={handleSave}>
+                  Save to list
+                </button>
+              </div>
             </div>
           )}
-
-          {showSearchLimitNotice && creatorSearchResults.length > 0 && (
-            <p className="creator-search-note muted">
-              Showing top {CREATOR_SEARCH_LIMIT} results. Refine your search to narrow it down.
-            </p>
-          )}
         </section>
-
         <section className="card home-saved-card" ref={savedListRef}>
           <div className="card-row header-row">
             <div className="card-col">

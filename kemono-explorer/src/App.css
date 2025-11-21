@@ -347,20 +347,52 @@ html[data-theme="dark"] .hero-stat {
   gap: 20px;
 }
 
-.home-form-card,
-.home-search-card,
+.home-tools-card,
 .home-saved-card {
   gap: 18px;
   scroll-margin-top: 80px;
+}
+
+.home-tools-card {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
 }
 
 .home-saved-card {
   grid-column: 1 / -1;
 }
 
-.home-search-card {
+.creator-tool-tabs {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.creator-tool-tab {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 14px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border 0.2s, background 0.2s, color 0.2s;
+}
+
+.creator-tool-tab.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.creator-tool-panel {
   display: flex;
   flex-direction: column;
+  gap: 16px;
 }
 
 .service-pills {
@@ -1985,6 +2017,11 @@ html[data-theme="dark"] .hero-stat {
   .saved-controls {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .creator-tool-tabs {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .creator-search-filter {
