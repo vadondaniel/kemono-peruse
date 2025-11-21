@@ -16,7 +16,7 @@ import { fetchJson } from "../utils/api.js";
 import { getCachePreferenceKey, loadCreatorCache, writeCreatorCache, isCacheFresh, pruneCacheChunks, pruneCachePostDetails, collectCachedPosts } from "../utils/cache.js";
 import { formatDate } from "../utils/date.js";
 import { extractTagTokens, getPostExcerptHtml, getServiceLabel, toNumericCount } from "../utils/posts.js";
-import { cacheCreatorName, getCachedCreatorName, getSavedCreatorName, resolveProfileDisplayName } from "../utils/creators.js";
+import { cacheCreatorName, getCachedCreatorName, getSavedCreatorName, purgeCreatorLocalState, resolveProfileDisplayName } from "../utils/creators.js";
 import { getInitialPageSize, readBooleanPreference } from "../utils/preferences.js";
 import { getUrlForView } from "../utils/navigation.js";
 
@@ -91,6 +91,7 @@ function CreatorPage({
   const writeDisplaySettings = (svc, id, settings) => {
     if (typeof window === "undefined" || !window.localStorage) return;
     if (!svc || !id) return;
+    if (!alreadySaved) return;
     try {
       const current = readDisplaySettings(svc, id);
       const next = { ...current, ...settings };
@@ -237,28 +238,57 @@ function CreatorPage({
     setReverseOrder(readBooleanPreference(reversePrefKey, false));
   }, [cachePrefKey, service, creatorId, reversePrefKey]);
 
+  useEffect(() => {
+    if (alreadySaved) return;
+    purgeCreatorLocalState(service, creatorId);
+    setUseCache(false);
+    setCacheData(null);
+  }, [alreadySaved, service, creatorId]);
+
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (!alreadySaved) {
+      try {
+        window.localStorage.removeItem(cachePrefKey);
+      } catch {
+        // ignore preference cleanup failures
+      }
+      return;
+    }
     try {
       window.localStorage.setItem(cachePrefKey, useCache ? "true" : "false");
     } catch {
       // ignore preference persistence failures
     }
-  }, [useCache, cachePrefKey]);
+  }, [useCache, cachePrefKey, alreadySaved]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
+    if (!alreadySaved) {
+      try {
+        window.localStorage.removeItem(reversePrefKey);
+      } catch {
+        // ignore cleanup failures
+      }
+      return;
+    }
     try {
       window.localStorage.setItem(reversePrefKey, reverseOrder ? "true" : "false");
     } catch {
       // ignore persistence failures
     }
-  }, [reverseOrder, reversePrefKey]);
+  }, [reverseOrder, reversePrefKey, alreadySaved]);
 
   useEffect(() => {
     if (!useCache) return;
     setCacheData((prev) => (prev ? prev : loadCreatorCache(service, creatorId)));
+  }, [useCache, service, creatorId]);
+
+  useEffect(() => {
+    if (useCache) return;
+    setCacheData(null);
+    writeCreatorCache(service, creatorId, null);
   }, [useCache, service, creatorId]);
 
   useEffect(
@@ -380,9 +410,24 @@ function CreatorPage({
     const storageKeyChanged = prevFilterStorageKeyRef.current !== filterStorageKey;
     if (storageKeyChanged) {
       prevFilterStorageKeyRef.current = filterStorageKey;
+      if (!alreadySaved) {
+        try {
+          window.localStorage.removeItem(filterStorageKey);
+        } catch {
+          // ignore cleanup errors
+        }
+      }
       return;
     }
     prevFilterStorageKeyRef.current = filterStorageKey;
+    if (!alreadySaved) {
+      try {
+        window.localStorage.removeItem(filterStorageKey);
+      } catch {
+        // ignore cleanup errors
+      }
+      return;
+    }
     const storedSnapshot = loadStoredFilterFields();
     if (
       storedSnapshot.title === filterFields.title &&
@@ -396,7 +441,7 @@ function CreatorPage({
     } catch {
       // ignore persistence failures
     }
-  }, [filterStorageKey, filterFields]);
+  }, [filterStorageKey, filterFields, alreadySaved]);
 
   useEffect(() => {
     const trimmed = typeof activeFilter === "string" ? activeFilter.trim() : "";

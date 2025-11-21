@@ -1,5 +1,10 @@
+import { getCachePreferenceKey, writeCreatorCache } from "./cache.js";
+
 const SAVED_CREATORS_STORAGE_KEY = "kemono.savedCreators";
 const CREATOR_NAME_CACHE_KEY = "kemono.creatorNameCache";
+const CREATOR_DISPLAY_PREFIX = "kemono.display";
+const CREATOR_FILTER_FIELDS_PREFIX = "kemono.filterFields";
+const CREATOR_REVERSE_ORDER_PREFIX = "kemono.reverseOrder";
 
 const getLocalStorage = () => {
   if (typeof window === "undefined" || !window.localStorage) return null;
@@ -70,6 +75,43 @@ export const cacheCreatorName = (service, creatorId, name) => {
   } catch {
     // ignore cache persistence failures
   }
+};
+
+const buildScopedKey = (prefix, service, creatorId) => {
+  if (!prefix || !service || !creatorId) return null;
+  const normalizedService = String(service).trim();
+  const normalizedId = String(creatorId).trim();
+  if (!normalizedService || !normalizedId) return null;
+  return `${prefix}.${normalizedService}.${normalizedId}`;
+};
+
+const removeScopedItem = (prefix, service, creatorId) => {
+  const storage = getLocalStorage();
+  if (!storage) return;
+  const key = buildScopedKey(prefix, service, creatorId);
+  if (!key) return;
+  try {
+    storage.removeItem(key);
+  } catch {
+    // ignore removal failures
+  }
+};
+
+export const purgeCreatorLocalState = (service, creatorId) => {
+  if (!service || !creatorId) return;
+  removeScopedItem(CREATOR_DISPLAY_PREFIX, service, creatorId);
+  removeScopedItem(CREATOR_FILTER_FIELDS_PREFIX, service, creatorId);
+  removeScopedItem(CREATOR_REVERSE_ORDER_PREFIX, service, creatorId);
+  const storage = getLocalStorage();
+  if (storage) {
+    try {
+      const cachePrefKey = getCachePreferenceKey(service, creatorId);
+      storage.removeItem(cachePrefKey);
+    } catch {
+      // ignore failures clearing cache preference
+    }
+  }
+  writeCreatorCache(service, creatorId, null);
 };
 
 export const resolveProfileDisplayName = (profile) => {

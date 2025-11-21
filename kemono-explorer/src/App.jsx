@@ -8,7 +8,7 @@ import PostView from "./components/PostView.jsx";
 import { API_BASE } from "./constants.js";
 import { buildHistoryState, ensureView, getInitialView, getTitleForView, getUrlForView, getViewFromHistoryState, viewsEqual } from "./utils/navigation.js";
 import { fetchJson } from "./utils/api.js";
-import { resolveProfileDisplayName } from "./utils/creators.js";
+import { resolveProfileDisplayName, purgeCreatorLocalState } from "./utils/creators.js";
 import { getInitialPageSize } from "./utils/preferences.js";
 
 function App() {
@@ -373,6 +373,17 @@ function App() {
     );
   };
 
+  const forgetCreatorPosition = (service, creatorId) => {
+    if (!service || !creatorId) return;
+    const key = `${service}:${creatorId}`;
+    setCreatorPositions((prev) => {
+      if (!Object.prototype.hasOwnProperty.call(prev, key)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  };
+
   return (
     <div className="app-root">
       <header className="app-header">
@@ -437,6 +448,8 @@ function App() {
               }
               onRemoveCreator={(service, id) => {
                 updateCreatorFilter(service, id, "");
+                forgetCreatorPosition(service, id);
+                purgeCreatorLocalState(service, id);
                 setSavedCreators((prev) => prev.filter((c) => !(c.service === service && c.id === id)));
               }}
               onOpenCreator={(service, id, name) => openCreator(service, id, name, 0)}
