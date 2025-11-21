@@ -10,8 +10,8 @@ import {
   READER_ALIGNMENT_VALUES,
   READER_ATTACHMENT_LINK_OPTIONS,
   READER_ATTACHMENT_LINK_VALUES,
-  READER_GALLERY_TOGGLE_OPTIONS,
-  READER_GALLERY_TOGGLE_VALUES,
+  READER_GALLERY_MODE_OPTIONS,
+  READER_GALLERY_MODE_VALUES,
   READER_INDENT_OPTIONS,
   READER_INDENT_VALUES,
   READER_LINE_SPACING_OPTIONS,
@@ -283,11 +283,11 @@ function PostView({
 
   const updateReaderSetting = (key, value) => {
     setReaderSettings((prev) => {
-      if (key === "galleryEnabled") {
-        if (!READER_GALLERY_TOGGLE_VALUES.includes(value) || prev.galleryEnabled === value) {
+      if (key === "galleryMode") {
+        if (!READER_GALLERY_MODE_VALUES.includes(value) || prev.galleryMode === value) {
           return prev;
         }
-        return { ...prev, galleryEnabled: value };
+        return { ...prev, galleryMode: value };
       }
       if (key === "textScale") {
         if (!READER_TEXT_SCALE_VALUES.includes(value) || prev.textScale === value) {
@@ -1103,8 +1103,12 @@ function PostView({
   const galleryHasPrev = safeGalleryIndex > 0;
   const galleryHasNext = safeGalleryIndex < galleryLength - 1;
   const hasGalleryThumbnails = galleryLength > 1;
-  const isGalleryMode = readerSettings.galleryEnabled === true;
-  const showGalleryView = isGalleryMode && galleryLength > 0;
+  const galleryMode = READER_GALLERY_MODE_VALUES.includes(readerSettings.galleryMode)
+    ? readerSettings.galleryMode
+    : "none";
+  const galleryEnabled = galleryMode !== "none";
+  const galleryOnly = galleryMode === "gallery-only";
+  const showGalleryView = galleryEnabled && galleryLength > 0;
   const heroViewerEnabled = heroGalleryIndex >= 0;
   const viewerZoomed = viewerZoomMode === "zoom";
   const viewerImageSrc = viewerZoomed ? galleryActiveOpenHref || galleryActiveSrc : galleryActiveSrc;
@@ -1354,14 +1358,14 @@ function PostView({
                 <div className="reader-control-group">
                   <span className="reader-control-label">Gallery view</span>
                   <div className="reader-pill-group" role="group" aria-label="Gallery view">
-                    {READER_GALLERY_TOGGLE_OPTIONS.map((option) => {
-                      const isActive = readerSettings.galleryEnabled === option.value;
+                    {READER_GALLERY_MODE_OPTIONS.map((option) => {
+                      const isActive = galleryMode === option.value;
                       return (
                         <button
-                          key={String(option.value)}
+                          key={option.value}
                           type="button"
                           className={`reader-pill${isActive ? " active" : ""}`}
-                          onClick={() => updateReaderSetting("galleryEnabled", option.value)}
+                          onClick={() => updateReaderSetting("galleryMode", option.value)}
                           aria-pressed={isActive}
                         >
                           {option.label}
@@ -1499,13 +1503,13 @@ function PostView({
             )}
           </section>
         )}
-        {isGalleryMode && !showGalleryView && (
+        {galleryEnabled && !showGalleryView && (
           <section className="gallery-view gallery-empty">
             <p className="muted small">No image attachments detected for gallery mode.</p>
           </section>
         )}
 
-        {heroImage && !isGalleryMode && (
+        {heroImage && !galleryEnabled && (
           <div
             className={`feature-image${heroViewerEnabled ? " interactive" : ""}`}
             role={heroViewerEnabled ? "button" : undefined}
@@ -1534,7 +1538,9 @@ function PostView({
           </div>
         )}
 
-        {processedHtml && <div className="prose" ref={proseRef} dangerouslySetInnerHTML={{ __html: processedHtml }} />}
+        {!galleryOnly && processedHtml && (
+          <div className="prose" ref={proseRef} dangerouslySetInnerHTML={{ __html: processedHtml }} />
+        )}
 
         {renderNavigationControls()}
       </article>

@@ -55,9 +55,10 @@ export const READER_ATTACHMENT_LINK_OPTIONS = [
   { value: "proxy", label: "Proxy links" },
   { value: "original", label: "Original host" },
 ];
-export const READER_GALLERY_TOGGLE_OPTIONS = [
-  { value: false, label: "Disabled" },
-  { value: true, label: "Enabled" },
+export const READER_GALLERY_MODE_OPTIONS = [
+  { value: "none", label: "No gallery" },
+  { value: "both", label: "Text + gallery" },
+  { value: "gallery-only", label: "Gallery only" },
 ];
 
 export const READER_TYPEFACE_VALUES = READER_TYPEFACE_OPTIONS.map((option) => option.value);
@@ -67,12 +68,12 @@ export const READER_WIDTH_VALUES = READER_WIDTH_OPTIONS.map((option) => option.v
 export const READER_ALIGNMENT_VALUES = READER_ALIGNMENT_OPTIONS.map((option) => option.value);
 export const READER_INDENT_VALUES = READER_INDENT_OPTIONS.map((option) => option.value);
 export const READER_ATTACHMENT_LINK_VALUES = READER_ATTACHMENT_LINK_OPTIONS.map((option) => option.value);
-export const READER_GALLERY_TOGGLE_VALUES = READER_GALLERY_TOGGLE_OPTIONS.map((option) => option.value);
+export const READER_GALLERY_MODE_VALUES = READER_GALLERY_MODE_OPTIONS.map((option) => option.value);
 
 export const READER_SETTINGS_KEY = "kemono.readerSettings";
 export const READER_SETTINGS_UNSAVED_KEY = "kemono.readerSettings.unsaved";
 export const DEFAULT_READER_SETTINGS = {
-  galleryEnabled: false,
+  galleryMode: "none",
   textScale: "base",
   lineSpacing: "normal",
   widthMode: "full",

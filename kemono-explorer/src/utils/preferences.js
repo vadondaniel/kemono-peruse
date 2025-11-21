@@ -11,7 +11,7 @@ import {
   READER_SETTINGS_UNSAVED_KEY,
   READER_TEXT_SCALE_VALUES,
   READER_TYPEFACE_VALUES,
-  READER_GALLERY_TOGGLE_VALUES,
+  READER_GALLERY_MODE_VALUES,
   READER_WIDTH_VALUES,
   TYPEFACE_PREVIEW_MAP,
 } from "../constants";
@@ -46,10 +46,12 @@ export function getInitialPageSize() {
 export function normalizeReaderSettings(raw) {
   const normalized = { ...DEFAULT_READER_SETTINGS };
   if (!raw || typeof raw !== "object") return normalized;
-  if (READER_GALLERY_TOGGLE_VALUES.includes(raw.galleryEnabled)) {
-    normalized.galleryEnabled = raw.galleryEnabled;
-  } else if (raw.viewMode === "gallery") {
-    normalized.galleryEnabled = true;
+  if (READER_GALLERY_MODE_VALUES.includes(raw.galleryMode)) {
+    normalized.galleryMode = raw.galleryMode;
+  } else if (raw.galleryEnabled === true || raw.viewMode === "gallery") {
+    normalized.galleryMode = "both";
+  } else {
+    normalized.galleryMode = "none";
   }
   if (READER_TEXT_SCALE_VALUES.includes(raw.textScale)) {
     normalized.textScale = raw.textScale;
