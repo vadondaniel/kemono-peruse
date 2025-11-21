@@ -1322,26 +1322,26 @@ function CreatorPage({
                   />
                   <span className="filter-toggle-track">
                     <span className="filter-toggle-thumb" />
-                </span>
-                Tags
-              </label>
-              <label
-                className={`filter-toggle${showFeatureBackgrounds ? " filter-toggle-active" : ""}`}
-                htmlFor="show-feature-bg"
-              >
-                <input
-                  id="show-feature-bg"
-                  type="checkbox"
-                  checked={showFeatureBackgrounds}
-                  onChange={(event) => setShowFeatureBackgrounds(event.target.checked)}
-                />
-                <span className="filter-toggle-track">
-                  <span className="filter-toggle-thumb" />
-                </span>
-                Feature image
-              </label>
+                  </span>
+                  Tags
+                </label>
+                <label
+                  className={`filter-toggle${showFeatureBackgrounds ? " filter-toggle-active" : ""}`}
+                  htmlFor="show-feature-bg"
+                >
+                  <input
+                    id="show-feature-bg"
+                    type="checkbox"
+                    checked={showFeatureBackgrounds}
+                    onChange={(event) => setShowFeatureBackgrounds(event.target.checked)}
+                  />
+                  <span className="filter-toggle-track">
+                    <span className="filter-toggle-thumb" />
+                  </span>
+                  Feature image
+                </label>
+              </div>
             </div>
-          </div>
             <div className="order-size-group">
               <div className="page-size-control">
                 <label className="label" htmlFor="page-size">
