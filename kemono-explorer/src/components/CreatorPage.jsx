@@ -86,6 +86,7 @@ function CreatorPage({
     return false;
   });
   const [postTagMap, setPostTagMap] = useState({});
+  const [postDetailMap, setPostDetailMap] = useState({});
   const [searchInput, setSearchInput] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [searchLoading, setSearchLoading] = useState(false);
@@ -786,25 +787,36 @@ function CreatorPage({
   }, [isFilterActive, searchResults.length, clampedSearchPage, searchPage]);
 
   useEffect(() => {
-    if (!showTags) return;
+    if (!showTags && !showExcerpts) return;
     if (isFilterActive) return;
     if (!posts.length) return;
 
     const cachedDetails = useCache && cacheData?.postDetails ? cacheData.postDetails : null;
     const pending = pendingTagFetchRef.current;
     const cachedTagUpdates = {};
+    const cachedDetailUpdates = {};
     const missing = [];
 
     posts.forEach((post) => {
-      if (Array.isArray(post.tags)) return;
-      if (Array.isArray(postTagMap[post.id])) return;
       if (pending.has(post.id)) return;
+      const needsTags =
+        showTags && !Array.isArray(post.tags) && !Array.isArray(postTagMap[post.id]);
+      const existingExcerpt = showExcerpts ? getPostExcerptHtml(postDetailMap[post.id] || post) : null;
+      const needsExcerpt = showExcerpts && !existingExcerpt;
+      if (!needsTags && !needsExcerpt) return;
       const cachedEntry = cachedDetails?.[post.id]?.data;
-      const cachedTags = Array.isArray(cachedEntry?.tags)
-        ? cachedEntry.tags.map((tag) => String(tag))
-        : null;
-      if (cachedTags) {
-        cachedTagUpdates[post.id] = cachedTags;
+      if (cachedEntry) {
+        if (needsTags) {
+          const cachedTags = Array.isArray(cachedEntry?.tags)
+            ? cachedEntry.tags.map((tag) => String(tag))
+            : null;
+          if (cachedTags) {
+            cachedTagUpdates[post.id] = cachedTags;
+          }
+        }
+        if (needsExcerpt) {
+          cachedDetailUpdates[post.id] = cachedEntry;
+        }
       } else {
         missing.push(post);
       }
@@ -824,6 +836,22 @@ function CreatorPage({
             previous.some((value, index) => value !== nextTags[index]);
           if (differs) {
             next[postId] = nextTags;
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+    }
+
+    const cachedDetailIds = Object.keys(cachedDetailUpdates);
+    if (cachedDetailIds.length > 0) {
+      setPostDetailMap((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        cachedDetailIds.forEach((postId) => {
+          const detail = cachedDetailUpdates[postId];
+          if (detail && next[postId] !== detail) {
+            next[postId] = detail;
             changed = true;
           }
         });
@@ -853,23 +881,38 @@ function CreatorPage({
         }),
       );
       if (!alive || results.length === 0) return;
-      setPostTagMap((prev) => {
-        let changed = false;
-        const next = { ...prev };
-        results.forEach(({ id, tags }) => {
-          const normalized = Array.isArray(tags) ? tags : [];
-          const previous = next[id];
-          const differs =
-            !Array.isArray(previous) ||
-            previous.length !== normalized.length ||
-            previous.some((value, index) => value !== normalized[index]);
-          if (differs) {
-            next[id] = normalized;
-            changed = true;
-          }
+      if (showTags) {
+        setPostTagMap((prev) => {
+          let changed = false;
+          const next = { ...prev };
+          results.forEach(({ id, tags }) => {
+            const normalized = Array.isArray(tags) ? tags : [];
+            const previous = next[id];
+            const differs =
+              !Array.isArray(previous) ||
+              previous.length !== normalized.length ||
+              previous.some((value, index) => value !== normalized[index]);
+            if (differs) {
+              next[id] = normalized;
+              changed = true;
+            }
+          });
+          return changed ? next : prev;
         });
-        return changed ? next : prev;
-      });
+      }
+      if (showExcerpts) {
+        setPostDetailMap((prev) => {
+          let changed = false;
+          const next = { ...prev };
+          results.forEach(({ id, postData }) => {
+            if (postData && next[id] !== postData) {
+              next[id] = postData;
+              changed = true;
+            }
+          });
+          return changed ? next : prev;
+        });
+      }
       if (useCache) {
         const detailEntries = results.filter((entry) => entry.postData);
         if (detailEntries.length > 0) {
@@ -896,11 +939,13 @@ function CreatorPage({
     };
   }, [
     showTags,
+    showExcerpts,
     isFilterActive,
     posts,
     service,
     creatorId,
     postTagMap,
+    postDetailMap,
     useCache,
     cacheData,
     updateCache,
@@ -1372,7 +1417,8 @@ function CreatorPage({
         {renderPagination()}
         <div className="post-list">
           {orderedPosts.map((post) => {
-            const excerptHtml = showExcerpts ? getPostExcerptHtml(post) : null;
+            const detailData = postDetailMap[post.id];
+            const excerptHtml = showExcerpts ? getPostExcerptHtml(detailData || post) : null;
             const postTags = Array.isArray(post.tags) ? post.tags : postTagMap[post.id];
             const normalizedTags = Array.isArray(postTags) ? postTags : [];
             const hasTags = normalizedTags.length > 0;
