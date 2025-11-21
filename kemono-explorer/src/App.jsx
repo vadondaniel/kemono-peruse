@@ -439,7 +439,7 @@ function App() {
                 updateCreatorFilter(service, id, "");
                 setSavedCreators((prev) => prev.filter((c) => !(c.service === service && c.id === id)));
               }}
-              onOpenCreator={openCreator}
+              onOpenCreator={(service, id, name) => openCreator(service, id, name, 0)}
             />
           )}
 
