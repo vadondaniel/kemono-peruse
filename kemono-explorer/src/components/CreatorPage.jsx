@@ -1418,7 +1418,17 @@ function CreatorPage({
         </div>
         {renderPagination()}
         <div className="post-list">
-          {orderedPosts.map((post) => {
+          {(() => {
+            const seenIds = new Set();
+            const uniquePosts = [];
+            orderedPosts.forEach((post, index) => {
+              const rawId = post?.id ? String(post.id) : `idx-${index}`;
+              if (seenIds.has(rawId)) return;
+              seenIds.add(rawId);
+              uniquePosts.push(post);
+            });
+            return uniquePosts;
+          })().map((post, index) => {
             const detailData = postDetailMap[post.id];
             const excerptHtml = showExcerpts ? getPostExcerptHtml(detailData || post) : null;
             const postTags = Array.isArray(post.tags) ? post.tags : postTagMap[post.id];
@@ -1454,7 +1464,7 @@ function CreatorPage({
               <a
                 className={postItemClass}
                 style={postItemStyle}
-                key={post.id}
+                key={`${post?.id ?? `idx-${index}`}-${Number.isFinite(post?.__position) ? post.__position : post.updated || post.published || index}`}
                 href={postHref}
                 onClick={(event) => {
                   if (isModifiedClick(event)) {
