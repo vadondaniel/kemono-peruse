@@ -425,7 +425,6 @@ html[data-theme="dark"] .hero-stat {
 }
 
 .creator-search-filter {
-  min-width: 180px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -433,14 +432,18 @@ html[data-theme="dark"] .hero-stat {
 
 .creator-search-field-row {
   display: flex;
-  gap: 12px;
-  align-items: stretch;
-  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: nowrap;
+  width: 100%;
 }
 
-.creator-search-field-row .search-field {
-  flex: 2;
-  min-width: 260px;
+.search-field-wrapper {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }
 
 .creator-search-status {
@@ -452,8 +455,7 @@ html[data-theme="dark"] .hero-stat {
 }
 
 .creator-search-status.inline-status {
-  flex: 1;
-  min-width: 220px;
+  min-width: 160px;
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -468,6 +470,14 @@ html[data-theme="dark"] .hero-stat {
 
 .creator-search-status .inline-retry {
   padding: 4px 10px;
+}
+
+.creator-search-filter.inline-filter {
+  min-width: 140px;
+  margin-left: auto;
+  align-self: center;
+  align-items: flex-end;
+  text-align: right;
 }
 
 .creator-search-error {
@@ -2071,12 +2081,19 @@ html[data-theme="dark"] .hero-stat {
 
   .creator-search-field-row {
     flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+    flex-wrap: wrap;
   }
 
-  .creator-search-field-row .search-field,
-  .creator-search-field-row .creator-search-status.inline-status {
+  .search-field-wrapper,
+  .creator-search-field-row .creator-search-status.inline-status,
+  .creator-search-field-row .creator-search-filter.inline-filter {
     width: 100%;
     min-width: 0;
+    align-self: stretch;
+    text-align: left;
+    align-items: flex-start;
   }
 
   .saved-search {

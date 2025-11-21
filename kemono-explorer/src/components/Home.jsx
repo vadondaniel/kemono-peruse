@@ -383,44 +383,46 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
 
           {activeCreatorTool === "search" ? (
             <div className="creator-tool-panel">
-              <label className="field creator-search-filter" htmlFor="creator-search-service">
-                <span className="label">Service</span>
-                <select
-                  id="creator-search-service"
-                  className="input"
-                  value={creatorSearchService}
-                  onChange={(event) => setCreatorSearchService(event.target.value)}
-                >
-                  {SERVICE_FILTER_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
               <form className="search-form" onSubmit={(event) => event.preventDefault()}>
-                <label className="label" htmlFor="creator-search-input">
-                  Search creators
-                </label>
                 <div className="creator-search-field-row">
-                  <div className="search-field">
-                    <input
-                      id="creator-search-input"
-                      className="search-input"
-                      value={creatorSearchQuery}
-                      onChange={(event) => setCreatorSearchQuery(event.target.value)}
-                      placeholder="Type a name or ID (min 2 characters)"
-                    />
-                    {creatorSearchQuery && (
-                      <button className="search-clear" type="button" onClick={handleSearchClear}>
-                        Clear
-                      </button>
+                  <div className="search-field-wrapper">
+                    <div className="search-field">
+                      <input
+                        id="creator-search-input"
+                        aria-label="Search creators"
+                        className="search-input"
+                        value={creatorSearchQuery}
+                        onChange={(event) => setCreatorSearchQuery(event.target.value)}
+                        placeholder="Type a name or ID (min 2 characters)"
+                      />
+                      {creatorSearchQuery && (
+                        <button className="search-clear" type="button" onClick={handleSearchClear}>
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                    {searchStatusContent && (
+                      <div className="creator-search-status inline-status">{searchStatusContent}</div>
                     )}
                   </div>
-                  {searchStatusContent && (
-                    <div className="creator-search-status inline-status">{searchStatusContent}</div>
-                  )}
+                  <label
+                    className="field creator-search-filter inline-filter"
+                    htmlFor="creator-search-service"
+                  >
+                    <span className="label">Service</span>
+                    <select
+                      id="creator-search-service"
+                      className="input"
+                      value={creatorSearchService}
+                      onChange={(event) => setCreatorSearchService(event.target.value)}
+                    >
+                      {SERVICE_FILTER_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
               </form>
 
