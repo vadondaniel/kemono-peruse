@@ -397,7 +397,7 @@ function App() {
                 href={getUrlForView({ name: "home" })}
                 onClick={(event) => handleLinkNavigation(event, { name: "home" })}
               >
-                Kemono Explorer
+                Kemono Peruse
               </a>
             </h1>
             {view.name === "post" && (
