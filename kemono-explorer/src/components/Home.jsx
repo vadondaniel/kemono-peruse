@@ -612,9 +612,16 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
 
                   return (
                     <div className="saved-item" key={key} role="listitem">
-                      <div className="saved-avatar">
-                        <img src={iconUrl} alt={`${label} avatar`} loading="lazy" />
-                      </div>
+                        <a
+                          className="saved-avatar"
+                          href={buildCreatorHref(creator.service, creator.id, creator.name)}
+                          onClick={(event) =>
+                            handleCreatorLink(event, creator.service, creator.id, creator.name)
+                          }
+                          aria-label={`Open ${creator.name || creator.id}`}
+                        >
+                          <img src={iconUrl} alt={`${label} avatar`} loading="lazy" />
+                        </a>
                       <div className="saved-meta">
                         <div className="saved-meta-row">
                           <a
@@ -640,19 +647,18 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
                         </span>
                       </div>
                       <div className="saved-actions">
-                        <a
-                          className="btn outline btn-compact"
-                          href={buildCreatorHref(creator.service, creator.id, creator.name)}
-                          onClick={(event) =>
-                            handleCreatorLink(event, creator.service, creator.id, creator.name)
-                          }
-                        >
-                          Open
-                        </a>
                         <button
                           className="btn ghost"
                           type="button"
-                          onClick={() => onRemoveCreator(creator.service, creator.id)}
+                          onClick={() => {
+                            if (
+                              window.confirm(
+                                `Remove ${creator.name || creator.id} from your library?`,
+                              )
+                            ) {
+                              onRemoveCreator(creator.service, creator.id);
+                            }
+                          }}
                         >
                           Remove
                         </button>
