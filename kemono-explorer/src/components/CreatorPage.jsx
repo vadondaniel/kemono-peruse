@@ -187,12 +187,26 @@ function CreatorPage({
   const searchTokenRef = useRef(0);
   const pendingTagFetchRef = useRef(new Set());
   const prevFilterStorageKeyRef = useRef(filterStorageKey);
-  const lastSyncedOffsetRef = useRef(null);
   const cacheFresh = useCache && cacheData ? isCacheFresh(cacheData) : false;
   const canUseCacheUi = alreadySaved;
   const resolvedProfileCount = toNumericCount(profile?.post_count);
   const resolvedCacheCount = toNumericCount(cacheData?.totalPosts);
   const totalPosts = resolvedProfileCount ?? resolvedCacheCount ?? null;
+  const normalizedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
+  const isFilterActive = normalizedFilter.length > 0;
+  const activeTags = filterFields.tags ? extractTagTokens(normalizedFilter) : [];
+  const effectiveLimit = limit > 0 ? limit : API_PAGE_SIZE;
+  const totalFilteredPosts = searchResults.length;
+  const filteredTotalPages = isFilterActive
+    ? Math.max(1, Math.ceil(Math.max(totalFilteredPosts, 1) / effectiveLimit))
+    : 1;
+  const clampedSearchPage = isFilterActive ? Math.min(Math.max(searchPage, 1), filteredTotalPages) : 1;
+  const pageStart = isFilterActive ? Math.max(0, (clampedSearchPage - 1) * effectiveLimit) : 0;
+  const baseSearchResults = reverseOrder ? [...searchResults].reverse() : searchResults;
+  const displayedPosts = isFilterActive ? baseSearchResults.slice(pageStart, pageStart + effectiveLimit) : posts;
+  const listLoading = isFilterActive ? searchLoading && displayedPosts.length === 0 : loadingPosts;
+  const orderedPosts = !isFilterActive && reverseOrder ? [...displayedPosts].reverse() : displayedPosts;
+  const currentFilteredOffset = isFilterActive ? Math.max(0, (clampedSearchPage - 1) * effectiveLimit) : null;
   const getInitialCreatorName = () =>
     getSavedCreatorName(service, creatorId) ||
     (typeof creatorName === "string" ? creatorName.trim() : "") ||
@@ -254,6 +268,7 @@ function CreatorPage({
     [],
   );
 
+
   useEffect(() => {
     setFilterFields((prev) => {
       const stored = loadStoredFilterFields();
@@ -269,9 +284,6 @@ function CreatorPage({
   }, [service, creatorId]);
 
   const positionContextRef = useRef({ service, creatorId, position: initialPosition });
-  useEffect(() => {
-    lastSyncedOffsetRef.current = null;
-  }, [service, creatorId]);
 
   useEffect(() => {
     const savedName = getSavedCreatorName(service, creatorId);
@@ -292,14 +304,17 @@ function CreatorPage({
     }
   }, [service, creatorId, creatorName, resolvedCreatorName]);
 
-  useEffect(() => {
-    const ctx = positionContextRef.current;
-    const changed =
-      ctx.service !== service || ctx.creatorId !== creatorId || ctx.position !== initialPosition;
-    if (!changed) return;
-    positionContextRef.current = { service, creatorId, position: initialPosition };
-    setOffset(resolveOffsetForPosition(initialPosition, limit || initialPageSizeRef.current));
-  }, [service, creatorId, initialPosition]);
+
+  const rememberPosition = useCallback(
+    (rawPosition, meta = {}) => {
+      if (typeof onRememberPosition !== "function") return;
+      const resolvedPageSize =
+        Number.isFinite(meta.pageSize) && meta.pageSize > 0 ? Math.floor(meta.pageSize) : limit || API_PAGE_SIZE;
+      const normalizedIndex = Number.isFinite(rawPosition) && rawPosition >= 0 ? Math.floor(rawPosition) : 0;
+      onRememberPosition(normalizedIndex, { ...meta, pageSize: resolvedPageSize });
+    },
+    [onRememberPosition, limit],
+  );
 
   useEffect(() => {
     let alive = true;
@@ -389,7 +404,8 @@ function CreatorPage({
     setSearchPage(1);
     setSearchCapped(false);
     runSearch({ query: trimmed });
-  }, [filterFields.title, filterFields.tags, filterFields.body, activeFilter]);
+  }, [filterFields.title, filterFields.tags, filterFields.body, activeFilter, effectiveLimit]);
+
 
   useEffect(() => {
     const trimmedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
@@ -866,20 +882,6 @@ function CreatorPage({
     updateCache,
   ]);
 
-  const normalizedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
-  const isFilterActive = normalizedFilter.length > 0;
-  const activeTags = filterFields.tags ? extractTagTokens(normalizedFilter) : [];
-  const effectiveLimit = limit > 0 ? limit : API_PAGE_SIZE;
-  const totalFilteredPosts = searchResults.length;
-  const filteredTotalPages = isFilterActive
-    ? Math.max(1, Math.ceil(Math.max(totalFilteredPosts, 1) / effectiveLimit))
-    : 1;
-  const clampedSearchPage = isFilterActive ? Math.min(Math.max(searchPage, 1), filteredTotalPages) : 1;
-  const pageStart = isFilterActive ? Math.max(0, (clampedSearchPage - 1) * effectiveLimit) : 0;
-  const baseSearchResults = reverseOrder ? [...searchResults].reverse() : searchResults;
-  const displayedPosts = isFilterActive ? baseSearchResults.slice(pageStart, pageStart + effectiveLimit) : posts;
-  const listLoading = isFilterActive ? searchLoading && displayedPosts.length === 0 : loadingPosts;
-  const orderedPosts = !isFilterActive && reverseOrder ? [...displayedPosts].reverse() : displayedPosts;
   const cacheUpdatedAt = useCache && cacheData?.updatedAt ? cacheData.updatedAt : null;
   const cacheUpdatedStamp = cacheUpdatedAt ? formatDate(cacheUpdatedAt) : null;
   const cacheUpdatedLabel = cacheUpdatedStamp
@@ -887,22 +889,25 @@ function CreatorPage({
     : null;
 
   useEffect(() => {
-    if (isFilterActive) return;
-    if (typeof onRememberPosition !== "function") return;
-    const normalizedOffset = Number.isFinite(offset) && offset > 0 ? Math.floor(offset) : 0;
-    if (lastSyncedOffsetRef.current === normalizedOffset && lastSyncedOffsetRef.current !== null) {
-      return;
-    }
-    lastSyncedOffsetRef.current = normalizedOffset;
-    onRememberPosition(normalizedOffset, { pageSize: limit || API_PAGE_SIZE });
-  }, [offset, limit, isFilterActive, onRememberPosition]);
-
-  useEffect(() => {
     if (!isFilterActive) return;
     if (!searchResults.length) return;
     if (searchPage === clampedSearchPage) return;
     setSearchPage(clampedSearchPage);
   }, [isFilterActive, searchResults.length, clampedSearchPage, searchPage]);
+
+  useEffect(() => {
+    if (!isFilterActive) return;
+    const desiredPage =
+      Number.isFinite(initialPosition) && initialPosition > 0
+        ? Math.min(
+            Math.max(Math.floor(initialPosition / effectiveLimit) + 1, 1),
+            Number.isFinite(filteredTotalPages) ? filteredTotalPages : Math.floor(initialPosition / effectiveLimit) + 1,
+          )
+        : 1;
+    if (desiredPage && desiredPage !== searchPage) {
+      setSearchPage(desiredPage);
+    }
+  }, [isFilterActive, initialPosition, effectiveLimit, filteredTotalPages, searchPage]);
 
   useEffect(() => {
     if (!showTags && !showExcerpts) return;
@@ -1218,6 +1223,17 @@ function CreatorPage({
       : `Showing ${posts.length} items`;
 
   useEffect(() => {
+    const ctx = positionContextRef.current;
+    const changed =
+      ctx.service !== service || ctx.creatorId !== creatorId || ctx.position !== initialPosition;
+    if (!changed) return;
+    positionContextRef.current = { service, creatorId, position: initialPosition };
+    if (!isFilterActive) {
+      setOffset(resolveOffsetForPosition(initialPosition, limit || initialPageSizeRef.current));
+    }
+  }, [service, creatorId, initialPosition, isFilterActive, limit]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const media = window.matchMedia("(max-width: 520px)");
     const handle = () => setCompactPagination(media.matches);
@@ -1240,12 +1256,18 @@ function CreatorPage({
     if (!limit) return;
     const nextOffset = Math.max(0, (page - 1) * limit);
     setOffset(nextOffset);
+    if (!isFilterActive) {
+      rememberPosition(nextOffset, { pageSize: limit });
+    }
   }
 
   const goToSearchPage = (page) => {
     setSearchPage((prev) => {
       const nextNumeric = Number.isFinite(page) ? Math.trunc(page) : prev;
       const next = Math.min(Math.max(nextNumeric || 1, 1), filteredTotalPages || 1);
+      if (next !== prev && isFilterActive) {
+        rememberPosition(Math.max(0, (next - 1) * effectiveLimit), { pageSize: effectiveLimit });
+      }
       return next === prev ? prev : next;
     });
   };
@@ -1275,9 +1297,15 @@ function CreatorPage({
 
   const handleOrderToggle = () => {
     if (isFilterActive) {
-      setSearchPage(1);
+      setSearchPage((prev) => {
+        if (prev !== 1) {
+          rememberPosition(0, { pageSize: effectiveLimit });
+        }
+        return 1;
+      });
     } else {
       setOffset(0);
+      rememberPosition(0, { pageSize: limit });
     }
     setReverseOrder((prev) => !prev);
   };
@@ -1639,6 +1667,7 @@ function CreatorPage({
                     setOffset(0);
                     setLimit(nextLimit);
                     setSearchPage(1);
+                    rememberPosition(0, { pageSize: nextLimit });
                   }}
                 >
                   {PAGE_SIZE_OPTIONS.map((count) => (
@@ -1665,8 +1694,10 @@ function CreatorPage({
                 ? Math.max(0, Math.floor(post.__position / pageSizeForPosition) * pageSizeForPosition)
                 : undefined;
             const handleOpenPost = () => {
-              if (!isFilterActive && Number.isFinite(post?.__position) && typeof onRememberPosition === "function") {
-                onRememberPosition(post.__position, { pageSize: pageSizeForPosition });
+              if (isFilterActive) {
+                rememberPosition(currentFilteredOffset || 0, { pageSize: effectiveLimit });
+              } else if (Number.isFinite(post?.__position)) {
+                rememberPosition(post.__position, { pageSize: pageSizeForPosition });
               }
               onOpenPost(post.id, post.title || "", resolvedOffset);
             };
@@ -1676,7 +1707,7 @@ function CreatorPage({
               creatorId,
               creatorName: resolvedCreatorName || creatorId,
               postId: post.id,
-              position: !isFilterActive ? resolvedOffset : undefined,
+              position: isFilterActive ? currentFilteredOffset ?? undefined : resolvedOffset,
             });
             const featureFile =
               post?.file && (post.file.path || post.file.url || post.file.name) ? post.file : null;
