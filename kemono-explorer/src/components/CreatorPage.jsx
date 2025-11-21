@@ -131,6 +131,7 @@ function CreatorPage({
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchPage, setSearchPage] = useState(1);
   const [searchCapped, setSearchCapped] = useState(false);
+  const [searchMatchSources, setSearchMatchSources] = useState({ text: false, tags: false });
   const filterStorageKey = `kemono.filterFields.${service}.${creatorId}`;
   const reversePrefKey = `kemono.reverseOrder.${service}.${creatorId}`;
   const [reverseOrder, setReverseOrder] = useState(() => readBooleanPreference(reversePrefKey, false));
@@ -434,8 +435,12 @@ function CreatorPage({
       setSearchResults([]);
       setSearchLoading(false);
       setSearchCapped(false);
+      setSearchMatchSources({ text: false, tags: false });
       return;
     }
+
+    let matchedViaText = false;
+    let matchedViaTags = false;
 
     if (useCache && cacheFresh) {
       const cachedPostsForSearch = collectCachedPosts(cacheData);
@@ -448,6 +453,7 @@ function CreatorPage({
               ? post.tags.map((tag) => String(tag).toLowerCase())
               : [];
             matchesTags = tagTokens.every((token) => postTags.includes(token));
+            if (matchesTags) matchedViaTags = true;
           }
           let matchesText = false;
           if (hasTextSearch) {
@@ -483,6 +489,7 @@ function CreatorPage({
             if (haystacks.length > 0) {
               const normalizedHaystacks = haystacks.map((value) => value.toLowerCase());
               matchesText = textTokens.every((token) => normalizedHaystacks.some((hay) => hay.includes(token)));
+              if (matchesText) matchedViaText = true;
             }
           }
           if (hasTagSearch && hasTextSearch) {
@@ -502,6 +509,10 @@ function CreatorPage({
           setSearchResults(dedupePostsById(results));
           setSearchCapped(capped);
           setSearchLoading(false);
+          setSearchMatchSources({
+            text: hasTextSearch && matchedViaText,
+            tags: hasTagSearch && matchedViaTags,
+          });
           return;
         }
         // Fall through to API search when cache did not yield any hits and we cannot prove completeness.
@@ -518,10 +529,11 @@ function CreatorPage({
 
     const searchModes = [];
     if (hasTextSearch) {
-      searchModes.push({ queryParam: `&q=${encodedQuery}`, tagParam: "", allowCache: true });
+      searchModes.push({ type: "text", queryParam: `&q=${encodedQuery}`, tagParam: "", allowCache: true });
     }
     if (hasTagSearch) {
       searchModes.push({
+        type: "tags",
         queryParam: "",
         tagParam: tagParams,
         allowCache: !hasTextSearch,
@@ -531,6 +543,7 @@ function CreatorPage({
     setSearchLoading(true);
     setSearchResults([]);
     setSearchCapped(false);
+    setSearchMatchSources({ text: false, tags: false });
 
     const seenIds = new Set();
     const workingResults = [];
@@ -548,6 +561,10 @@ function CreatorPage({
           if (!Array.isArray(chunk) || chunk.length === 0) {
             exhausted = true;
             break;
+          }
+          if (chunk.length > 0) {
+            if (mode.type === "text") matchedViaText = true;
+            if (mode.type === "tags") matchedViaTags = true;
           }
           if (useCache && mode.allowCache && chunk.length > 0) {
             updateCache((prev) => {
@@ -584,11 +601,16 @@ function CreatorPage({
 
       setSearchResults(dedupePostsById(workingResults));
       setSearchCapped(capped);
+      setSearchMatchSources({
+        text: hasTextSearch && matchedViaText,
+        tags: hasTagSearch && matchedViaTags,
+      });
     } catch (error) {
       console.error("Post search failed", error);
       if (token !== searchTokenRef.current) return;
       setSearchResults([]);
       setSearchCapped(false);
+      setSearchMatchSources({ text: false, tags: false });
     } finally {
       if (token === searchTokenRef.current) {
         setSearchLoading(false);
@@ -639,6 +661,7 @@ function CreatorPage({
       window.localStorage.removeItem(filterStorageKey);
     }
     setFilterFields(getDefaultFilterFields());
+    setSearchMatchSources({ text: false, tags: false });
   };
 
   useEffect(() => {
@@ -1144,16 +1167,25 @@ function CreatorPage({
   const tagDescriptor =
     activeTags.length > 0 ? `${activeTags.length} tag${activeTags.length === 1 ? "" : "s"}` : null;
   const filterDescriptor = (() => {
-    if (canTextFilter && canTagFilter && tagDescriptor) {
-      return `"${normalizedFilterText}" and ${tagDescriptor}`;
+    const textDescriptor = normalizedFilterText ? `"${normalizedFilterText}"` : `"${normalizedFilter}"`;
+    const textContributed = Boolean(canTextFilter && searchMatchSources.text);
+    const tagsContributed = Boolean(canTagFilter && tagDescriptor && searchMatchSources.tags);
+    if (textContributed && tagsContributed) {
+      return `${textDescriptor} and ${tagDescriptor}`;
+    }
+    if (tagsContributed) {
+      return tagDescriptor;
+    }
+    if (textContributed) {
+      return textDescriptor;
+    }
+    if (canTextFilter) {
+      return textDescriptor;
     }
     if (canTagFilter && tagDescriptor) {
       return tagDescriptor;
     }
-    if (canTextFilter) {
-      return `"${normalizedFilterText}"`;
-    }
-    return `"${normalizedFilter}"`;
+    return textDescriptor;
   })();
   const limitedByResultCap = searchCapped && totalFilteredPosts >= MAX_SEARCH_RESULTS;
   const totalLabel = limitedByResultCap ? `${totalFilteredPosts}+` : `${totalFilteredPosts}`;
