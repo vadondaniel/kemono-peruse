@@ -546,40 +546,8 @@ function CreatorPage({
           }
           let matchesText = false;
           if (hasTextSearch) {
-            const haystacks = [];
-            if (normalizedFields.title) {
-              if (typeof post.title === "string") haystacks.push(post.title);
-              if (typeof post.id === "string") haystacks.push(post.id);
-            }
-            if (normalizedFields.body) {
-              const bodyCandidates = [
-                post.excerpt,
-                post.snippet,
-                post.summary,
-                post.match,
-                post.content,
-                post.body,
-                post.text,
-                post.description,
-              ];
-              bodyCandidates.forEach((candidate) => {
-                if (!candidate) return;
-                if (typeof candidate === "string") {
-                  haystacks.push(candidate);
-                } else if (typeof candidate === "object") {
-                  Object.values(candidate).forEach((value) => {
-                    if (typeof value === "string") {
-                      haystacks.push(value);
-                    }
-                  });
-                }
-              });
-            }
-            if (haystacks.length > 0) {
-              const normalizedHaystacks = haystacks.map((value) => value.toLowerCase());
-              matchesText = textTokens.every((token) => normalizedHaystacks.some((hay) => hay.includes(token)));
-              if (matchesText) matchedViaText = true;
-            }
+            matchesText = postMatchesTextTokens(post, textTokens, normalizedFields);
+            if (matchesText) matchedViaText = true;
           }
           if (hasTagSearch && hasTextSearch) {
             return matchesTags || matchesText;
@@ -642,6 +610,7 @@ function CreatorPage({
       for (const mode of searchModes) {
         let offset = 0;
         let exhausted = false;
+        const needsTextFiltering = mode.type === "text" && hasTextSearch;
         while (!exhausted && workingResults.length < MAX_SEARCH_RESULTS) {
           const chunk = await fetchJson(
             `${API_BASE}/${service}/user/${creatorId}/posts?o=${offset}&n=${API_PAGE_SIZE}${mode.queryParam}${fieldParams}${mode.tagParam}`,
@@ -651,10 +620,8 @@ function CreatorPage({
             exhausted = true;
             break;
           }
-          if (chunk.length > 0) {
-            if (mode.type === "text") matchedViaText = true;
-            if (mode.type === "tags") matchedViaTags = true;
-          }
+          let chunkMatchedViaText = false;
+          let chunkMatchedViaTags = false;
           if (useCache && mode.allowCache && chunk.length > 0) {
             updateCache((prev) => {
               const prevChunks = prev?.chunks ? { ...prev.chunks } : {};
@@ -667,13 +634,28 @@ function CreatorPage({
           }
           chunk.forEach((post) => {
             if (!post) return;
+            if (needsTextFiltering && !postMatchesTextTokens(post, textTokens, normalizedFields)) {
+              return;
+            }
             const key = post.id != null ? String(post.id) : null;
             if (key && seenIds.has(key)) return;
             if (key) {
               seenIds.add(key);
             }
             workingResults.push(post);
+            if (needsTextFiltering) {
+              chunkMatchedViaText = true;
+            }
+            if (mode.type === "tags") {
+              chunkMatchedViaTags = true;
+            }
           });
+          if (chunkMatchedViaText) {
+            matchedViaText = true;
+          }
+          if (chunkMatchedViaTags) {
+            matchedViaTags = true;
+          }
           offset += API_PAGE_SIZE;
           if (chunk.length < API_PAGE_SIZE) {
             exhausted = true;
@@ -705,6 +687,53 @@ function CreatorPage({
         setSearchLoading(false);
       }
     }
+  };
+  const collectTextSearchHaystacks = (post, fields) => {
+    const haystacks = [];
+    if (!post || !fields) return haystacks;
+    if (fields.title) {
+      if (typeof post.title === "string") {
+        haystacks.push(post.title);
+      }
+      if (typeof post.id === "string") {
+        haystacks.push(post.id);
+      }
+    }
+    if (fields.body) {
+      const bodyCandidates = [
+        post.excerpt,
+        post.snippet,
+        post.summary,
+        post.match,
+        post.content,
+        post.body,
+        post.text,
+        post.description,
+      ];
+      bodyCandidates.forEach((candidate) => {
+        if (!candidate) return;
+        if (typeof candidate === "string") {
+          haystacks.push(candidate);
+        } else if (typeof candidate === "object") {
+          Object.values(candidate).forEach((value) => {
+            if (typeof value === "string") {
+              haystacks.push(value);
+            }
+          });
+        }
+      });
+    }
+    return haystacks;
+  };
+  const postMatchesTextTokens = (post, tokens, fields) => {
+    if (!post || !Array.isArray(tokens) || tokens.length === 0 || !fields) return false;
+    const haystacks = collectTextSearchHaystacks(post, fields);
+    if (!haystacks.length) return false;
+    const normalizedHaystacks = haystacks
+      .map((value) => (typeof value === "string" ? value.toLowerCase() : null))
+      .filter(Boolean);
+    if (!normalizedHaystacks.length) return false;
+    return tokens.every((token) => normalizedHaystacks.some((hay) => hay.includes(token)));
   };
 
   const handleSearchSubmit = (event) => {
