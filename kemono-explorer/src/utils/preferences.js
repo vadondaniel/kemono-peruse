@@ -8,6 +8,7 @@ import {
   READER_INDENT_VALUES,
   READER_LINE_SPACING_VALUES,
   READER_SETTINGS_KEY,
+  READER_SETTINGS_UNSAVED_KEY,
   READER_TEXT_SCALE_VALUES,
   READER_TYPEFACE_VALUES,
   READER_WIDTH_VALUES,
@@ -95,17 +96,29 @@ export function normalizeReaderSettings(raw) {
   return normalized;
 }
 
-export function getInitialReaderSettings() {
+export function getInitialReaderSettings(storageKey = READER_SETTINGS_KEY) {
   if (typeof window === "undefined" || !window.localStorage) {
     return { ...DEFAULT_READER_SETTINGS };
   }
   try {
-    const stored = window.localStorage.getItem(READER_SETTINGS_KEY);
+    const stored = window.localStorage.getItem(storageKey);
     if (!stored) return { ...DEFAULT_READER_SETTINGS };
     const parsed = JSON.parse(stored);
     return normalizeReaderSettings(parsed);
   } catch {
     return { ...DEFAULT_READER_SETTINGS };
+  }
+}
+
+export function copyReaderSettings(fromKey = READER_SETTINGS_UNSAVED_KEY, toKey = READER_SETTINGS_KEY) {
+  if (typeof window === "undefined" || !window.localStorage) return;
+  if (!fromKey || !toKey || fromKey === toKey) return;
+  try {
+    const stored = window.localStorage.getItem(fromKey);
+    if (!stored) return;
+    window.localStorage.setItem(toKey, stored);
+  } catch {
+    // ignore copy failures
   }
 }
 

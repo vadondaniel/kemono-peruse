@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import Timestamp from "./Timestamp.jsx";
 import {
@@ -16,7 +16,7 @@ import { fetchJson } from "../utils/api.js";
 import { getCachePreferenceKey, loadCreatorCache, writeCreatorCache, isCacheFresh, pruneCacheChunks, pruneCachePostDetails, collectCachedPosts } from "../utils/cache.js";
 import { formatDate } from "../utils/date.js";
 import { extractTagTokens, getPostExcerptHtml, getServiceLabel, toNumericCount } from "../utils/posts.js";
-import { cacheCreatorName, getCachedCreatorName, getSavedCreatorName, purgeCreatorLocalState, resolveProfileDisplayName } from "../utils/creators.js";
+import { cacheCreatorName, getCachedCreatorName, getSavedCreatorName, purgeCreatorLocalState, resolveProfileDisplayName, getCreatorScopedStorageKey } from "../utils/creators.js";
 import { getInitialPageSize, readBooleanPreference } from "../utils/preferences.js";
 import { getUrlForView } from "../utils/navigation.js";
 
@@ -56,11 +56,16 @@ function CreatorPage({
   const [useCache, setUseCache] = useState(() => readBooleanPreference(cachePrefKey, false));
   const [cacheData, setCacheData] = useState(() => loadCreatorCache(service, creatorId));
   const [cacheReloadApplied, setCacheReloadApplied] = useState(0);
+  const [cacheStorageError, setCacheStorageError] = useState(false);
   const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);
   const initialPageSizeRef = useRef(getInitialPageSize());
   const [limit, setLimit] = useState(initialPageSizeRef.current);
   const [offset, setOffset] = useState(() => resolveOffsetForPosition(initialPosition, initialPageSizeRef.current));
+  const displayStorageKey = useMemo(
+    () => getCreatorScopedStorageKey("kemono.display", service, creatorId, alreadySaved),
+    [service, creatorId, alreadySaved],
+  );
   useEffect(() => {
     if (typeof window === "undefined" || !window.localStorage) return;
     if (!PAGE_SIZE_OPTIONS.includes(limit)) return;
@@ -71,12 +76,12 @@ function CreatorPage({
     }
   }, [limit]);
   const defaultDisplaySettings = { excerpts: false, tags: false, featureBackgrounds: false };
-  const readDisplaySettings = (svc, id) => {
+  const readDisplaySettings = () => {
     const base = { ...defaultDisplaySettings };
     if (typeof window === "undefined" || !window.localStorage) return base;
-    if (!svc || !id) return base;
+    if (!displayStorageKey) return base;
     try {
-      const stored = window.localStorage.getItem(`kemono.display.${svc}.${id}`);
+      const stored = window.localStorage.getItem(displayStorageKey);
       if (!stored) return base;
       const parsed = JSON.parse(stored);
       return {
@@ -88,38 +93,35 @@ function CreatorPage({
       return base;
     }
   };
-  const writeDisplaySettings = (svc, id, settings) => {
+  const writeDisplaySettings = (settings) => {
     if (typeof window === "undefined" || !window.localStorage) return;
-    if (!svc || !id) return;
-    if (!alreadySaved) return;
+    if (!displayStorageKey) return;
     try {
-      const current = readDisplaySettings(svc, id);
+      const current = readDisplaySettings();
       const next = { ...current, ...settings };
-      window.localStorage.setItem(`kemono.display.${svc}.${id}`, JSON.stringify(next));
+      window.localStorage.setItem(displayStorageKey, JSON.stringify(next));
     } catch {
       // ignore
     }
   };
-  const [showExcerpts, setShowExcerpts] = useState(() => readDisplaySettings(service, creatorId).excerpts);
-  const [showTags, setShowTags] = useState(() => readDisplaySettings(service, creatorId).tags);
-  const [showFeatureBackgrounds, setShowFeatureBackgrounds] = useState(
-    () => readDisplaySettings(service, creatorId).featureBackgrounds,
-  );
+  const [showExcerpts, setShowExcerpts] = useState(() => readDisplaySettings().excerpts);
+  const [showTags, setShowTags] = useState(() => readDisplaySettings().tags);
+  const [showFeatureBackgrounds, setShowFeatureBackgrounds] = useState(() => readDisplaySettings().featureBackgrounds);
   useEffect(() => {
-    const settings = readDisplaySettings(service, creatorId);
+    const settings = readDisplaySettings();
     setShowExcerpts(settings.excerpts);
     setShowTags(settings.tags);
     setShowFeatureBackgrounds(settings.featureBackgrounds);
-  }, [service, creatorId]);
+  }, [displayStorageKey]);
   useEffect(() => {
-    writeDisplaySettings(service, creatorId, { excerpts: showExcerpts });
-  }, [service, creatorId, showExcerpts]);
+    writeDisplaySettings({ excerpts: showExcerpts });
+  }, [showExcerpts, displayStorageKey]);
   useEffect(() => {
-    writeDisplaySettings(service, creatorId, { tags: showTags });
-  }, [service, creatorId, showTags]);
+    writeDisplaySettings({ tags: showTags });
+  }, [showTags, displayStorageKey]);
   useEffect(() => {
-    writeDisplaySettings(service, creatorId, { featureBackgrounds: showFeatureBackgrounds });
-  }, [service, creatorId, showFeatureBackgrounds]);
+    writeDisplaySettings({ featureBackgrounds: showFeatureBackgrounds });
+  }, [showFeatureBackgrounds, displayStorageKey]);
   const [postTagMap, setPostTagMap] = useState({});
   const [postDetailMap, setPostDetailMap] = useState({});
 
@@ -134,15 +136,28 @@ function CreatorPage({
   const [searchCapped, setSearchCapped] = useState(false);
   const [searchMatchSources, setSearchMatchSources] = useState({ text: false, tags: false });
   const filterStorageKey = `kemono.filterFields.${service}.${creatorId}`;
-  const reversePrefKey = `kemono.reverseOrder.${service}.${creatorId}`;
-  const [reverseOrder, setReverseOrder] = useState(() => readBooleanPreference(reversePrefKey, false));
+  const reversePrefKey = useMemo(
+    () => getCreatorScopedStorageKey("kemono.reverseOrder", service, creatorId, alreadySaved),
+    [service, creatorId, alreadySaved],
+  );
+  const [reverseOrder, setReverseOrder] = useState(() =>
+    reversePrefKey ? readBooleanPreference(reversePrefKey, false) : false,
+  );
+  const handleCachePersistenceFailure = useCallback(() => {
+    setCacheStorageError(true);
+    setUseCache(false);
+    setCacheData(null);
+    writeCreatorCache(service, creatorId, null);
+  }, [service, creatorId]);
+
   const updateCache = useCallback(
     (updater, { updateTimestamp = true } = {}) => {
+      let resolvedNext = null;
       setCacheData((prev) => {
         const base = prev && prev.version === CACHE_VERSION ? prev : { version: CACHE_VERSION };
         const nextBase = typeof updater === "function" ? updater(base) : updater;
         if (!nextBase) {
-          writeCreatorCache(service, creatorId, null);
+          resolvedNext = null;
           return null;
         }
         const next = { ...base, ...nextBase, version: CACHE_VERSION };
@@ -157,11 +172,15 @@ function CreatorPage({
         if (next.postDetails) {
           next.postDetails = pruneCachePostDetails(next.postDetails);
         }
-        writeCreatorCache(service, creatorId, next);
+        resolvedNext = next;
         return next;
       });
+      const success = writeCreatorCache(service, creatorId, resolvedNext);
+      if (!success) {
+        handleCachePersistenceFailure();
+      }
     },
-    [service, creatorId],
+    [service, creatorId, handleCachePersistenceFailure],
   );
   const getDefaultFilterFields = () => ({ title: true, tags: true, body: true });
   const loadStoredFilterFields = () => {
@@ -235,14 +254,25 @@ function CreatorPage({
     setUseCache(readBooleanPreference(cachePrefKey, false));
     setCacheData(loadCreatorCache(service, creatorId));
     setCacheReloadApplied(0);
-    setReverseOrder(readBooleanPreference(reversePrefKey, false));
+    setReverseOrder(reversePrefKey ? readBooleanPreference(reversePrefKey, false) : false);
   }, [cachePrefKey, service, creatorId, reversePrefKey]);
+
+  useEffect(() => {
+    if (useCache) {
+      setCacheStorageError(false);
+    }
+  }, [useCache]);
+
+  useEffect(() => {
+    setCacheStorageError(false);
+  }, [service, creatorId]);
 
   useEffect(() => {
     if (alreadySaved) return;
     purgeCreatorLocalState(service, creatorId);
     setUseCache(false);
     setCacheData(null);
+    setCacheStorageError(false);
   }, [alreadySaved, service, creatorId]);
 
 
@@ -264,21 +294,14 @@ function CreatorPage({
   }, [useCache, cachePrefKey, alreadySaved]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!alreadySaved) {
-      try {
-        window.localStorage.removeItem(reversePrefKey);
-      } catch {
-        // ignore cleanup failures
-      }
-      return;
-    }
+    if (typeof window === "undefined" || !window.localStorage) return;
+    if (!reversePrefKey) return;
     try {
       window.localStorage.setItem(reversePrefKey, reverseOrder ? "true" : "false");
     } catch {
       // ignore persistence failures
     }
-  }, [reverseOrder, reversePrefKey, alreadySaved]);
+  }, [reverseOrder, reversePrefKey]);
 
   useEffect(() => {
     if (!useCache) return;
@@ -1517,11 +1540,13 @@ function CreatorPage({
                     <span className="muted small">
                       {loadingProfile ? "Loading profile..." : `${profile?.post_count ?? "-"} posts indexed`}
                     </span>
-                    {canUseCacheUi && useCache && (
+                    {canUseCacheUi && (useCache || cacheStorageError) && (
                       <span className="muted small cache-status-line">
-                        {cacheFresh && cacheUpdatedLabel
-                          ? `Cached locally • updated ${cacheUpdatedLabel}`
-                          : "Cache refreshing from source..."}
+                        {cacheStorageError
+                          ? "Cache unavailable (storage full)"
+                          : cacheFresh && cacheUpdatedLabel
+                            ? `Cached locally • updated ${cacheUpdatedLabel}`
+                            : "Cache refreshing from source..."}
                       </span>
                     )}
                   </div>
@@ -1553,6 +1578,9 @@ function CreatorPage({
                   </span>
                   Cache data
                 </label>
+                {cacheStorageError && (
+                  <p className="muted small cache-status-line">Storage full. Cache has been disabled.</p>
+                )}
               </div>
             )}
             {!alreadySaved && (

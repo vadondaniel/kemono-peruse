@@ -65,6 +65,7 @@ export const READER_INDENT_VALUES = READER_INDENT_OPTIONS.map((option) => option
 export const READER_ATTACHMENT_LINK_VALUES = READER_ATTACHMENT_LINK_OPTIONS.map((option) => option.value);
 
 export const READER_SETTINGS_KEY = "kemono.readerSettings";
+export const READER_SETTINGS_UNSAVED_KEY = "kemono.readerSettings.unsaved";
 export const DEFAULT_READER_SETTINGS = {
   textScale: "base",
   lineSpacing: "normal",

@@ -5,6 +5,7 @@ const CREATOR_NAME_CACHE_KEY = "kemono.creatorNameCache";
 const CREATOR_DISPLAY_PREFIX = "kemono.display";
 const CREATOR_FILTER_FIELDS_PREFIX = "kemono.filterFields";
 const CREATOR_REVERSE_ORDER_PREFIX = "kemono.reverseOrder";
+export const UNSAVED_CREATOR_SETTINGS_KEY = "__unsaved__";
 
 const getLocalStorage = () => {
   if (typeof window === "undefined" || !window.localStorage) return null;
@@ -85,6 +86,17 @@ const buildScopedKey = (prefix, service, creatorId) => {
   return `${prefix}.${normalizedService}.${normalizedId}`;
 };
 
+const getScopedOrSharedKey = (prefix, service, creatorId, alreadySaved) => {
+  if (!prefix) return null;
+  if (!alreadySaved) {
+    return `${prefix}.${UNSAVED_CREATOR_SETTINGS_KEY}`;
+  }
+  return buildScopedKey(prefix, service, creatorId);
+};
+
+export const getCreatorScopedStorageKey = (prefix, service, creatorId, alreadySaved) =>
+  getScopedOrSharedKey(prefix, service, creatorId, alreadySaved);
+
 const removeScopedItem = (prefix, service, creatorId) => {
   const storage = getLocalStorage();
   if (!storage) return;
@@ -112,6 +124,35 @@ export const purgeCreatorLocalState = (service, creatorId) => {
     }
   }
   writeCreatorCache(service, creatorId, null);
+};
+
+export const copyUnsavedCreatorSettingsTo = (service, creatorId) => {
+  if (!service || !creatorId) return;
+  const storage = getLocalStorage();
+  if (!storage) return;
+  const targetDisplayKey = buildScopedKey(CREATOR_DISPLAY_PREFIX, service, creatorId);
+  const targetReverseKey = buildScopedKey(CREATOR_REVERSE_ORDER_PREFIX, service, creatorId);
+  if (!targetDisplayKey && !targetReverseKey) return;
+  try {
+    if (targetDisplayKey) {
+      const unsavedDisplay = storage.getItem(`${CREATOR_DISPLAY_PREFIX}.${UNSAVED_CREATOR_SETTINGS_KEY}`);
+      if (unsavedDisplay) {
+        storage.setItem(targetDisplayKey, unsavedDisplay);
+      }
+    }
+  } catch {
+    // ignore
+  }
+  try {
+    if (targetReverseKey) {
+      const unsavedReverse = storage.getItem(`${CREATOR_REVERSE_ORDER_PREFIX}.${UNSAVED_CREATOR_SETTINGS_KEY}`);
+      if (unsavedReverse) {
+        storage.setItem(targetReverseKey, unsavedReverse);
+      }
+    }
+  } catch {
+    // ignore
+  }
 };
 
 export const resolveProfileDisplayName = (profile) => {

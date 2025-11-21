@@ -47,22 +47,43 @@ export function loadCreatorCache(service, creatorId) {
   }
 }
 
+const isQuotaExceededError = (error) => {
+  if (!error) return false;
+  if (error.name === "QuotaExceededError" || error.code === 22) return true;
+  if (typeof window !== "undefined" && window.DOMException) {
+    return error instanceof window.DOMException && error.name === "QuotaExceededError";
+  }
+  return false;
+};
+
 export function writeCreatorCache(service, creatorId, data) {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined") return true;
   const key = getCacheDataKey(service, creatorId);
+  if (!key) return false;
   if (!data) {
     try {
       window.localStorage.removeItem(key);
+      return true;
     } catch {
-      // ignore
+      return false;
     }
-    return;
   }
   const payload = { version: CACHE_VERSION, ...data };
   try {
-    window.localStorage.setItem(key, JSON.stringify(payload));
+    const serialized = JSON.stringify(payload);
+    window.localStorage.removeItem(key);
+    window.localStorage.setItem(key, serialized);
+    return true;
   } catch (error) {
+    if (isQuotaExceededError(error)) {
+      try {
+        window.localStorage.removeItem(key);
+      } catch {
+        // ignore cleanup failure
+      }
+    }
     console.error("Failed to persist creator cache", error);
+    return false;
   }
 }
 

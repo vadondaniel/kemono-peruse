@@ -15,6 +15,7 @@ import {
   READER_LINE_SPACING_OPTIONS,
   READER_LINE_SPACING_VALUES,
   READER_SETTINGS_KEY,
+  READER_SETTINGS_UNSAVED_KEY,
   READER_TEXT_SCALE_OPTIONS,
   READER_TEXT_SCALE_VALUES,
   READER_TYPEFACE_OPTIONS,
@@ -114,6 +115,7 @@ function PostView({
   creatorId,
   creatorName,
   postId,
+  alreadySaved,
   creatorPosition,
   activeFilter,
   readerSettingsOpen,
@@ -124,17 +126,35 @@ function PostView({
   onResolveCreatorPosition,
 }) {
   const cachePrefKey = getCachePreferenceKey(service, creatorId);
-  const [useCache, setUseCacheState] = useState(() => readBooleanPreference(cachePrefKey, false));
+  const cachingAllowed = alreadySaved;
+  const [useCache, setUseCacheState] = useState(() =>
+    cachingAllowed ? readBooleanPreference(cachePrefKey, false) : false,
+  );
   const [cacheData, setCacheData] = useState(() => loadCreatorCache(service, creatorId));
-  const [readerSettings, setReaderSettings] = useState(getInitialReaderSettings);
+  const readerSettingsStorageKey = alreadySaved ? READER_SETTINGS_KEY : READER_SETTINGS_UNSAVED_KEY;
+  const [readerSettings, setReaderSettings] = useState(() => getInitialReaderSettings(readerSettingsStorageKey));
   const cacheFresh = useCache && cacheData ? isCacheFresh(cacheData) : false;
+  const handleCachePersistenceFailure = useCallback(() => {
+    setUseCacheState(false);
+    setCacheData(null);
+    writeCreatorCache(service, creatorId, null);
+    if (typeof window !== "undefined" && window.localStorage) {
+      try {
+        window.localStorage.setItem(cachePrefKey, "false");
+      } catch {
+        // ignore preference persistence issues
+      }
+    }
+  }, [service, creatorId, cachePrefKey]);
+
   const updateCache = useCallback(
     (updater, { updateTimestamp = true } = {}) => {
+      let resolvedNext = null;
       setCacheData((prev) => {
         const base = prev && prev.version === CACHE_VERSION ? prev : { version: CACHE_VERSION };
         const nextBase = typeof updater === "function" ? updater(base) : updater;
         if (!nextBase) {
-          writeCreatorCache(service, creatorId, null);
+          resolvedNext = null;
           return null;
         }
         const next = { ...base, ...nextBase, version: CACHE_VERSION };
@@ -149,26 +169,34 @@ function PostView({
         if (next.postDetails) {
           next.postDetails = pruneCachePostDetails(next.postDetails);
         }
-        writeCreatorCache(service, creatorId, next);
+        resolvedNext = next;
         return next;
       });
+      const success = writeCreatorCache(service, creatorId, resolvedNext);
+      if (!success) {
+        handleCachePersistenceFailure();
+      }
     },
-    [service, creatorId],
+    [service, creatorId, handleCachePersistenceFailure],
   );
 
   useEffect(() => {
-    setUseCacheState(readBooleanPreference(cachePrefKey, false));
+    setUseCacheState(cachingAllowed ? readBooleanPreference(cachePrefKey, false) : false);
     setCacheData(loadCreatorCache(service, creatorId));
-  }, [cachePrefKey, service, creatorId]);
+  }, [cachePrefKey, service, creatorId, cachingAllowed]);
+
+  useEffect(() => {
+    setReaderSettings(getInitialReaderSettings(readerSettingsStorageKey));
+  }, [readerSettingsStorageKey]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.localStorage) return;
     try {
-      window.localStorage.setItem(READER_SETTINGS_KEY, JSON.stringify(readerSettings));
+      window.localStorage.setItem(readerSettingsStorageKey, JSON.stringify(readerSettings));
     } catch {
       // ignore preference persistence issues
     }
-  }, [readerSettings]);
+  }, [readerSettings, readerSettingsStorageKey]);
 
   useEffect(() => {
     if (!readerSettingsOpen) return undefined;

@@ -8,8 +8,8 @@ import PostView from "./components/PostView.jsx";
 import { API_BASE } from "./constants.js";
 import { buildHistoryState, ensureView, getInitialView, getTitleForView, getUrlForView, getViewFromHistoryState, viewsEqual } from "./utils/navigation.js";
 import { fetchJson } from "./utils/api.js";
-import { resolveProfileDisplayName, purgeCreatorLocalState } from "./utils/creators.js";
-import { getInitialPageSize } from "./utils/preferences.js";
+import { resolveProfileDisplayName, purgeCreatorLocalState, copyUnsavedCreatorSettingsTo } from "./utils/creators.js";
+import { getInitialPageSize, copyReaderSettings } from "./utils/preferences.js";
 
 function App() {
   const [view, setViewState] = useState(getInitialView);
@@ -277,6 +277,8 @@ function App() {
         if (prev.some((c) => c.service === service && c.id === creatorId)) return prev;
         return [...prev, { service, id: creatorId, name: finalName }];
       });
+      copyUnsavedCreatorSettingsTo(service, creatorId);
+      copyReaderSettings();
     },
     [savedCreators, resolveCreatorNameFromApi],
   );
@@ -491,6 +493,7 @@ function App() {
                 creatorId={view.creatorId}
                 creatorName={view.creatorName}
                 postId={view.postId}
+                alreadySaved={isCreatorSaved(view.service, view.creatorId)}
                 creatorPosition={currentPosition}
                 activeFilter={rawFilter}
                 readerSettingsOpen={readerSettingsOpen}
