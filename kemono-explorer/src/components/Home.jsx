@@ -584,6 +584,7 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
                     editingCreator &&
                     editingCreator.service === creator.service &&
                     editingCreator.id === creator.id;
+                  const iconUrl = `${ICON_BASE}/${creator.service}/${creator.id}`;
 
                   if (isEditing) {
                     return (
@@ -611,6 +612,9 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
 
                   return (
                     <div className="saved-item" key={key} role="listitem">
+                      <div className="saved-avatar">
+                        <img src={iconUrl} alt={`${label} avatar`} loading="lazy" />
+                      </div>
                       <div className="saved-meta">
                         <a
                           className="saved-name"
