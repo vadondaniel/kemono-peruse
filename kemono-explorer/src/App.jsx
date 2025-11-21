@@ -468,11 +468,8 @@ function App() {
 
           {view.name === "post" && (() => {
             const rawFilter = getCreatorFilter(view.service, view.creatorId);
-            const trimmedFilter = rawFilter.trim();
-            const hasFilter = trimmedFilter.length > 0;
-            const currentPosition = hasFilter
-              ? undefined
-              : typeof view.position === "number"
+            const currentPosition =
+              typeof view.position === "number"
                 ? view.position
                 : getCreatorOffset(view.service, view.creatorId);
             return (
