@@ -404,18 +404,6 @@ function CreatorPage({
 
   const runSearch = async ({ query } = {}) => {
     const trimmed = (query || "").trim();
-    const tagTokens = filterFields.tags ? extractTagTokens(trimmed) : [];
-    const textQueryEnabled = filterFields.title || filterFields.body;
-    const applyTextQuery = textQueryEnabled && (!filterFields.tags || tagTokens.length === 0);
-    const textQuery = applyTextQuery ? trimmed : "";
-    const hasQuery = textQuery.length > 0;
-    const hasTags = filterFields.tags && tagTokens.length > 0;
-    if (!hasQuery && !hasTags) {
-      setSearchResults([]);
-      setSearchLoading(false);
-      setSearchCapped(false);
-      return;
-    }
 
     const normalizedFields = {
       title: Boolean(filterFields.title),
@@ -429,59 +417,79 @@ function CreatorPage({
       setFilterFields({ ...normalizedFields });
     }
 
+    const tagTokens = normalizedFields.tags ? extractTagTokens(trimmed) : [];
+    const hasTagSearch = normalizedFields.tags && tagTokens.length > 0;
+    const textSearchable = normalizedFields.title || normalizedFields.body;
+    const normalizedTextQuery = textSearchable ? trimmed.replace(/,/g, " ").trim() : "";
+    const textTokens = normalizedTextQuery
+      ? normalizedTextQuery
+          .toLowerCase()
+          .split(/\s+/)
+          .map((token) => token.trim())
+          .filter(Boolean)
+      : [];
+    const hasTextSearch = textSearchable && textTokens.length > 0;
+
+    if (!hasTextSearch && !hasTagSearch) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      setSearchCapped(false);
+      return;
+    }
+
     if (useCache && cacheFresh) {
       const cachedPostsForSearch = collectCachedPosts(cacheData);
       if (cachedPostsForSearch && cachedPostsForSearch.length > 0) {
-        const tokens = textQuery
-          ? textQuery
-              .toLowerCase()
-              .split(/\s+/)
-              .map((token) => token.trim())
-              .filter(Boolean)
-          : [];
-        const lowerTagTokens = tagTokens.map((token) => token.toLowerCase());
         const results = cachedPostsForSearch.filter((post) => {
           if (!post) return false;
-          if (lowerTagTokens.length > 0) {
+          let matchesTags = false;
+          if (hasTagSearch) {
             const postTags = Array.isArray(post.tags)
               ? post.tags.map((tag) => String(tag).toLowerCase())
               : [];
-            const matchesAllTags = lowerTagTokens.every((token) => postTags.includes(token));
-            if (!matchesAllTags) return false;
+            matchesTags = tagTokens.every((token) => postTags.includes(token));
           }
-          if (tokens.length === 0) return true;
-          const haystacks = [];
-          if (normalizedFields.title) {
-            if (typeof post.title === "string") haystacks.push(post.title);
-            if (typeof post.id === "string") haystacks.push(post.id);
+          let matchesText = false;
+          if (hasTextSearch) {
+            const haystacks = [];
+            if (normalizedFields.title) {
+              if (typeof post.title === "string") haystacks.push(post.title);
+              if (typeof post.id === "string") haystacks.push(post.id);
+            }
+            if (normalizedFields.body) {
+              const bodyCandidates = [
+                post.excerpt,
+                post.snippet,
+                post.summary,
+                post.match,
+                post.content,
+                post.body,
+                post.text,
+                post.description,
+              ];
+              bodyCandidates.forEach((candidate) => {
+                if (!candidate) return;
+                if (typeof candidate === "string") {
+                  haystacks.push(candidate);
+                } else if (typeof candidate === "object") {
+                  Object.values(candidate).forEach((value) => {
+                    if (typeof value === "string") {
+                      haystacks.push(value);
+                    }
+                  });
+                }
+              });
+            }
+            if (haystacks.length > 0) {
+              const normalizedHaystacks = haystacks.map((value) => value.toLowerCase());
+              matchesText = textTokens.every((token) => normalizedHaystacks.some((hay) => hay.includes(token)));
+            }
           }
-          if (normalizedFields.body) {
-            const bodyCandidates = [
-              post.excerpt,
-              post.snippet,
-              post.summary,
-              post.match,
-              post.content,
-              post.body,
-              post.text,
-              post.description,
-            ];
-            bodyCandidates.forEach((candidate) => {
-              if (!candidate) return;
-              if (typeof candidate === "string") {
-                haystacks.push(candidate);
-              } else if (typeof candidate === "object") {
-                Object.values(candidate).forEach((value) => {
-                  if (typeof value === "string") {
-                    haystacks.push(value);
-                  }
-                });
-              }
-            });
+          if (hasTagSearch && hasTextSearch) {
+            return matchesTags || matchesText;
           }
-          if (haystacks.length === 0) return false;
-          const normalizedHaystacks = haystacks.map((value) => value.toLowerCase());
-          return tokens.every((token) => normalizedHaystacks.some((hay) => hay.includes(token)));
+          if (hasTagSearch) return matchesTags;
+          return matchesText;
         });
         const cacheTotalPosts = toNumericCount(cacheData?.totalPosts);
         const cacheComplete =
@@ -501,54 +509,75 @@ function CreatorPage({
     }
 
     const token = (searchTokenRef.current += 1);
-    const encodedQuery = hasQuery ? encodeURIComponent(textQuery.replace(/,/g, " ").trim()) : "";
+    const encodedQuery = hasTextSearch ? encodeURIComponent(normalizedTextQuery) : "";
     const filterBody = normalizedFields.body ? "true" : "false";
     const filterTitle = normalizedFields.title ? "true" : "false";
     const filterTags = normalizedFields.tags ? "true" : "false";
     const fieldParams = `&title=${filterTitle}&tags=${filterTags}&body=${filterBody}`;
-    const tagParams =
-      normalizedFields.tags && tagTokens.length > 0
-        ? tagTokens.map((tag) => `&tag=${encodeURIComponent(tag)}`).join("")
-        : "";
+    const tagParams = hasTagSearch ? tagTokens.map((tag) => `&tag=${encodeURIComponent(tag)}`).join("") : "";
+
+    const searchModes = [];
+    if (hasTextSearch) {
+      searchModes.push({ queryParam: `&q=${encodedQuery}`, tagParam: "", allowCache: true });
+    }
+    if (hasTagSearch) {
+      searchModes.push({
+        queryParam: "",
+        tagParam: tagParams,
+        allowCache: !hasTextSearch,
+      });
+    }
 
     setSearchLoading(true);
     setSearchResults([]);
     setSearchCapped(false);
 
-    let workingResults = [];
-    let offset = 0;
-    let exhausted = false;
+    const seenIds = new Set();
+    const workingResults = [];
     let capped = false;
 
     try {
-      while (!exhausted && workingResults.length < MAX_SEARCH_RESULTS) {
-        const chunk = await fetchJson(
-          `${API_BASE}/${service}/user/${creatorId}/posts?o=${offset}&n=${API_PAGE_SIZE}${hasQuery ? `&q=${encodedQuery}` : ""}${fieldParams}${tagParams}`,
-        );
-        if (token !== searchTokenRef.current) return;
-        if (!Array.isArray(chunk) || chunk.length === 0) {
-          exhausted = true;
-          break;
-        }
-        if (useCache && chunk.length > 0) {
-          updateCache((prev) => {
-            const prevChunks = prev?.chunks ? { ...prev.chunks } : {};
-            prevChunks[String(offset)] = chunk.slice();
-            return {
-              ...prev,
-              chunks: pruneCacheChunks(prevChunks),
-            };
+      for (const mode of searchModes) {
+        let offset = 0;
+        let exhausted = false;
+        while (!exhausted && workingResults.length < MAX_SEARCH_RESULTS) {
+          const chunk = await fetchJson(
+            `${API_BASE}/${service}/user/${creatorId}/posts?o=${offset}&n=${API_PAGE_SIZE}${mode.queryParam}${fieldParams}${mode.tagParam}`,
+          );
+          if (token !== searchTokenRef.current) return;
+          if (!Array.isArray(chunk) || chunk.length === 0) {
+            exhausted = true;
+            break;
+          }
+          if (useCache && mode.allowCache && chunk.length > 0) {
+            updateCache((prev) => {
+              const prevChunks = prev?.chunks ? { ...prev.chunks } : {};
+              prevChunks[String(offset)] = chunk.slice();
+              return {
+                ...prev,
+                chunks: pruneCacheChunks(prevChunks),
+              };
+            });
+          }
+          chunk.forEach((post) => {
+            if (!post) return;
+            const key = post.id != null ? String(post.id) : null;
+            if (key && seenIds.has(key)) return;
+            if (key) {
+              seenIds.add(key);
+            }
+            workingResults.push(post);
           });
+          offset += API_PAGE_SIZE;
+          if (chunk.length < API_PAGE_SIZE) {
+            exhausted = true;
+          }
+          if (workingResults.length >= MAX_SEARCH_RESULTS) {
+            capped = true;
+            break;
+          }
         }
-        workingResults = workingResults.concat(chunk);
-        offset += API_PAGE_SIZE;
-        if (chunk.length < API_PAGE_SIZE) {
-          exhausted = true;
-        }
-        if (workingResults.length >= MAX_SEARCH_RESULTS) {
-          capped = true;
-          break;
-        }
+        if (workingResults.length >= MAX_SEARCH_RESULTS) break;
       }
 
       if (token !== searchTokenRef.current) return;
@@ -1109,10 +1138,23 @@ function CreatorPage({
   const totalPages = derivedTotalPages ?? currentPage + (hasNext ? 1 : 0);
   const avatarUrl = `https://img.kemono.cr/icons/${service}/${creatorId}`;
   const serviceLabel = getServiceLabel(service);
-  const filterDescriptor =
-    activeTags.length > 0
-      ? `${activeTags.length} tag${activeTags.length === 1 ? "" : "s"}`
-      : `"${normalizedFilter}"`;
+  const normalizedFilterText = normalizedFilter.replace(/,/g, " ").trim();
+  const canTextFilter = (filterFields.title || filterFields.body) && normalizedFilterText.length > 0;
+  const canTagFilter = filterFields.tags && activeTags.length > 0;
+  const tagDescriptor =
+    activeTags.length > 0 ? `${activeTags.length} tag${activeTags.length === 1 ? "" : "s"}` : null;
+  const filterDescriptor = (() => {
+    if (canTextFilter && canTagFilter && tagDescriptor) {
+      return `"${normalizedFilterText}" and ${tagDescriptor}`;
+    }
+    if (canTagFilter && tagDescriptor) {
+      return tagDescriptor;
+    }
+    if (canTextFilter) {
+      return `"${normalizedFilterText}"`;
+    }
+    return `"${normalizedFilter}"`;
+  })();
   const limitedByResultCap = searchCapped && totalFilteredPosts >= MAX_SEARCH_RESULTS;
   const totalLabel = limitedByResultCap ? `${totalFilteredPosts}+` : `${totalFilteredPosts}`;
   const summaryLabel = isFilterActive
