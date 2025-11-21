@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import Timestamp from "./Timestamp.jsx";
 import {
@@ -22,6 +22,8 @@ import {
   READER_TYPEFACE_VALUES,
   READER_WIDTH_OPTIONS,
   READER_WIDTH_VALUES,
+  READER_VIEW_MODE_OPTIONS,
+  READER_VIEW_MODE_VALUES,
   ORIGINAL_MEDIA_BASE,
 } from "../constants.js";
 import { fetchJson } from "../utils/api.js";
@@ -105,6 +107,64 @@ const stripFileExtension = (value) => {
   const index = value.lastIndexOf(".");
   if (index <= 0) return value;
   return value.slice(0, index);
+};
+
+const IMAGE_EXTENSION_PATTERN = /\.(apng|avif|gif|heic|heif|jpe?g|png|svg|webp|bmp|tiff)$/i;
+
+const hasImageExtension = (value) => {
+  if (typeof value !== "string") return false;
+  const normalized = value.split("?")[0].trim();
+  if (!normalized) return false;
+  return IMAGE_EXTENSION_PATTERN.test(normalized.toLowerCase());
+};
+
+const isImageMime = (value) => (typeof value === "string" ? value.trim().toLowerCase().startsWith("image/") : false);
+
+const isGalleryAttachmentCandidate = (attachment) => {
+  if (!attachment || typeof attachment !== "object") return false;
+  if (isImageMime(attachment.mime) || isImageMime(attachment.type) || isImageMime(attachment.contentType)) {
+    return true;
+  }
+  return (
+    hasImageExtension(attachment.name) ||
+    hasImageExtension(attachment.path) ||
+    hasImageExtension(attachment.original) ||
+    hasImageExtension(attachment.url)
+  );
+};
+
+const getAttachmentHrefParts = (attachment) => {
+  if (!attachment) {
+    return { proxiedHref: null, originalHref: null, originalCandidates: [] };
+  }
+  const proxiedHref = attachment?.path ? `${MEDIA_BASE}${attachment.path}` : null;
+  const originalCandidates = [
+    typeof attachment?.original === "string" ? attachment.original : null,
+    typeof attachment?.url === "string" ? attachment.url : null,
+    attachment?.path ? `${ORIGINAL_MEDIA_BASE}${attachment.path}` : null,
+  ].filter(Boolean);
+  const originalHref = originalCandidates[0] || null;
+  return { proxiedHref, originalHref, originalCandidates };
+};
+
+const getAttachmentDisplayLabel = (attachment, fallback = "Attachment") => {
+  if (!attachment || typeof attachment !== "object") return fallback;
+  if (typeof attachment.name === "string" && attachment.name.trim()) {
+    return attachment.name.trim();
+  }
+  if (typeof attachment.path === "string" && attachment.path.trim()) {
+    const pathEnd = attachment.path.split("/").pop();
+    if (pathEnd) return pathEnd;
+  }
+  const { originalHref } = getAttachmentHrefParts(attachment);
+  if (originalHref) {
+    const urlEnd = originalHref.split("/").pop();
+    if (urlEnd) {
+      const clean = urlEnd.split("?")[0];
+      if (clean) return clean;
+    }
+  }
+  return fallback;
 };
 
 const isModifiedClick = (event) =>
@@ -223,6 +283,12 @@ function PostView({
 
   const updateReaderSetting = (key, value) => {
     setReaderSettings((prev) => {
+      if (key === "viewMode") {
+        if (!READER_VIEW_MODE_VALUES.includes(value) || prev.viewMode === value) {
+          return prev;
+        }
+        return { ...prev, viewMode: value };
+      }
       if (key === "textScale") {
         if (!READER_TEXT_SCALE_VALUES.includes(value) || prev.textScale === value) {
           return prev;
@@ -280,7 +346,10 @@ function PostView({
   const [neighbors, setNeighbors] = useState({ newerId: null, olderId: null });
   const [heroLoaded, setHeroLoaded] = useState(false);
   const [attachmentsExpanded, setAttachmentsExpanded] = useState(false);
+  const [activeGalleryIndex, setActiveGalleryIndex] = useState(0);
+  const [viewerOpen, setViewerOpen] = useState(false);
   const [resolvedCreatorName, setResolvedCreatorName] = useState(() => getInitialCreatorName());
+  const [viewerZoomMode, setViewerZoomMode] = useState("fit");
   const pageSizeRef = useRef(getInitialPageSize());
   const serviceLabel = getServiceLabel(service);
   const creatorLabel = resolvedCreatorName || creatorId || "";
@@ -359,6 +428,9 @@ function PostView({
   }, [resolvedCreatorName, service, creatorId]);
   useEffect(() => {
     setAttachmentsExpanded(false);
+    setActiveGalleryIndex(0);
+    setViewerOpen(false);
+    setViewerZoomMode("fit");
   }, [postId]);
   const getStoredFilterFields = () => {
     const defaults = { title: true, tags: true, body: true };
@@ -539,6 +611,74 @@ function PostView({
         ...baseAttachments,
       ]
     : baseAttachments;
+  const resolveAttachmentHref = useCallback(
+    (attachment, { preferOriginal = false } = {}) => {
+      const { proxiedHref, originalHref } = getAttachmentHrefParts(attachment);
+      if (preferOriginal) {
+        return originalHref || proxiedHref;
+      }
+      return useOriginalAttachments ? originalHref || proxiedHref : proxiedHref || originalHref;
+    },
+    [useOriginalAttachments],
+  );
+  const galleryAttachments = useMemo(
+    () =>
+      attachments.filter((item) => {
+        if (!isGalleryAttachmentCandidate(item)) return false;
+        const { proxiedHref, originalHref } = getAttachmentHrefParts(item);
+        return Boolean(proxiedHref || originalHref);
+      }),
+    [attachments],
+  );
+  const galleryLength = galleryAttachments.length;
+
+  useEffect(() => {
+    setActiveGalleryIndex((prev) => {
+      const maxIndex = Math.max(galleryLength - 1, 0);
+      if (prev < 0 || prev > maxIndex) {
+        return maxIndex;
+      }
+      return prev;
+    });
+  }, [galleryLength]);
+
+  const safeGalleryIndex =
+    galleryLength === 0 ? 0 : Math.min(Math.max(activeGalleryIndex, 0), galleryLength - 1);
+  const activeGalleryAttachment = galleryLength > 0 ? galleryAttachments[safeGalleryIndex] : null;
+  const galleryActiveSrc = activeGalleryAttachment ? resolveAttachmentHref(activeGalleryAttachment) : null;
+  const galleryActiveOpenHref = activeGalleryAttachment
+    ? resolveAttachmentHref(activeGalleryAttachment, { preferOriginal: true })
+    : null;
+  const galleryActiveLabel = activeGalleryAttachment
+    ? getAttachmentDisplayLabel(activeGalleryAttachment, "Gallery image")
+    : "Gallery image";
+  const heroGalleryIndex = heroFile
+    ? galleryAttachments.findIndex((attachment) => attachment === attachments[0])
+    : -1;
+  const openViewerAt = useCallback(
+    (targetIndex) => {
+      if (galleryLength === 0) return;
+      const actualIndex =
+        Number.isFinite(targetIndex) && targetIndex !== null && targetIndex !== undefined
+          ? targetIndex
+          : safeGalleryIndex;
+      const clamped = Math.min(Math.max(actualIndex, 0), galleryLength - 1);
+      setActiveGalleryIndex(clamped);
+      setViewerZoomMode("fit");
+      setViewerOpen(true);
+    },
+    [galleryLength, safeGalleryIndex],
+  );
+  const closeViewer = useCallback(() => setViewerOpen(false), []);
+  const goToPreviousImage = useCallback(() => {
+    setActiveGalleryIndex((prev) => Math.max(prev - 1, 0));
+  }, []);
+  const goToNextImage = useCallback(() => {
+    setActiveGalleryIndex((prev) => {
+      if (galleryLength === 0) return 0;
+      return Math.min(prev + 1, galleryLength - 1);
+    });
+  }, [galleryLength]);
   const bodyHtml = post?.content || post?.body || post?.text || "";
 
   const normalizedHtml = bodyHtml
@@ -804,18 +944,6 @@ function PostView({
       });
     }
 
-    const resolveAttachmentHref = (attachment) => {
-      if (!attachment) return null;
-      const proxiedHref = attachment?.path ? `${MEDIA_BASE}${attachment.path}` : null;
-      const originalHrefCandidates = [
-        typeof attachment?.original === "string" ? attachment.original : null,
-        typeof attachment?.url === "string" ? attachment.url : null,
-        attachment?.path ? `${ORIGINAL_MEDIA_BASE}${attachment.path}` : null,
-      ].filter(Boolean);
-      const originalHref = originalHrefCandidates[0] || null;
-      return useOriginalAttachments ? originalHref || proxiedHref : proxiedHref || originalHref;
-    };
-
     const resolvePatreonPostUrl = (href) => {
       if (!href) return null;
       let url;
@@ -970,7 +1098,59 @@ function PostView({
       });
       listenerMap.clear();
     };
-  }, [processedHtml, service, creatorId, attachments, useOriginalAttachments]);
+  }, [processedHtml, service, creatorId, attachments, resolveAttachmentHref]);
+
+  const galleryHasPrev = safeGalleryIndex > 0;
+  const galleryHasNext = safeGalleryIndex < galleryLength - 1;
+  const hasGalleryThumbnails = galleryLength > 1;
+  const isGalleryMode = readerSettings.viewMode === "gallery";
+  const showGalleryView = isGalleryMode && galleryLength > 0;
+  const heroViewerEnabled = heroGalleryIndex >= 0;
+  const viewerZoomed = viewerZoomMode === "zoom";
+  const viewerImageSrc = viewerZoomed ? galleryActiveOpenHref || galleryActiveSrc : galleryActiveSrc;
+  const viewerCanZoom = Boolean(viewerImageSrc);
+  const viewerZoomButtonLabel = viewerZoomed ? "Fit to screen" : "Zoom in";
+  const handleViewerZoomToggle = useCallback(() => {
+    if (!viewerCanZoom) return;
+    setViewerZoomMode((prev) => (prev === "fit" ? "zoom" : "fit"));
+  }, [viewerCanZoom]);
+
+  useEffect(() => {
+    if (!viewerOpen) return undefined;
+    if (galleryLength > 0) return undefined;
+    setViewerOpen(false);
+    return undefined;
+  }, [galleryLength, viewerOpen]);
+
+  useEffect(() => {
+    if (!viewerOpen) {
+      setViewerZoomMode("fit");
+    }
+  }, [viewerOpen]);
+
+  useEffect(() => {
+    if (!viewerOpen) return undefined;
+    if (typeof window === "undefined" || typeof document === "undefined") return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeViewer();
+      } else if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        goToPreviousImage();
+      } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        goToNextImage();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [viewerOpen, closeViewer, goToPreviousImage, goToNextImage]);
 
   if (loading) {
     return (
@@ -995,6 +1175,7 @@ function PostView({
 
   const readerCardClassName = [
     "card post-card",
+    readerSettings.viewMode ? `reader-mode-${readerSettings.viewMode}` : "",
     `reader-width-${readerSettings.widthMode}`,
     `reader-scale-${readerSettings.textScale}`,
     `reader-leading-${readerSettings.lineSpacing}`,
@@ -1037,6 +1218,25 @@ function PostView({
                 </button>
               </div>
               <div className="reader-controls" role="region" aria-label="Reader settings options">
+                <div className="reader-control-group">
+                  <span className="reader-control-label">Reading mode</span>
+                  <div className="reader-pill-group" role="group" aria-label="Reading mode">
+                    {READER_VIEW_MODE_OPTIONS.map((option) => {
+                      const isActive = readerSettings.viewMode === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={`reader-pill${isActive ? " active" : ""}`}
+                          onClick={() => updateReaderSetting("viewMode", option.value)}
+                          aria-pressed={isActive}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
                 <div className="reader-control-group">
                   <span className="reader-control-label">Text size</span>
                   <div className="reader-pill-group" role="group" aria-label="Text size">
@@ -1201,19 +1401,11 @@ function PostView({
           <section className="attachments-panel">
             <div className="attachments">
               {attachments.map((item, index) => {
-                const proxiedHref = item?.path ? `${MEDIA_BASE}${item.path}` : null;
-                const originalHrefCandidates = [
-                  typeof item?.original === "string" ? item.original : null,
-                  typeof item?.url === "string" ? item.url : null,
-                  item?.path ? `${attachmentMediaBase}${item.path}` : null,
-                ].filter(Boolean);
-                const href =
-                  useOriginalAttachments && originalHrefCandidates.length
-                    ? originalHrefCandidates[0]
-                    : proxiedHref || originalHrefCandidates[0] || "#";
+                const { proxiedHref, originalHref } = getAttachmentHrefParts(item);
+                const href = useOriginalAttachments ? originalHref || proxiedHref || "#" : proxiedHref || originalHref || "#";
                 const attachmentKey =
                   item?.path || item?.original || item?.name || String(item?.id ?? `attachment-${index}`);
-                const label = item?.name || (item?.path ? item.path.split("/").pop() : originalHref) || "Attachment";
+                const label = getAttachmentDisplayLabel(item);
                 return (
                   <a className="tag attachment" href={href} target="_blank" rel="noreferrer" key={attachmentKey}>
                     {label}
@@ -1224,8 +1416,114 @@ function PostView({
           </section>
         )}
 
-        {heroImage && (
-          <div className="feature-image">
+        {showGalleryView && (
+          <section className="gallery-view" aria-label="Attachment gallery">
+            <div className="gallery-stage">
+              <button
+                type="button"
+                className="gallery-stage-media"
+                onClick={() => openViewerAt(safeGalleryIndex)}
+                disabled={!galleryActiveSrc}
+                aria-label="Open image in viewer"
+              >
+                {galleryActiveSrc ? (
+                  <img src={galleryActiveSrc} alt={galleryActiveLabel} loading="lazy" />
+                ) : (
+                  <div className="gallery-stage-placeholder">
+                    <span>Unable to preview this attachment.</span>
+                  </div>
+                )}
+              </button>
+              <div className="gallery-stage-controls">
+                <button
+                  type="button"
+                  className="btn ghost gallery-stage-nav"
+                  onClick={goToPreviousImage}
+                  disabled={!galleryHasPrev}
+                  aria-label="Previous image"
+                >
+                  &larr; Prev
+                </button>
+                <div className="gallery-stage-meta">
+                  <span className="gallery-stage-position">
+                    {safeGalleryIndex + 1} / {galleryLength}
+                  </span>
+                  <span className="gallery-stage-name" title={galleryActiveLabel}>
+                    {galleryActiveLabel}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="btn ghost gallery-stage-nav"
+                  onClick={goToNextImage}
+                  disabled={!galleryHasNext}
+                  aria-label="Next image"
+                >
+                  Next &rarr;
+                </button>
+                {galleryActiveOpenHref && (
+                  <a
+                    className="btn outline gallery-stage-open"
+                    href={galleryActiveOpenHref}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open image
+                  </a>
+                )}
+              </div>
+            </div>
+            {hasGalleryThumbnails && (
+              <div className="gallery-strip" role="listbox" aria-label="Select image to preview">
+                {galleryAttachments.map((item, index) => {
+                  const thumbSrc = resolveAttachmentHref(item);
+                  if (!thumbSrc) return null;
+                  const attachmentKey =
+                    item?.path || item?.original || item?.url || item?.name || `gallery-${index}`;
+                  const thumbLabel = getAttachmentDisplayLabel(item, `Image ${index + 1}`);
+                  const isActive = index === safeGalleryIndex;
+                  return (
+                    <button
+                      type="button"
+                      role="option"
+                      className={`gallery-thumb${isActive ? " active" : ""}`}
+                      key={attachmentKey}
+                      onClick={() => setActiveGalleryIndex(index)}
+                      aria-selected={isActive}
+                      aria-label={`Show ${thumbLabel}`}
+                    >
+                      <img src={thumbSrc} alt="" loading="lazy" />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        )}
+        {isGalleryMode && !showGalleryView && (
+          <section className="gallery-view gallery-empty">
+            <p className="muted small">No image attachments detected for gallery mode.</p>
+          </section>
+        )}
+
+        {heroImage && !isGalleryMode && (
+          <div
+            className={`feature-image${heroViewerEnabled ? " interactive" : ""}`}
+            role={heroViewerEnabled ? "button" : undefined}
+            tabIndex={heroViewerEnabled ? 0 : undefined}
+            aria-label={heroViewerEnabled ? "Open feature image in viewer" : undefined}
+            onClick={() => {
+              if (!heroViewerEnabled) return;
+              openViewerAt(heroGalleryIndex);
+            }}
+            onKeyDown={(event) => {
+              if (!heroViewerEnabled) return;
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                openViewerAt(heroGalleryIndex);
+              }
+            }}
+          >
             {!heroLoaded && <div className="image-placeholder" aria-hidden="true" />}
             <img
               src={heroImage}
@@ -1241,6 +1539,92 @@ function PostView({
 
         {renderNavigationControls()}
       </article>
+      {viewerOpen && (
+        <div className="gallery-viewer-overlay" role="presentation">
+          <div className="gallery-viewer-backdrop" onClick={closeViewer} aria-hidden="true" />
+          <div className="gallery-viewer-window" role="dialog" aria-modal="true" aria-label="Image viewer">
+            <button
+              type="button"
+              className="gallery-viewer-close"
+              onClick={closeViewer}
+              aria-label="Close image viewer"
+            >
+              &times;
+            </button>
+            <div
+              className={`gallery-viewer-stage${viewerZoomed ? " zoomed" : ""}`}
+              role={viewerCanZoom ? "button" : undefined}
+              tabIndex={viewerCanZoom ? 0 : undefined}
+              aria-label={
+                viewerCanZoom ? (viewerZoomed ? "Zoom out (fit to screen)" : "Zoom in for full resolution") : undefined
+              }
+              onClick={handleViewerZoomToggle}
+              onKeyDown={(event) => {
+                if (!viewerCanZoom) return;
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  handleViewerZoomToggle();
+                }
+              }}
+            >
+              {viewerImageSrc ? (
+                <img src={viewerImageSrc} alt={galleryActiveLabel} />
+              ) : (
+                <div className="gallery-stage-placeholder">
+                  <span>Unable to preview this attachment.</span>
+                </div>
+              )}
+            </div>
+            <div className="gallery-viewer-meta">
+              <span className="gallery-viewer-caption" title={galleryActiveLabel}>
+                {galleryActiveLabel}
+              </span>
+              <span className="gallery-viewer-position">
+                {safeGalleryIndex + 1} / {galleryLength}
+              </span>
+            </div>
+            <div className="gallery-viewer-actions">
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={goToPreviousImage}
+                disabled={!galleryHasPrev}
+                aria-label="Previous image"
+              >
+                &larr; Prev
+              </button>
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={handleViewerZoomToggle}
+                disabled={!viewerCanZoom}
+                aria-pressed={viewerZoomed}
+              >
+                {viewerZoomButtonLabel}
+              </button>
+              {galleryActiveOpenHref && (
+                <a
+                  className="btn outline"
+                  href={galleryActiveOpenHref}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open original
+                </a>
+              )}
+              <button
+                type="button"
+                className="btn ghost"
+                onClick={goToNextImage}
+                disabled={!galleryHasNext}
+                aria-label="Next image"
+              >
+                Next &rarr;
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

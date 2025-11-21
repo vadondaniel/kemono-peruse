@@ -11,6 +11,7 @@ import {
   READER_SETTINGS_UNSAVED_KEY,
   READER_TEXT_SCALE_VALUES,
   READER_TYPEFACE_VALUES,
+  READER_VIEW_MODE_VALUES,
   READER_WIDTH_VALUES,
   TYPEFACE_PREVIEW_MAP,
 } from "../constants";
@@ -45,6 +46,9 @@ export function getInitialPageSize() {
 export function normalizeReaderSettings(raw) {
   const normalized = { ...DEFAULT_READER_SETTINGS };
   if (!raw || typeof raw !== "object") return normalized;
+  if (READER_VIEW_MODE_VALUES.includes(raw.viewMode)) {
+    normalized.viewMode = raw.viewMode;
+  }
   if (READER_TEXT_SCALE_VALUES.includes(raw.textScale)) {
     normalized.textScale = raw.textScale;
   }
