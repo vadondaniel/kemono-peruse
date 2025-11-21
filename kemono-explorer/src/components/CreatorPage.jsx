@@ -838,37 +838,50 @@ function CreatorPage({
 
   useEffect(() => {
     if (!showTags && !showExcerpts) return;
-    if (isFilterActive) return;
-    if (!posts.length) return;
+    const targetPosts = isFilterActive ? displayedPosts : posts;
+    if (!targetPosts.length) return;
 
     const cachedDetails = useCache && cacheData?.postDetails ? cacheData.postDetails : null;
+    const missingRequirements = new Map();
     const pending = pendingTagFetchRef.current;
     const cachedTagUpdates = {};
     const cachedDetailUpdates = {};
     const missing = [];
 
-    posts.forEach((post) => {
+    targetPosts.forEach((post) => {
       if (pending.has(post.id)) return;
       const needsTags =
         showTags && !Array.isArray(post.tags) && !Array.isArray(postTagMap[post.id]);
       const existingExcerpt = showExcerpts ? getPostExcerptHtml(postDetailMap[post.id] || post) : null;
       const needsExcerpt = showExcerpts && !existingExcerpt;
       if (!needsTags && !needsExcerpt) return;
-      const cachedEntry = cachedDetails?.[post.id]?.data;
-      if (cachedEntry) {
+      const cachedDetailEntry = cachedDetails?.[post.id];
+      const cachedEntry = cachedDetailEntry?.data;
+      const hydrated = Boolean(cachedDetailEntry?.hydrated);
+      let shouldFetch = false;
+      if (!cachedEntry) {
+        shouldFetch = true;
+      } else {
         if (needsTags) {
-          const cachedTags = Array.isArray(cachedEntry?.tags)
-            ? cachedEntry.tags.map((tag) => String(tag))
-            : null;
-          if (cachedTags) {
+          if (Array.isArray(cachedEntry?.tags)) {
+            const cachedTags = cachedEntry.tags.map((tag) => String(tag));
             cachedTagUpdates[post.id] = cachedTags;
+          } else if (!hydrated) {
+            shouldFetch = true;
           }
         }
         if (needsExcerpt) {
-          cachedDetailUpdates[post.id] = cachedEntry;
+          const cachedExcerpt = getPostExcerptHtml(cachedEntry);
+          if (cachedExcerpt) {
+            cachedDetailUpdates[post.id] = cachedEntry;
+          } else if (!hydrated) {
+            shouldFetch = true;
+          }
         }
-      } else {
+      }
+      if (shouldFetch) {
         missing.push(post);
+        missingRequirements.set(post.id, { needsTags, needsExcerpt });
       }
     });
 
@@ -916,26 +929,112 @@ function CreatorPage({
     let alive = true;
 
     (async () => {
-      const results = await Promise.all(
-        missing.map(async (post) => {
+      const aggregatedResults = [];
+
+      if (isFilterActive) {
+        const detailResponses = await Promise.all(
+          missing.map(async (post) => {
+            try {
+              const payload = await fetchJson(`${API_BASE}/${service}/user/${creatorId}/post/${post.id}`);
+              const detail = payload?.post || payload || null;
+              return {
+                id: post.id,
+                tags: Array.isArray(detail?.tags) ? detail.tags.map((tag) => String(tag)) : [],
+                postData: detail,
+              };
+            } catch (error) {
+              console.error("Failed to load detailed post content", post.id, error);
+              return { id: post.id, tags: [], postData: null };
+            }
+          }),
+        );
+        aggregatedResults.push(...detailResponses);
+        if (!alive || aggregatedResults.length === 0) return;
+      } else {
+        const chunkSize = 50;
+        const queue = [...missing];
+        while (queue.length > 0) {
+          const batch = queue.splice(0, chunkSize);
+          const startOffset = Number.isFinite(batch[0]?.__position)
+            ? Math.floor(batch[0].__position / API_PAGE_SIZE) * API_PAGE_SIZE
+            : 0;
+          const needRangeStart = Math.max(0, Math.min(...batch.map((post) => Math.max(0, post.__position ?? 0))));
+          const needRangeEnd = Math.max(
+            ...batch.map((post, idx) => Math.max(needRangeStart, (post.__position ?? idx) + 1)),
+          );
+          const sliceSize = Math.max(API_PAGE_SIZE, needRangeEnd - needRangeStart + API_PAGE_SIZE);
           try {
-            const data = await fetchJson(`${API_BASE}/${service}/user/${creatorId}/post/${post.id}`);
-            const tags = Array.isArray(data?.post?.tags)
-              ? data.post.tags.map((tag) => String(tag))
-              : [];
-            return { id: post.id, tags, postData: data?.post || null };
+            const chunk = await fetchJson(
+              `${API_BASE}/${service}/user/${creatorId}/posts?o=${Math.max(
+                0,
+                Math.floor(needRangeStart / API_PAGE_SIZE) * API_PAGE_SIZE,
+              )}&n=${sliceSize}`,
+            );
+            if (Array.isArray(chunk)) {
+              aggregatedResults.push(
+                ...batch.map((post) => {
+                  const found = chunk.find((entry) => entry && entry.id === post.id);
+                  return {
+                    id: post.id,
+                    tags: Array.isArray(found?.tags) ? found.tags.map((tag) => String(tag)) : [],
+                    postData: found || null,
+                  };
+                }),
+              );
+            }
           } catch (error) {
-            console.error("Failed to load tags for post", post.id, error);
-            return { id: post.id, tags: [], postData: null };
+            console.error("Failed to load post details", error);
+            aggregatedResults.push(
+              ...batch.map((post) => ({ id: post.id, tags: [], postData: null })),
+            );
           }
-        }),
-      );
-      if (!alive || results.length === 0) return;
+        }
+        if (!alive || aggregatedResults.length === 0) return;
+
+        const detailTargets = aggregatedResults
+          .filter(({ id, postData }) => {
+            const requirements = missingRequirements.get(id);
+            if (!postData) return true;
+            const needsTags = Boolean(requirements?.needsTags);
+            const needsExcerpt = Boolean(requirements?.needsExcerpt);
+            const hasTags = !needsTags || Array.isArray(postData.tags);
+            const hasExcerpt = !needsExcerpt || Boolean(getPostExcerptHtml(postData));
+            return !hasTags || !hasExcerpt;
+          })
+          .map((entry) => entry.id);
+
+        if (alive && detailTargets.length > 0) {
+          const detailResponses = await Promise.all(
+            detailTargets.map(async (postId) => {
+              try {
+                const payload = await fetchJson(`${API_BASE}/${service}/user/${creatorId}/post/${postId}`);
+                const detail = payload?.post || payload || null;
+                return { postId, detail };
+              } catch (error) {
+                console.error("Failed to load detailed post content", postId, error);
+                return { postId, detail: null };
+              }
+            }),
+          );
+          if (!alive) return;
+          detailResponses.forEach(({ postId, detail }) => {
+            const target = aggregatedResults.find((entry) => entry.id === postId);
+            if (!target) return;
+            if (detail) {
+              target.postData = detail;
+              if (Array.isArray(detail.tags)) {
+                target.tags = detail.tags.map((tag) => String(tag));
+              }
+            }
+          });
+        }
+      }
+
       if (showTags) {
         setPostTagMap((prev) => {
           let changed = false;
           const next = { ...prev };
-          results.forEach(({ id, tags }) => {
+          aggregatedResults.forEach(({ id, tags }) => {
             const normalized = Array.isArray(tags) ? tags : [];
             const previous = next[id];
             const differs =
@@ -954,7 +1053,7 @@ function CreatorPage({
         setPostDetailMap((prev) => {
           let changed = false;
           const next = { ...prev };
-          results.forEach(({ id, postData }) => {
+          aggregatedResults.forEach(({ id, postData }) => {
             if (postData && next[id] !== postData) {
               next[id] = postData;
               changed = true;
@@ -964,14 +1063,14 @@ function CreatorPage({
         });
       }
       if (useCache) {
-        const detailEntries = results.filter((entry) => entry.postData);
+        const detailEntries = aggregatedResults.filter((entry) => entry.postData);
         if (detailEntries.length > 0) {
           const timestamp = Date.now();
           updateCache(
             (prev) => {
               const nextDetails = { ...(prev.postDetails || {}) };
               detailEntries.forEach(({ id, postData }) => {
-                nextDetails[id] = { data: postData, updatedAt: timestamp };
+                nextDetails[id] = { data: postData, updatedAt: timestamp, hydrated: true };
               });
               return { ...prev, postDetails: nextDetails };
             },
@@ -992,6 +1091,7 @@ function CreatorPage({
     showExcerpts,
     isFilterActive,
     posts,
+    displayedPosts,
     service,
     creatorId,
     postTagMap,

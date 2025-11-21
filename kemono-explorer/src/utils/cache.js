@@ -36,7 +36,9 @@ export function loadCreatorCache(service, creatorId) {
         const entry = parsed.postDetails[postId];
         if (!entry || typeof entry !== "object" || !entry.data) {
           delete parsed.postDetails[postId];
+          return;
         }
+        entry.hydrated = Boolean(entry.hydrated);
       });
     }
     return parsed;
@@ -95,12 +97,13 @@ export function pruneCachePostDetails(details) {
       postId,
       data: value?.data,
       updatedAt: typeof value?.updatedAt === "number" ? value.updatedAt : 0,
+      hydrated: Boolean(value?.hydrated),
     }))
     .filter((entry) => entry.data)
     .sort((a, b) => b.updatedAt - a.updatedAt);
   const pruned = {};
   entries.slice(0, MAX_CACHE_POST_DETAILS).forEach((entry) => {
-    pruned[entry.postId] = { data: entry.data, updatedAt: entry.updatedAt || Date.now() };
+    pruned[entry.postId] = { data: entry.data, updatedAt: entry.updatedAt || Date.now(), hydrated: entry.hydrated };
   });
   return pruned;
 }

@@ -387,7 +387,7 @@ function PostView({
           ...prev,
           postDetails: {
             ...(prev.postDetails || {}),
-            [postId]: { data: nextPost, updatedAt: Date.now() },
+            [postId]: { data: nextPost, updatedAt: Date.now(), hydrated: true },
           },
         }));
       }
