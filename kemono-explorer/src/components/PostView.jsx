@@ -10,6 +10,8 @@ import {
   READER_ALIGNMENT_VALUES,
   READER_ATTACHMENT_LINK_OPTIONS,
   READER_ATTACHMENT_LINK_VALUES,
+  READER_GALLERY_TOGGLE_OPTIONS,
+  READER_GALLERY_TOGGLE_VALUES,
   READER_INDENT_OPTIONS,
   READER_INDENT_VALUES,
   READER_LINE_SPACING_OPTIONS,
@@ -22,8 +24,6 @@ import {
   READER_TYPEFACE_VALUES,
   READER_WIDTH_OPTIONS,
   READER_WIDTH_VALUES,
-  READER_VIEW_MODE_OPTIONS,
-  READER_VIEW_MODE_VALUES,
   ORIGINAL_MEDIA_BASE,
 } from "../constants.js";
 import { fetchJson } from "../utils/api.js";
@@ -283,11 +283,11 @@ function PostView({
 
   const updateReaderSetting = (key, value) => {
     setReaderSettings((prev) => {
-      if (key === "viewMode") {
-        if (!READER_VIEW_MODE_VALUES.includes(value) || prev.viewMode === value) {
+      if (key === "galleryEnabled") {
+        if (!READER_GALLERY_TOGGLE_VALUES.includes(value) || prev.galleryEnabled === value) {
           return prev;
         }
-        return { ...prev, viewMode: value };
+        return { ...prev, galleryEnabled: value };
       }
       if (key === "textScale") {
         if (!READER_TEXT_SCALE_VALUES.includes(value) || prev.textScale === value) {
@@ -1103,7 +1103,7 @@ function PostView({
   const galleryHasPrev = safeGalleryIndex > 0;
   const galleryHasNext = safeGalleryIndex < galleryLength - 1;
   const hasGalleryThumbnails = galleryLength > 1;
-  const isGalleryMode = readerSettings.viewMode === "gallery";
+  const isGalleryMode = readerSettings.galleryEnabled === true;
   const showGalleryView = isGalleryMode && galleryLength > 0;
   const heroViewerEnabled = heroGalleryIndex >= 0;
   const viewerZoomed = viewerZoomMode === "zoom";
@@ -1175,7 +1175,6 @@ function PostView({
 
   const readerCardClassName = [
     "card post-card",
-    readerSettings.viewMode ? `reader-mode-${readerSettings.viewMode}` : "",
     `reader-width-${readerSettings.widthMode}`,
     `reader-scale-${readerSettings.textScale}`,
     `reader-leading-${readerSettings.lineSpacing}`,
@@ -1218,25 +1217,6 @@ function PostView({
                 </button>
               </div>
               <div className="reader-controls" role="region" aria-label="Reader settings options">
-                <div className="reader-control-group">
-                  <span className="reader-control-label">Reading mode</span>
-                  <div className="reader-pill-group" role="group" aria-label="Reading mode">
-                    {READER_VIEW_MODE_OPTIONS.map((option) => {
-                      const isActive = readerSettings.viewMode === option.value;
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          className={`reader-pill${isActive ? " active" : ""}`}
-                          onClick={() => updateReaderSetting("viewMode", option.value)}
-                          aria-pressed={isActive}
-                        >
-                          {option.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
                 <div className="reader-control-group">
                   <span className="reader-control-label">Text size</span>
                   <div className="reader-pill-group" role="group" aria-label="Text size">
@@ -1363,6 +1343,25 @@ function PostView({
                           type="button"
                           className={`reader-pill${isActive ? " active" : ""}`}
                           onClick={() => updateReaderSetting("attachmentsMode", option.value)}
+                          aria-pressed={isActive}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="reader-control-group">
+                  <span className="reader-control-label">Gallery view</span>
+                  <div className="reader-pill-group" role="group" aria-label="Gallery view">
+                    {READER_GALLERY_TOGGLE_OPTIONS.map((option) => {
+                      const isActive = readerSettings.galleryEnabled === option.value;
+                      return (
+                        <button
+                          key={String(option.value)}
+                          type="button"
+                          className={`reader-pill${isActive ? " active" : ""}`}
+                          onClick={() => updateReaderSetting("galleryEnabled", option.value)}
                           aria-pressed={isActive}
                         >
                           {option.label}
