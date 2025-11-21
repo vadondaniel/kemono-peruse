@@ -187,6 +187,7 @@ function CreatorPage({
   const searchTokenRef = useRef(0);
   const pendingTagFetchRef = useRef(new Set());
   const prevFilterStorageKeyRef = useRef(filterStorageKey);
+  const lastSyncedOffsetRef = useRef(null);
   const cacheFresh = useCache && cacheData ? isCacheFresh(cacheData) : false;
   const canUseCacheUi = alreadySaved;
   const resolvedProfileCount = toNumericCount(profile?.post_count);
@@ -221,6 +222,7 @@ function CreatorPage({
     setCacheReloadApplied(0);
     setReverseOrder(readBooleanPreference(reversePrefKey, false));
   }, [cachePrefKey, service, creatorId, reversePrefKey]);
+
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -267,6 +269,21 @@ function CreatorPage({
   }, [service, creatorId]);
 
   const positionContextRef = useRef({ service, creatorId, position: initialPosition });
+  useEffect(() => {
+    lastSyncedOffsetRef.current = null;
+  }, [service, creatorId]);
+  const rememberPosition = useCallback(
+    (rawPosition, meta = {}) => {
+      if (typeof onRememberPosition !== "function") return;
+      const resolvedPageSize = Number.isFinite(meta.pageSize) && meta.pageSize > 0 ? Math.floor(meta.pageSize) : limit || API_PAGE_SIZE;
+      const normalizedIndex = Number.isFinite(rawPosition) && rawPosition >= 0 ? Math.floor(rawPosition) : 0;
+      const normalizedOffset =
+        normalizedIndex > 0 ? Math.floor(normalizedIndex / resolvedPageSize) * resolvedPageSize : 0;
+      lastSyncedOffsetRef.current = normalizedOffset;
+      onRememberPosition(normalizedIndex, { ...meta, pageSize: resolvedPageSize });
+    },
+    [limit, onRememberPosition],
+  );
 
   useEffect(() => {
     const savedName = getSavedCreatorName(service, creatorId);
@@ -882,6 +899,14 @@ function CreatorPage({
     : null;
 
   useEffect(() => {
+    if (isFilterActive) return;
+    if (typeof onRememberPosition !== "function") return;
+    const normalizedOffset = offset > 0 ? Math.floor(offset) : 0;
+    if (lastSyncedOffsetRef.current === normalizedOffset) return;
+    rememberPosition(normalizedOffset, { pageSize: limit, persist: false });
+  }, [offset, limit, isFilterActive, onRememberPosition, rememberPosition]);
+
+  useEffect(() => {
     if (!isFilterActive) return;
     if (!searchResults.length) return;
     if (searchPage === clampedSearchPage) return;
@@ -1224,8 +1249,8 @@ function CreatorPage({
     if (!limit) return;
     const nextOffset = Math.max(0, (page - 1) * limit);
     setOffset(nextOffset);
-    if (typeof onRememberPosition === "function" && !isFilterActive) {
-      onRememberPosition(nextOffset);
+    if (!isFilterActive) {
+      rememberPosition(nextOffset, { pageSize: limit });
     }
   }
 
@@ -1265,6 +1290,7 @@ function CreatorPage({
       setSearchPage(1);
     } else {
       setOffset(0);
+      rememberPosition(0, { pageSize: limit });
     }
     setReverseOrder((prev) => !prev);
   };
@@ -1624,6 +1650,9 @@ function CreatorPage({
                     const parsed = parseInt(event.target.value, 10);
                     const nextLimit = PAGE_SIZE_OPTIONS.includes(parsed) ? parsed : API_PAGE_SIZE;
                     setOffset(0);
+                    if (!isFilterActive) {
+                      rememberPosition(0, { pageSize: nextLimit });
+                    }
                     setLimit(nextLimit);
                     setSearchPage(1);
                   }}
@@ -1646,11 +1675,16 @@ function CreatorPage({
             const postTags = Array.isArray(post.tags) ? post.tags : postTagMap[post.id];
             const normalizedTags = Array.isArray(postTags) ? postTags : [];
             const hasTags = normalizedTags.length > 0;
+            const pageSizeForPosition = limit || initialPageSizeRef.current || API_PAGE_SIZE;
+            const resolvedOffset =
+              Number.isFinite(post?.__position) && !isFilterActive
+                ? Math.max(0, Math.floor(post.__position / pageSizeForPosition) * pageSizeForPosition)
+                : undefined;
             const handleOpenPost = () => {
-              if (!isFilterActive && typeof onRememberPosition === "function" && Number.isFinite(post?.__position)) {
-                onRememberPosition(post.__position);
+              if (!isFilterActive && Number.isFinite(post?.__position)) {
+                rememberPosition(post.__position, { pageSize: pageSizeForPosition });
               }
-              onOpenPost(post.id, post.title || "", Number.isFinite(post?.__position) ? post.__position : undefined);
+              onOpenPost(post.id, post.title || "", resolvedOffset);
             };
             const postHref = getUrlForView({
               name: "post",
@@ -1658,10 +1692,7 @@ function CreatorPage({
               creatorId,
               creatorName: resolvedCreatorName || creatorId,
               postId: post.id,
-              position:
-                Number.isFinite(post?.__position) && !isFilterActive
-                  ? Math.max(0, Math.floor(post.__position))
-                  : undefined,
+              position: !isFilterActive ? resolvedOffset : undefined,
             });
             const featureFile =
               post?.file && (post.file.path || post.file.url || post.file.name) ? post.file : null;

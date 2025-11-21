@@ -27,7 +27,7 @@ import { fetchJson } from "../utils/api.js";
 import { getCachePreferenceKey, loadCreatorCache, writeCreatorCache, isCacheFresh, pruneCacheChunks, pruneCachePostDetails } from "../utils/cache.js";
 import { cacheCreatorName, getCachedCreatorName, getSavedCreatorName, resolveProfileDisplayName } from "../utils/creators.js";
 import { extractTagTokens, getServiceLabel, normalizePostHtml } from "../utils/posts.js";
-import { getInitialReaderSettings, getTypefacePreviewStyle, readBooleanPreference } from "../utils/preferences.js";
+import { getInitialPageSize, getInitialReaderSettings, getTypefacePreviewStyle, readBooleanPreference } from "../utils/preferences.js";
 import { getUrlForView } from "../utils/navigation.js";
 
 const sanitizeAttachmentPath = (value) => {
@@ -253,6 +253,7 @@ function PostView({
   const [heroLoaded, setHeroLoaded] = useState(false);
   const [attachmentsExpanded, setAttachmentsExpanded] = useState(false);
   const [resolvedCreatorName, setResolvedCreatorName] = useState(() => getInitialCreatorName());
+  const pageSizeRef = useRef(getInitialPageSize());
   const serviceLabel = getServiceLabel(service);
   const creatorLabel = resolvedCreatorName || creatorId || "";
   const creatorDisplay = creatorLabel
@@ -456,7 +457,7 @@ function PostView({
             if (!hasActiveFilter && typeof onResolveCreatorPosition === "function") {
               const globalIndex = offset + idx;
               if (Number.isFinite(globalIndex) && globalIndex >= 0) {
-                onResolveCreatorPosition(globalIndex);
+                onResolveCreatorPosition(globalIndex, { pageSize: pageSizeRef.current });
               }
             }
             return;

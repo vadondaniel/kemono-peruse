@@ -9,11 +9,29 @@ import { API_BASE } from "./constants.js";
 import { buildHistoryState, ensureView, getInitialView, getTitleForView, getUrlForView, getViewFromHistoryState, viewsEqual } from "./utils/navigation.js";
 import { fetchJson } from "./utils/api.js";
 import { resolveProfileDisplayName } from "./utils/creators.js";
+import { getInitialPageSize } from "./utils/preferences.js";
 
 function App() {
   const [view, setViewState] = useState(getInitialView);
   const viewRef = useRef(view);
   const initialViewRef = useRef(view);
+  const resolvePageSize = useCallback((value) => {
+    if (Number.isFinite(value) && value > 0) {
+      return Math.max(1, Math.floor(value));
+    }
+    return getInitialPageSize();
+  }, []);
+  const computePageOffset = useCallback(
+    (position, pageSizeOverride) => {
+      const normalizedPosition = Number.isFinite(position) && position >= 0 ? Math.floor(position) : 0;
+      if (normalizedPosition <= 0) {
+        return 0;
+      }
+      const pageSize = resolvePageSize(pageSizeOverride);
+      return Math.floor(normalizedPosition / pageSize) * pageSize;
+    },
+    [resolvePageSize],
+  );
 
   useEffect(() => {
     viewRef.current = view;
@@ -200,24 +218,24 @@ function App() {
   );
 
   const openCreator = (service, creatorId, creatorName, positionOverride) => {
-    const effectivePosition =
-      typeof positionOverride === "number"
-        ? positionOverride
-        : getCreatorPosition(service, creatorId);
+    const overrideOffset =
+      typeof positionOverride === "number" ? computePageOffset(positionOverride) : null;
+    const storedOffset = getCreatorOffset(service, creatorId);
+    const effectiveOffset = Number.isFinite(overrideOffset) ? overrideOffset : storedOffset;
     navigate({
       name: "creator",
       service,
       creatorId,
       creatorName,
-      position: effectivePosition > 0 ? effectivePosition : undefined,
+      position: effectiveOffset > 0 ? effectiveOffset : undefined,
     });
   };
 
   const openPost = (service, creatorId, creatorName, postId, postTitle, positionOverride) => {
-    const effectivePosition =
-      typeof positionOverride === "number"
-        ? positionOverride
-        : getCreatorPosition(service, creatorId);
+    const overrideOffset =
+      typeof positionOverride === "number" ? computePageOffset(positionOverride) : null;
+    const storedOffset = getCreatorOffset(service, creatorId);
+    const effectiveOffset = Number.isFinite(overrideOffset) ? overrideOffset : storedOffset;
     navigate({
       name: "post",
       service,
@@ -225,7 +243,7 @@ function App() {
       creatorName,
       postId,
       postTitle,
-      position: effectivePosition > 0 ? effectivePosition : undefined,
+      position: effectiveOffset > 0 ? effectiveOffset : undefined,
     });
   };
 
@@ -297,15 +315,62 @@ function App() {
     const value = creatorPositions[key];
     return Number.isFinite(value) && value >= 0 ? value : 0;
   };
+  const getCreatorOffset = (service, creatorId, pageSizeOverride) =>
+    computePageOffset(getCreatorPosition(service, creatorId), pageSizeOverride);
 
-  const updateCreatorPosition = (service, creatorId, position) => {
+  const updateCreatorPosition = (service, creatorId, position, options = {}) => {
     if (!service || !creatorId) return;
     const key = `${service}:${creatorId}`;
-    setCreatorPositions((prev) => {
-      const nextValue = Number.isFinite(position) && position >= 0 ? Math.floor(position) : 0;
-      if (prev[key] === nextValue) return prev;
-      return { ...prev, [key]: nextValue };
-    });
+    const normalizedIndex = Number.isFinite(position) && position >= 0 ? Math.floor(position) : 0;
+    const normalizedOffset = computePageOffset(normalizedIndex, options.pageSize);
+    const persist = options.persist !== false;
+    const currentView = viewRef.current;
+    const currentViewPosition =
+      typeof currentView?.position === "number" && currentView.position > 0 ? currentView.position : 0;
+    const shouldSyncView =
+      currentView &&
+      (currentView.name === "creator" || currentView.name === "post") &&
+      currentView.service === service &&
+      currentView.creatorId === creatorId &&
+      currentViewPosition !== normalizedOffset;
+
+    if (persist) {
+      setCreatorPositions((prev) => {
+        if (prev[key] === normalizedIndex) return prev;
+        return { ...prev, [key]: normalizedIndex };
+      });
+    }
+
+    if (!shouldSyncView) {
+      return;
+    }
+
+    if (currentView.name === "creator") {
+      navigate(
+        {
+          name: "creator",
+          service,
+          creatorId,
+          creatorName: currentView.creatorName,
+          position: normalizedOffset > 0 ? normalizedOffset : undefined,
+        },
+        { replace: true },
+      );
+      return;
+    }
+
+    navigate(
+      {
+        name: "post",
+        service,
+        creatorId,
+        creatorName: currentView.creatorName,
+        postId: currentView.postId,
+        postTitle: currentView.postTitle,
+        position: normalizedOffset > 0 ? normalizedOffset : undefined,
+      },
+      { replace: true },
+    );
   };
 
   return (
@@ -393,9 +458,11 @@ function App() {
               initialPosition={
                 typeof view.position === "number"
                   ? view.position
-                  : getCreatorPosition(view.service, view.creatorId)
+                  : getCreatorOffset(view.service, view.creatorId)
               }
-              onRememberPosition={(position) => updateCreatorPosition(view.service, view.creatorId, position)}
+              onRememberPosition={(position, options) =>
+                updateCreatorPosition(view.service, view.creatorId, position, options)
+              }
             />
           )}
 
@@ -407,7 +474,7 @@ function App() {
               ? undefined
               : typeof view.position === "number"
                 ? view.position
-                : getCreatorPosition(view.service, view.creatorId);
+                : getCreatorOffset(view.service, view.creatorId);
             return (
               <PostView
                 service={view.service}
@@ -438,8 +505,8 @@ function App() {
                   });
                 }}
                 onResolvePostTitle={handleResolvePostTitle}
-                onResolveCreatorPosition={(position) =>
-                  updateCreatorPosition(view.service, view.creatorId, position)
+                onResolveCreatorPosition={(position, options) =>
+                  updateCreatorPosition(view.service, view.creatorId, position, options)
                 }
               />
             );
