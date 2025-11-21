@@ -6,6 +6,7 @@ const rawOriginalMediaBase = import.meta.env.VITE_ORIGINAL_MEDIA_BASE || "https:
 export const ORIGINAL_MEDIA_BASE = rawOriginalMediaBase.endsWith("/")
   ? rawOriginalMediaBase.slice(0, -1)
   : rawOriginalMediaBase;
+export const ICON_BASE = "https://img.kemono.cr/icons";
 export const API_PAGE_SIZE = 50;
 export const MAX_SEARCH_RESULTS = 1000;
 export const MAX_CACHE_POSTS = 1000;

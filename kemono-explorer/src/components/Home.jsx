@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
-import { API_BASE, SERVICE_LABELS } from "../constants.js";
+import { API_BASE, ICON_BASE, SERVICE_LABELS } from "../constants.js";
 import { getUrlForView } from "../utils/navigation.js";
 import { fetchJson } from "../utils/api.js";
 
@@ -432,8 +432,12 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
                     const key = `${entry.service}:${entry.id}`;
                     const serviceLabel = formatServiceLabel(entry.service);
                     const alreadySaved = savedCreatorKeys.has(key);
+                    const iconUrl = `${ICON_BASE}/${entry.service}/${entry.id}`;
                     return (
                       <div className="creator-search-item" key={key} role="listitem">
+                        <div className="creator-search-avatar">
+                          <img src={iconUrl} alt={`${serviceLabel} avatar`} loading="lazy" />
+                        </div>
                         <div className="creator-search-meta">
                           <a
                             className="creator-search-name"
