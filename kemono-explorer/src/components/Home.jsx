@@ -1,7 +1,8 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
-import { SERVICE_LABELS } from "../constants.js";
+import { API_BASE, SERVICE_LABELS } from "../constants.js";
 import { getUrlForView } from "../utils/navigation.js";
+import { fetchJson } from "../utils/api.js";
 
 const isModifiedClick = (event) =>
   event.button !== 0 || event.metaKey || event.altKey || event.ctrlKey || event.shiftKey;
@@ -19,6 +20,16 @@ const SERVICE_OPTIONS = SERVICE_ORDER.map((value) => ({
   label: formatServiceLabel(value),
 }));
 
+const SERVICE_FILTER_OPTIONS = [{ value: "all", label: "All services" }, ...SERVICE_OPTIONS];
+
+const normalizeTimestamp = (value) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return 0;
+  return numeric > 1_000_000_000_000 ? Math.floor(numeric) : Math.floor(numeric * 1000);
+};
+
+const CREATOR_SEARCH_LIMIT = 30;
+
 function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, onOpenCreator }) {
   const [service, setService] = useState("patreon");
   const [creatorId, setCreatorId] = useState("");
@@ -26,9 +37,78 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
   const [savedFilter, setSavedFilter] = useState("");
   const [editingCreator, setEditingCreator] = useState(null);
   const [editingName, setEditingName] = useState("");
+  const [creatorSearchQuery, setCreatorSearchQuery] = useState("");
+  const [creatorSearchService, setCreatorSearchService] = useState("all");
+  const [creatorDirectory, setCreatorDirectory] = useState(null);
+  const [creatorDirectoryStatus, setCreatorDirectoryStatus] = useState("idle");
+  const [creatorDirectoryError, setCreatorDirectoryError] = useState("");
   const formRef = useRef(null);
   const savedListRef = useRef(null);
   const creatorIdRef = useRef(null);
+  const creatorDirectoryTokenRef = useRef(0);
+  const normalizedSearchQuery = creatorSearchQuery.trim().toLowerCase();
+  const searchTokens = useMemo(
+    () => normalizedSearchQuery.split(/\s+/).filter(Boolean),
+    [normalizedSearchQuery],
+  );
+  const searchReady = normalizedSearchQuery.length >= 2;
+
+  useEffect(() => {
+    if (!searchReady) return;
+    if (creatorDirectory || creatorDirectoryStatus === "loading" || creatorDirectoryStatus === "ready") {
+      return;
+    }
+    const token = creatorDirectoryTokenRef.current + 1;
+    creatorDirectoryTokenRef.current = token;
+    setCreatorDirectoryStatus("loading");
+    setCreatorDirectoryError("");
+    fetchJson(`${API_BASE}/creators`)
+      .then((data) => {
+        if (token !== creatorDirectoryTokenRef.current) return;
+        if (!Array.isArray(data)) {
+          throw new Error("Creator directory not available");
+        }
+        const normalized = data
+          .map((entry) => {
+            if (!entry) return null;
+            const rawId =
+              typeof entry.id === "string" ? entry.id.trim() : String(entry.id ?? "").trim();
+            const service =
+              typeof entry.service === "string" ? entry.service.trim().toLowerCase() : "";
+            if (!rawId || !service) return null;
+            const name = typeof entry.name === "string" ? entry.name.trim() : "";
+            const favoritedNumber = Number(entry.favorited);
+            return {
+              id: rawId,
+              idLower: rawId.toLowerCase(),
+              service,
+              name,
+              nameLower: name.toLowerCase(),
+              favorited: Number.isFinite(favoritedNumber) ? favoritedNumber : 0,
+              indexed: normalizeTimestamp(entry.indexed),
+              updated: normalizeTimestamp(entry.updated),
+            };
+          })
+          .filter(Boolean);
+        setCreatorDirectory(normalized);
+        setCreatorDirectoryStatus("ready");
+      })
+      .catch((error) => {
+        console.error("Failed to load creator directory", error);
+        if (token !== creatorDirectoryTokenRef.current) return;
+        setCreatorDirectoryStatus("error");
+        setCreatorDirectoryError(
+          error?.message || "Unable to load creator directory. Please try again.",
+        );
+      });
+  }, [searchReady, creatorDirectory, creatorDirectoryStatus]);
+
+  useEffect(
+    () => () => {
+      creatorDirectoryTokenRef.current += 1;
+    },
+    [],
+  );
 
   const handleSave = (event) => {
     event.preventDefault();
@@ -88,6 +168,12 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
     }
   };
 
+  const handleSearchClear = () => setCreatorSearchQuery("");
+  const handleSearchSave = (entry) => {
+    if (!entry) return;
+    onSaveCreator({ service: entry.service, id: entry.id, name: entry.name });
+  };
+
   const handleCreatorLink = (event, targetService, targetId, targetName, fallbackFocus = null) => {
     const trimmedId = (targetId || "").trim();
     if (!trimmedId) {
@@ -105,6 +191,12 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
   const focusCreatorInput = () => creatorIdRef.current?.focus();
   const scrollToForm = () => formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   const scrollToSaved = () => savedListRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const resetCreatorDirectory = () => {
+    creatorDirectoryTokenRef.current += 1;
+    setCreatorDirectory(null);
+    setCreatorDirectoryStatus("idle");
+    setCreatorDirectoryError("");
+  };
 
   const filteredCreators = useMemo(() => {
     const trimmed = savedFilter.trim().toLowerCase();
@@ -117,6 +209,46 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
     });
   }, [savedCreators, savedFilter]);
 
+  const savedCreatorKeys = useMemo(() => {
+    const next = new Set();
+    savedCreators.forEach((entry) => {
+      if (entry?.service && entry?.id) {
+        next.add(`${entry.service}:${entry.id}`);
+      }
+    });
+    return next;
+  }, [savedCreators]);
+
+  const { creatorSearchResults, totalCreatorMatches } = useMemo(() => {
+    if (!creatorDirectory || !searchReady || searchTokens.length === 0) {
+      return { creatorSearchResults: [], totalCreatorMatches: 0 };
+    }
+    const matches = [];
+    for (const entry of creatorDirectory) {
+      if (!entry) continue;
+      if (creatorSearchService !== "all" && entry.service !== creatorSearchService) {
+        continue;
+      }
+      const match = searchTokens.every((token) => {
+        if (!token) return true;
+        return entry.nameLower.includes(token) || entry.idLower.includes(token);
+      });
+      if (match) {
+        matches.push(entry);
+      }
+    }
+    matches.sort((a, b) => {
+      if (b.favorited !== a.favorited) return b.favorited - a.favorited;
+      if (b.updated !== a.updated) return b.updated - a.updated;
+      if (b.indexed !== a.indexed) return b.indexed - a.indexed;
+      return (a.name || a.id).localeCompare(b.name || b.id);
+    });
+    return {
+      creatorSearchResults: matches.slice(0, CREATOR_SEARCH_LIMIT),
+      totalCreatorMatches: matches.length,
+    };
+  }, [creatorDirectory, creatorSearchService, searchReady, searchTokens]);
+
   const uniqueServiceCount = useMemo(() => {
     const services = new Set(savedCreators.map((entry) => entry.service));
     return services.size;
@@ -127,6 +259,53 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
   const hasFilter = savedFilter.trim().length > 0;
   const emptySearch = hasFilter && filteredCreators.length === 0;
   const activeServiceLabel = formatServiceLabel(service);
+  const searchLoading = creatorDirectoryStatus === "loading";
+  const searchErrored = creatorDirectoryStatus === "error";
+  const searchHasQuery = creatorSearchQuery.trim().length > 0;
+  const searchNeedsMoreInput = searchHasQuery && !searchReady;
+  const searchEmpty =
+    searchReady && !searchLoading && !searchErrored && creatorSearchResults.length === 0;
+  const showSearchLimitNotice = totalCreatorMatches > CREATOR_SEARCH_LIMIT;
+  const trimmedSearchQuery = creatorSearchQuery.trim();
+  const searchSummaryLabelService =
+    creatorSearchService !== "all" ? formatServiceLabel(creatorSearchService) : null;
+  const showSearchSummary =
+    searchReady &&
+    !searchLoading &&
+    !searchErrored &&
+    creatorSearchResults.length > 0 &&
+    trimmedSearchQuery.length > 0;
+  const searchSummaryContent = showSearchSummary ? (
+    <p className="muted">
+      Showing {creatorSearchResults.length}
+      {showSearchLimitNotice ? ` of ${totalCreatorMatches}` : ""} matches for{" "}
+      <strong>{trimmedSearchQuery}</strong>
+      {searchSummaryLabelService ? ` · ${searchSummaryLabelService}` : ""}
+    </p>
+  ) : null;
+  let searchStatusContent = null;
+  if (!searchHasQuery) {
+    searchStatusContent = <p className="muted">Start typing to search the full Kemono directory.</p>;
+  } else if (searchNeedsMoreInput) {
+    searchStatusContent = <p className="muted">Enter at least 2 characters to search.</p>;
+  } else if (searchLoading) {
+    searchStatusContent = <p className="muted">Loading creator directory…</p>;
+  } else if (searchErrored) {
+    searchStatusContent = (
+      <div className="creator-search-error">
+        <p className="muted">{creatorDirectoryError || "Unable to load creators. Please try again."}</p>
+        <button className="btn subtle" type="button" onClick={resetCreatorDirectory}>
+          Retry
+        </button>
+      </div>
+    );
+  } else if (searchEmpty) {
+    searchStatusContent = (
+      <p className="muted">
+        No creators found for <strong>{trimmedSearchQuery}</strong>.
+      </p>
+    );
+  }
 
   return (
     <div className="home-layout">
@@ -238,6 +417,112 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
               Save to list
             </button>
           </div>
+        </section>
+
+        <section className="card home-search-card">
+          <div className="card-row header-row">
+            <div className="card-col">
+              <h2 className="title">Creator search</h2>
+              <span className="label">Look up creators directly from kemono.cr</span>
+            </div>
+            <label className="field creator-search-filter" htmlFor="creator-search-service">
+              <span className="label">Service</span>
+              <select
+                id="creator-search-service"
+                className="input"
+                value={creatorSearchService}
+                onChange={(event) => setCreatorSearchService(event.target.value)}
+              >
+                {SERVICE_FILTER_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <form className="search-form" onSubmit={(event) => event.preventDefault()}>
+            <label className="label" htmlFor="creator-search-input">
+              Search creators
+            </label>
+            <div className="search-field">
+              <input
+                id="creator-search-input"
+                className="search-input"
+                value={creatorSearchQuery}
+                onChange={(event) => setCreatorSearchQuery(event.target.value)}
+                placeholder="Type a name or ID (min 2 characters)"
+              />
+              {creatorSearchQuery && (
+                <button className="search-clear" type="button" onClick={handleSearchClear}>
+                  Clear
+                </button>
+              )}
+            </div>
+          </form>
+
+          {(searchSummaryContent || searchStatusContent) && (
+            <div className="creator-search-status">{searchSummaryContent || searchStatusContent}</div>
+          )}
+
+          {creatorSearchResults.length > 0 && (
+            <div className="creator-search-results" role="list">
+              {creatorSearchResults.map((entry) => {
+                const key = `${entry.service}:${entry.id}`;
+                const serviceLabel = formatServiceLabel(entry.service);
+                const alreadySaved = savedCreatorKeys.has(key);
+                return (
+                  <div className="creator-search-item" key={key} role="listitem">
+                    <div className="creator-search-meta">
+                      <a
+                        className="creator-search-name"
+                        href={buildCreatorHref(entry.service, entry.id, entry.name)}
+                        onClick={(event) =>
+                          handleCreatorLink(event, entry.service, entry.id, entry.name)
+                        }
+                      >
+                        {entry.name || entry.id}
+                      </a>
+                      <span className="muted small">
+                        {serviceLabel} · {entry.id}
+                      </span>
+                      {entry.favorited > 0 && (
+                        <span className="creator-search-favorites">
+                          {entry.favorited.toLocaleString()} favorites
+                        </span>
+                      )}
+                    </div>
+                    <div className="creator-search-actions">
+                      <button
+                        className="btn subtle"
+                        type="button"
+                        onClick={() => handleSearchSave(entry)}
+                        disabled={alreadySaved}
+                      >
+                        {alreadySaved ? "Saved" : "Save"}
+                      </button>
+                      <a
+                        className="btn outline btn-compact"
+                        href={buildCreatorHref(entry.service, entry.id, entry.name)}
+                        onClick={(event) =>
+                          handleCreatorLink(event, entry.service, entry.id, entry.name)
+                        }
+                      >
+                        Open
+                      </a>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {showSearchLimitNotice && creatorSearchResults.length > 0 && (
+            <p className="creator-search-note muted">
+              Showing top {CREATOR_SEARCH_LIMIT} results. Refine your search to narrow it down.
+            </p>
+          )}
         </section>
 
         <section className="card home-saved-card" ref={savedListRef}>

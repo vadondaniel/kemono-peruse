@@ -370,51 +370,51 @@ function App() {
             />
           )}
 
-          {view.name === "post" && (
-            <PostView
-              service={view.service}
-              creatorId={view.creatorId}
-              creatorName={view.creatorName}
-              postId={view.postId}
-              creatorPosition={
-                typeof view.position === "number"
-                  ? view.position
-                  : getCreatorPosition(view.service, view.creatorId)
-              }
-              activeFilter={getCreatorFilter(view.service, view.creatorId)}
-              readerSettingsOpen={readerSettingsOpen}
-              onCloseReaderSettings={() => setReaderSettingsOpen(false)}
-              onBack={() => {
-                const currentPosition =
-                  typeof view.position === "number"
-                    ? view.position
-                    : getCreatorPosition(view.service, view.creatorId);
-                navigate({
-                  name: "creator",
-                  service: view.service,
-                  creatorId: view.creatorId,
-                  creatorName: view.creatorName,
-                  position: currentPosition,
-                });
-              }}
-              onNavigate={(nextPostId) => {
-                const currentPosition =
-                  typeof view.position === "number"
-                    ? view.position
-                    : getCreatorPosition(view.service, view.creatorId);
-                navigate({
-                  name: "post",
-                  service: view.service,
-                  creatorId: view.creatorId,
-                  creatorName: view.creatorName,
-                  postId: nextPostId,
-                  position: currentPosition,
-                });
-              }}
-              onResolvePostTitle={handleResolvePostTitle}
-              onResolveCreatorPosition={(position) => updateCreatorPosition(view.service, view.creatorId, position)}
-            />
-          )}
+          {view.name === "post" && (() => {
+            const rawFilter = getCreatorFilter(view.service, view.creatorId);
+            const trimmedFilter = rawFilter.trim();
+            const hasFilter = trimmedFilter.length > 0;
+            const currentPosition = hasFilter
+              ? undefined
+              : typeof view.position === "number"
+                ? view.position
+                : getCreatorPosition(view.service, view.creatorId);
+            return (
+              <PostView
+                service={view.service}
+                creatorId={view.creatorId}
+                creatorName={view.creatorName}
+                postId={view.postId}
+                creatorPosition={currentPosition}
+                activeFilter={rawFilter}
+                readerSettingsOpen={readerSettingsOpen}
+                onCloseReaderSettings={() => setReaderSettingsOpen(false)}
+                onBack={() => {
+                  navigate({
+                    name: "creator",
+                    service: view.service,
+                    creatorId: view.creatorId,
+                    creatorName: view.creatorName,
+                    position: currentPosition > 0 ? currentPosition : undefined,
+                  });
+                }}
+                onNavigate={(nextPostId) => {
+                  navigate({
+                    name: "post",
+                    service: view.service,
+                    creatorId: view.creatorId,
+                    creatorName: view.creatorName,
+                    postId: nextPostId,
+                    position: currentPosition > 0 ? currentPosition : undefined,
+                  });
+                }}
+                onResolvePostTitle={handleResolvePostTitle}
+                onResolveCreatorPosition={(position) =>
+                  updateCreatorPosition(view.service, view.creatorId, position)
+                }
+              />
+            );
+          })()}
         </main>
       </div>
     </div>
