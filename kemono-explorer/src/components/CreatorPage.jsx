@@ -1,7 +1,17 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import Timestamp from "./Timestamp.jsx";
-import { API_BASE, API_PAGE_SIZE, CACHE_VERSION, MAX_CACHE_POSTS, MAX_SEARCH_RESULTS, PAGE_SIZE_KEY, PAGE_SIZE_OPTIONS } from "../constants.js";
+import {
+  API_BASE,
+  API_PAGE_SIZE,
+  CACHE_VERSION,
+  MAX_CACHE_POSTS,
+  MAX_SEARCH_RESULTS,
+  MEDIA_BASE,
+  ORIGINAL_MEDIA_BASE,
+  PAGE_SIZE_KEY,
+  PAGE_SIZE_OPTIONS,
+} from "../constants.js";
 import { fetchJson } from "../utils/api.js";
 import { getCachePreferenceKey, loadCreatorCache, writeCreatorCache, isCacheFresh, pruneCacheChunks, pruneCachePostDetails, collectCachedPosts } from "../utils/cache.js";
 import { formatDate } from "../utils/date.js";
@@ -65,6 +75,15 @@ function CreatorPage({
       // ignore
     }
     return true;
+  });
+  const [showFeatureBackgrounds, setShowFeatureBackgrounds] = useState(() => {
+    try {
+      const stored = localStorage.getItem("kemono.showFeatureBackgrounds");
+      if (stored === "true" || stored === "false") return stored === "true";
+    } catch {
+      // ignore
+    }
+    return false;
   });
   const [postTagMap, setPostTagMap] = useState({});
   const [searchInput, setSearchInput] = useState("");
@@ -309,6 +328,13 @@ function CreatorPage({
       // ignore
     }
   }, [showTags]);
+  useEffect(() => {
+    try {
+      localStorage.setItem("kemono.showFeatureBackgrounds", showFeatureBackgrounds ? "true" : "false");
+    } catch {
+      // ignore
+    }
+  }, [showFeatureBackgrounds]);
   useEffect(() => {
     setPostTagMap({});
   }, [service, creatorId]);
@@ -1296,11 +1322,26 @@ function CreatorPage({
                   />
                   <span className="filter-toggle-track">
                     <span className="filter-toggle-thumb" />
-                  </span>
-                  Tags
-                </label>
-              </div>
+                </span>
+                Tags
+              </label>
+              <label
+                className={`filter-toggle${showFeatureBackgrounds ? " filter-toggle-active" : ""}`}
+                htmlFor="show-feature-bg"
+              >
+                <input
+                  id="show-feature-bg"
+                  type="checkbox"
+                  checked={showFeatureBackgrounds}
+                  onChange={(event) => setShowFeatureBackgrounds(event.target.checked)}
+                />
+                <span className="filter-toggle-track">
+                  <span className="filter-toggle-thumb" />
+                </span>
+                Feature image
+              </label>
             </div>
+          </div>
             <div className="order-size-group">
               <div className="page-size-control">
                 <label className="label" htmlFor="page-size">
@@ -1352,9 +1393,19 @@ function CreatorPage({
                   ? Math.max(0, Math.floor(post.__position))
                   : undefined,
             });
+            const featureFile =
+              post?.file && (post.file.path || post.file.url || post.file.name) ? post.file : null;
+            const featureProxySrc = featureFile?.path ? `${MEDIA_BASE}${featureFile.path}` : null;
+            const featureOriginalSrc =
+              featureFile?.url || (featureFile?.path ? `${ORIGINAL_MEDIA_BASE}${featureFile.path}` : null);
+            const featureImage =
+              showFeatureBackgrounds && featureFile ? featureProxySrc || featureOriginalSrc : null;
+            const postItemClass = `post-item${featureImage ? " feature-background" : ""}`;
+            const postItemStyle = featureImage ? { "--post-feature-image": `url("${featureImage}")` } : undefined;
             return (
               <a
-                className="post-item"
+                className={postItemClass}
+                style={postItemStyle}
                 key={post.id}
                 href={postHref}
                 onClick={(event) => {
