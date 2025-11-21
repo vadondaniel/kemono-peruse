@@ -611,6 +611,12 @@ html[data-theme="dark"] .hero-stat {
   display: block;
 }
 
+.saved-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .saved-meta {
   flex: 1;
   min-width: 200px;
@@ -627,9 +633,20 @@ html[data-theme="dark"] .hero-stat {
   font-weight: 600;
   text-align: left;
   padding: 0;
-  cursor: pointer;
 }
 
+.rename-inline {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.rename-inline:hover {
+  color: var(--accent);
+}
 .saved-actions {
   display: flex;
   gap: 8px;
@@ -2226,6 +2243,9 @@ html[data-theme="dark"] .hero-stat {
     align-items: flex-start;
   }
 
+  .saved-meta-row {
+    width: 100%;
+  }
   .saved-avatar {
     width: 40px;
     height: 40px;

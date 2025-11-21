@@ -616,23 +616,30 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
                         <img src={iconUrl} alt={`${label} avatar`} loading="lazy" />
                       </div>
                       <div className="saved-meta">
-                        <a
-                          className="saved-name"
-                          href={buildCreatorHref(creator.service, creator.id, creator.name)}
-                          onClick={(event) =>
-                            handleCreatorLink(event, creator.service, creator.id, creator.name)
-                          }
-                        >
-                          {creator.name || creator.id}
-                        </a>
+                        <div className="saved-meta-row">
+                          <a
+                            className="saved-name"
+                            href={buildCreatorHref(creator.service, creator.id, creator.name)}
+                            onClick={(event) =>
+                              handleCreatorLink(event, creator.service, creator.id, creator.name)
+                            }
+                          >
+                            {creator.name || creator.id}
+                          </a>
+                          <button
+                            className="rename-inline"
+                            type="button"
+                            aria-label="Rename creator"
+                            onClick={() => beginRename(creator)}
+                          >
+                            ✎
+                          </button>
+                        </div>
                         <span className="muted small">
                           {label} · {creator.id}
                         </span>
                       </div>
                       <div className="saved-actions">
-                        <button className="btn subtle" type="button" onClick={() => beginRename(creator)}>
-                          Rename
-                        </button>
                         <a
                           className="btn outline btn-compact"
                           href={buildCreatorHref(creator.service, creator.id, creator.name)}
