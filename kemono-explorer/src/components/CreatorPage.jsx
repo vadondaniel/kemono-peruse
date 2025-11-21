@@ -1262,14 +1262,13 @@ function CreatorPage({
   }
 
   const goToSearchPage = (page) => {
-    setSearchPage((prev) => {
-      const nextNumeric = Number.isFinite(page) ? Math.trunc(page) : prev;
-      const next = Math.min(Math.max(nextNumeric || 1, 1), filteredTotalPages || 1);
-      if (next !== prev && isFilterActive) {
-        rememberPosition(Math.max(0, (next - 1) * effectiveLimit), { pageSize: effectiveLimit });
-      }
-      return next === prev ? prev : next;
-    });
+    const nextNumeric = Number.isFinite(page) ? Math.trunc(page) : searchPage;
+    const next = Math.min(Math.max(nextNumeric || 1, 1), filteredTotalPages || 1);
+    if (next === searchPage) return;
+    setSearchPage(next);
+    if (isFilterActive) {
+      rememberPosition(Math.max(0, (next - 1) * effectiveLimit), { pageSize: effectiveLimit });
+    }
   };
 
   const filterHasPrev = isFilterActive ? clampedSearchPage > 1 : false;
@@ -1297,12 +1296,7 @@ function CreatorPage({
 
   const handleOrderToggle = () => {
     if (isFilterActive) {
-      setSearchPage((prev) => {
-        if (prev !== 1) {
-          rememberPosition(0, { pageSize: effectiveLimit });
-        }
-        return 1;
-      });
+      setSearchPage(1);
     } else {
       setOffset(0);
       rememberPosition(0, { pageSize: limit });
@@ -1667,7 +1661,9 @@ function CreatorPage({
                     setOffset(0);
                     setLimit(nextLimit);
                     setSearchPage(1);
-                    rememberPosition(0, { pageSize: nextLimit });
+                    if (!isFilterActive) {
+                      rememberPosition(0, { pageSize: nextLimit });
+                    }
                   }}
                 >
                   {PAGE_SIZE_OPTIONS.map((count) => (
