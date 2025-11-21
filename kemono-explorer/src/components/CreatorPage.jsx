@@ -23,6 +23,18 @@ import { getUrlForView } from "../utils/navigation.js";
 const isModifiedClick = (event) =>
   event.button !== 0 || event.metaKey || event.altKey || event.ctrlKey || event.shiftKey;
 
+const dedupePostsById = (items) => {
+  const seen = new Set();
+  const deduped = [];
+  items.forEach((item, index) => {
+    const key = item && item.id != null ? String(item.id) : `idx-${index}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    deduped.push(item);
+  });
+  return deduped;
+};
+
 const resolveOffsetForPosition = (position, pageSize) => {
   if (!Number.isFinite(position) || !Number.isFinite(pageSize) || pageSize <= 0) return 0;
   return Math.max(0, Math.floor(position / pageSize) * pageSize);
@@ -479,7 +491,7 @@ function CreatorPage({
           cachedPostsForSearch.length >= cacheTotalPosts;
         const capped = Boolean(cacheTotalPosts && cacheTotalPosts > cachedPostsForSearch.length);
         if (results.length > 0 || cacheComplete) {
-          setSearchResults(results);
+          setSearchResults(dedupePostsById(results));
           setSearchCapped(capped);
           setSearchLoading(false);
           return;
@@ -541,7 +553,7 @@ function CreatorPage({
 
       if (token !== searchTokenRef.current) return;
 
-      setSearchResults(workingResults);
+      setSearchResults(dedupePostsById(workingResults));
       setSearchCapped(capped);
     } catch (error) {
       console.error("Post search failed", error);
@@ -626,24 +638,18 @@ function CreatorPage({
       }
     }
 
-    if (requested === 0) {
-      setPosts([]);
-      setHasNextPage(false);
-      setLoadingPosts(false);
-      return () => {
-        alive = false;
-      };
-    }
-
-    const firstChunkOffset = Math.floor(start / API_PAGE_SIZE) * API_PAGE_SIZE;
-    const lastIndexNeeded = Math.max(start, start + requested - 1);
-    const lastChunkOffset = Math.floor(lastIndexNeeded / API_PAGE_SIZE) * API_PAGE_SIZE;
-
-    const chunkOffsets = [];
-    for (let current = firstChunkOffset; current <= lastChunkOffset; current += API_PAGE_SIZE) {
-      chunkOffsets.push(current);
-    }
-    if (chunkOffsets.length === 0) chunkOffsets.push(0);
+    const chunkOffsets = (() => {
+      if (requested <= 0) return [Math.floor(offset / API_PAGE_SIZE) * API_PAGE_SIZE];
+      const firstChunkOffset = Math.floor(start / API_PAGE_SIZE) * API_PAGE_SIZE;
+      const lastIndexNeeded = Math.max(start, start + requested - 1);
+      const lastChunkOffset = Math.floor(lastIndexNeeded / API_PAGE_SIZE) * API_PAGE_SIZE;
+      const offsets = [];
+      for (let current = firstChunkOffset; current <= lastChunkOffset; current += API_PAGE_SIZE) {
+        offsets.push(current);
+      }
+      if (offsets.length === 0) offsets.push(firstChunkOffset);
+      return offsets;
+    })();
 
     const cachedChunks = useCache && cacheData?.chunks ? cacheData.chunks : null;
     const responsesFromCache = cachedChunks
@@ -653,29 +659,71 @@ function CreatorPage({
       useCache && cachedChunks ? responsesFromCache.every((chunk) => Array.isArray(chunk)) : false;
 
     const sliceFromResponses = (responses) => {
-      const combined = responses.reduce((acc, data) => {
-        if (Array.isArray(data) && data.length) {
-          acc.push(...data);
-        }
-        return acc;
-      }, []);
-      const sliceStart = start - chunkOffsets[0];
+      const combined = [];
+      responses.forEach((data, responseIndex) => {
+        if (!Array.isArray(data) || data.length === 0) return;
+        const chunkOffset = chunkOffsets[responseIndex] ?? 0;
+        data.forEach((item, idx) => {
+          const existingIndex = combined.findIndex((entry) => entry?.id && entry.id === item?.id);
+          const annotated =
+            item && typeof item === "object"
+              ? { ...item, __position: chunkOffset + idx }
+              : item;
+          if (existingIndex === -1) {
+            combined.push(annotated);
+          } else {
+            combined[existingIndex] = annotated;
+          }
+        });
+      });
+      const dedupeSlice = (list) => {
+        const seen = new Set();
+        const result = [];
+        list.forEach((item, idx) => {
+          const key =
+            item && item.id != null
+              ? String(item.id)
+              : `idx-${chunkOffsets[0] ?? 0}-${idx}`;
+          if (seen.has(key)) return;
+          seen.add(key);
+          result.push(item);
+        });
+        return result;
+      };
+
+      if (requested <= 0) {
+        return {
+          combined,
+          slice: dedupeSlice(
+            combined
+              .filter((item) => typeof item !== "object" || typeof item.__position === "number")
+              .map((item) => ({ ...item })),
+          ),
+          hasMore: false,
+        };
+      }
+      const sliceStart = Math.max(0, start - (chunkOffsets[0] ?? 0));
       const slice = combined.slice(sliceStart, sliceStart + requested);
       const annotatedSlice = slice.map((item, index) => {
         if (item && typeof item === "object") {
-          return { ...item, __position: chunkOffsets[0] + sliceStart + index };
+          const existingPosition =
+            typeof item.__position === "number"
+              ? item.__position
+              : (chunkOffsets[0] ?? 0) + sliceStart + index;
+          return { ...item, __position: existingPosition };
         }
         return item;
       });
+      const deduped = dedupeSlice(annotatedSlice);
       const totalKnown = typeof totalPosts === "number" ? totalPosts : null;
       const lastResponse = responses[responses.length - 1];
       const lastChunkLength = Array.isArray(lastResponse) ? lastResponse.length : 0;
       const availableFromStart = Math.max(0, combined.length - sliceStart);
       const hasMore =
         typeof totalKnown === "number"
-          ? start + slice.length < totalKnown
-          : availableFromStart > slice.length || lastChunkLength === API_PAGE_SIZE;
-      return { combined, slice: annotatedSlice, hasMore };
+          ? start + deduped.length < totalKnown
+          : availableFromStart > deduped.length || lastChunkLength === API_PAGE_SIZE;
+      return { combined, slice: deduped, hasMore };
     };
 
     if (allChunksCached) {
@@ -1418,17 +1466,7 @@ function CreatorPage({
         </div>
         {renderPagination()}
         <div className="post-list">
-          {(() => {
-            const seenIds = new Set();
-            const uniquePosts = [];
-            orderedPosts.forEach((post, index) => {
-              const rawId = post?.id ? String(post.id) : `idx-${index}`;
-              if (seenIds.has(rawId)) return;
-              seenIds.add(rawId);
-              uniquePosts.push(post);
-            });
-            return uniquePosts;
-          })().map((post, index) => {
+          {orderedPosts.map((post, index) => {
             const detailData = postDetailMap[post.id];
             const excerptHtml = showExcerpts ? getPostExcerptHtml(detailData || post) : null;
             const postTags = Array.isArray(post.tags) ? post.tags : postTagMap[post.id];
