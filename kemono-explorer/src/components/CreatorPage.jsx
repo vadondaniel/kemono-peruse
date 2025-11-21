@@ -272,18 +272,6 @@ function CreatorPage({
   useEffect(() => {
     lastSyncedOffsetRef.current = null;
   }, [service, creatorId]);
-  const rememberPosition = useCallback(
-    (rawPosition, meta = {}) => {
-      if (typeof onRememberPosition !== "function") return;
-      const resolvedPageSize = Number.isFinite(meta.pageSize) && meta.pageSize > 0 ? Math.floor(meta.pageSize) : limit || API_PAGE_SIZE;
-      const normalizedIndex = Number.isFinite(rawPosition) && rawPosition >= 0 ? Math.floor(rawPosition) : 0;
-      const normalizedOffset =
-        normalizedIndex > 0 ? Math.floor(normalizedIndex / resolvedPageSize) * resolvedPageSize : 0;
-      lastSyncedOffsetRef.current = normalizedOffset;
-      onRememberPosition(normalizedIndex, { ...meta, pageSize: resolvedPageSize });
-    },
-    [limit, onRememberPosition],
-  );
 
   useEffect(() => {
     const savedName = getSavedCreatorName(service, creatorId);
@@ -901,10 +889,13 @@ function CreatorPage({
   useEffect(() => {
     if (isFilterActive) return;
     if (typeof onRememberPosition !== "function") return;
-    const normalizedOffset = offset > 0 ? Math.floor(offset) : 0;
-    if (lastSyncedOffsetRef.current === normalizedOffset) return;
-    rememberPosition(normalizedOffset, { pageSize: limit, persist: false });
-  }, [offset, limit, isFilterActive, onRememberPosition, rememberPosition]);
+    const normalizedOffset = Number.isFinite(offset) && offset > 0 ? Math.floor(offset) : 0;
+    if (lastSyncedOffsetRef.current === normalizedOffset && lastSyncedOffsetRef.current !== null) {
+      return;
+    }
+    lastSyncedOffsetRef.current = normalizedOffset;
+    onRememberPosition(normalizedOffset, { pageSize: limit || API_PAGE_SIZE });
+  }, [offset, limit, isFilterActive, onRememberPosition]);
 
   useEffect(() => {
     if (!isFilterActive) return;
@@ -1249,9 +1240,6 @@ function CreatorPage({
     if (!limit) return;
     const nextOffset = Math.max(0, (page - 1) * limit);
     setOffset(nextOffset);
-    if (!isFilterActive) {
-      rememberPosition(nextOffset, { pageSize: limit });
-    }
   }
 
   const goToSearchPage = (page) => {
@@ -1290,7 +1278,6 @@ function CreatorPage({
       setSearchPage(1);
     } else {
       setOffset(0);
-      rememberPosition(0, { pageSize: limit });
     }
     setReverseOrder((prev) => !prev);
   };
@@ -1650,9 +1637,6 @@ function CreatorPage({
                     const parsed = parseInt(event.target.value, 10);
                     const nextLimit = PAGE_SIZE_OPTIONS.includes(parsed) ? parsed : API_PAGE_SIZE;
                     setOffset(0);
-                    if (!isFilterActive) {
-                      rememberPosition(0, { pageSize: nextLimit });
-                    }
                     setLimit(nextLimit);
                     setSearchPage(1);
                   }}
@@ -1681,8 +1665,8 @@ function CreatorPage({
                 ? Math.max(0, Math.floor(post.__position / pageSizeForPosition) * pageSizeForPosition)
                 : undefined;
             const handleOpenPost = () => {
-              if (!isFilterActive && Number.isFinite(post?.__position)) {
-                rememberPosition(post.__position, { pageSize: pageSizeForPosition });
+              if (!isFilterActive && Number.isFinite(post?.__position) && typeof onRememberPosition === "function") {
+                onRememberPosition(post.__position, { pageSize: pageSizeForPosition });
               }
               onOpenPost(post.id, post.title || "", resolvedOffset);
             };
