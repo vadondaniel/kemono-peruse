@@ -5,7 +5,10 @@ import "./App.css";
 import CreatorPage from "./components/CreatorPage.jsx";
 import Home from "./components/Home.jsx";
 import PostView from "./components/PostView.jsx";
+import { API_BASE } from "./constants.js";
 import { buildHistoryState, ensureView, getInitialView, getTitleForView, getUrlForView, getViewFromHistoryState, viewsEqual } from "./utils/navigation.js";
+import { fetchJson } from "./utils/api.js";
+import { resolveProfileDisplayName } from "./utils/creators.js";
 
 function App() {
   const [view, setViewState] = useState(getInitialView);
@@ -229,6 +232,44 @@ function App() {
   const isCreatorSaved = (service, creatorId) =>
     savedCreators.some((c) => c.service === service && c.id === creatorId);
 
+  const resolveCreatorNameFromApi = useCallback(async (service, creatorId) => {
+    if (!service || !creatorId) return null;
+    try {
+      const profile = await fetchJson(`${API_BASE}/${service}/user/${creatorId}/profile`);
+      return resolveProfileDisplayName(profile);
+    } catch (error) {
+      console.warn("Failed to resolve creator name from API", error);
+      return null;
+    }
+  }, []);
+
+  const saveCreatorEntry = useCallback(
+    async ({ service, creatorId, initialName }) => {
+      if (!service || !creatorId) return;
+      if (savedCreators.some((c) => c.service === service && c.id === creatorId)) return;
+      let resolvedName = typeof initialName === "string" ? initialName.trim() : "";
+      if (!resolvedName || resolvedName === creatorId) {
+        const apiName = await resolveCreatorNameFromApi(service, creatorId);
+        if (apiName) {
+          resolvedName = apiName;
+        }
+      }
+      const finalName = resolvedName && resolvedName.trim() ? resolvedName.trim() : creatorId;
+      setSavedCreators((prev) => {
+        if (prev.some((c) => c.service === service && c.id === creatorId)) return prev;
+        return [...prev, { service, id: creatorId, name: finalName }];
+      });
+    },
+    [savedCreators, resolveCreatorNameFromApi],
+  );
+
+  const handleSaveCurrentCreator = useCallback(async () => {
+    if (view.name !== "creator") return;
+    const { service, creatorId, creatorName } = view;
+    if (!service || !creatorId) return;
+    await saveCreatorEntry({ service, creatorId, initialName: creatorName });
+  }, [view, saveCreatorEntry]);
+
   const getCreatorFilter = (service, creatorId) => {
     if (!service || !creatorId) return "";
     const key = `${service}:${creatorId}`;
@@ -318,10 +359,7 @@ function App() {
             <Home
               savedCreators={savedCreators}
               onSaveCreator={(entry) =>
-                setSavedCreators((prev) => {
-                  const exists = prev.find((c) => c.service === entry.service && c.id === entry.id);
-                  return exists ? prev : [...prev, entry];
-                })
+                saveCreatorEntry({ service: entry.service, creatorId: entry.id, initialName: entry.name })
               }
               onRenameCreator={(entry) =>
                 setSavedCreators((prev) =>
@@ -349,16 +387,7 @@ function App() {
               onOpenPost={(postId, postTitle, position) =>
                 openPost(view.service, view.creatorId, view.creatorName, postId, postTitle, position)
               }
-              onSave={() =>
-                setSavedCreators((prev) => {
-                  const exists = prev.find((c) => c.service === view.service && c.id === view.creatorId);
-                  if (exists) return prev;
-                  return [
-                    ...prev,
-                    { service: view.service, id: view.creatorId, name: view.creatorName || view.creatorId },
-                  ];
-                })
-              }
+              onSave={handleSaveCurrentCreator}
               activeFilter={getCreatorFilter(view.service, view.creatorId)}
               onUpdateFilter={(value) => updateCreatorFilter(view.service, view.creatorId, value)}
               initialPosition={
