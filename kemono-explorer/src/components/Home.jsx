@@ -279,42 +279,31 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
   const trimmedSearchQuery = creatorSearchQuery.trim();
   const searchSummaryLabelService =
     creatorSearchService !== "all" ? formatServiceLabel(creatorSearchService) : null;
-  const showSearchSummary =
-    searchReady &&
-    !searchLoading &&
-    !searchErrored &&
-    creatorSearchResults.length > 0 &&
-    trimmedSearchQuery.length > 0;
-  const searchSummaryContent = showSearchSummary ? (
-    <p className="muted">
-      Showing {creatorSearchResults.length}
-      {showSearchLimitNotice ? ` of ${totalCreatorMatches}` : ""} matches for{" "}
-      <strong>{trimmedSearchQuery}</strong>
-      {searchSummaryLabelService ? ` · ${searchSummaryLabelService}` : ""}
-    </p>
-  ) : null;
   let searchStatusContent = null;
   if (!searchHasQuery) {
-    searchStatusContent = <p className="muted">Start typing to search the full Kemono directory.</p>;
+    searchStatusContent = "Search the Kemono directory.";
   } else if (searchNeedsMoreInput) {
-    searchStatusContent = <p className="muted">Enter at least 2 characters to search.</p>;
+    searchStatusContent = "Enter at least 2 characters.";
   } else if (searchLoading) {
-    searchStatusContent = <p className="muted">Loading creator directory…</p>;
+    searchStatusContent = "Loading creator directory…";
   } else if (searchErrored) {
     searchStatusContent = (
-      <div className="creator-search-error">
-        <p className="muted">{creatorDirectoryError || "Unable to load creators. Please try again."}</p>
-        <button className="btn subtle" type="button" onClick={resetCreatorDirectory}>
+      <>
+        {creatorDirectoryError || "Unable to load creators."}
+        <button className="btn subtle inline-retry" type="button" onClick={resetCreatorDirectory}>
           Retry
         </button>
-      </div>
+      </>
     );
   } else if (searchEmpty) {
-    searchStatusContent = (
-      <p className="muted">
-        No creators found for <strong>{trimmedSearchQuery}</strong>.
-      </p>
-    );
+    searchStatusContent = `No matches for "${trimmedSearchQuery}".`;
+  } else if (creatorSearchResults.length > 0) {
+    const rangeNote = showSearchLimitNotice
+      ? `Showing ${creatorSearchResults.length} of ${totalCreatorMatches}`
+      : `Showing ${creatorSearchResults.length}`;
+    const queryNote = trimmedSearchQuery ? ` for "${trimmedSearchQuery}"` : "";
+    const serviceNote = searchSummaryLabelService ? ` · ${searchSummaryLabelService}` : "";
+    searchStatusContent = `${rangeNote}${queryNote}${serviceNote}`;
   }
 
   return (
@@ -414,25 +403,26 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
                 <label className="label" htmlFor="creator-search-input">
                   Search creators
                 </label>
-                <div className="search-field">
-                  <input
-                    id="creator-search-input"
-                    className="search-input"
-                    value={creatorSearchQuery}
-                    onChange={(event) => setCreatorSearchQuery(event.target.value)}
-                    placeholder="Type a name or ID (min 2 characters)"
-                  />
-                  {creatorSearchQuery && (
-                    <button className="search-clear" type="button" onClick={handleSearchClear}>
-                      Clear
-                    </button>
+                <div className="creator-search-field-row">
+                  <div className="search-field">
+                    <input
+                      id="creator-search-input"
+                      className="search-input"
+                      value={creatorSearchQuery}
+                      onChange={(event) => setCreatorSearchQuery(event.target.value)}
+                      placeholder="Type a name or ID (min 2 characters)"
+                    />
+                    {creatorSearchQuery && (
+                      <button className="search-clear" type="button" onClick={handleSearchClear}>
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                  {searchStatusContent && (
+                    <div className="creator-search-status inline-status">{searchStatusContent}</div>
                   )}
                 </div>
               </form>
-
-              {(searchSummaryContent || searchStatusContent) && (
-                <div className="creator-search-status">{searchSummaryContent || searchStatusContent}</div>
-              )}
 
               {creatorSearchResults.length > 0 && (
                 <div className="creator-search-results" role="list">
@@ -486,11 +476,6 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
                 </div>
               )}
 
-              {showSearchLimitNotice && creatorSearchResults.length > 0 && (
-                <p className="creator-search-note muted">
-                  Showing top {CREATOR_SEARCH_LIMIT} results. Refine your search to narrow it down.
-                </p>
-              )}
             </div>
           ) : (
             <div className="creator-tool-panel">
