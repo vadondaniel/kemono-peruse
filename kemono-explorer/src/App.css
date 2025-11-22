@@ -2473,11 +2473,12 @@ html[data-theme="light"] .gallery-viewer-close {
 
   .app-shell {
     margin: 24px auto 48px;
-    padding: 0 16px;
+    padding: 0;
   }
 
   .card {
     padding: 18px;
+    border-radius: 0;
   }
 
   .form-grid {
