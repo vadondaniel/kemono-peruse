@@ -362,6 +362,7 @@ function PostView({
   const proseRef = useRef(null);
   const viewerStageRef = useRef(null);
   const viewerImageRef = useRef(null);
+  const viewerCursorAnchorRef = useRef(null);
   const trimmedActiveFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
   const hasActiveFilter = trimmedActiveFilter.length > 0;
   useEffect(() => {
@@ -1121,15 +1122,53 @@ function PostView({
     setViewerZoomMode((prev) => (prev === "fit" ? "zoom" : "fit"));
   }, [viewerCanZoom]);
 
-  const centerZoomedImage = useCallback(() => {
+  const centerZoomedImage = useCallback((anchor = null) => {
     const stage = viewerStageRef.current;
     const image = viewerImageRef.current;
     if (!stage || !image) return;
-    const nextLeft = Math.max(0, (image.clientWidth - stage.clientWidth) / 2);
-    const nextTop = Math.max(0, (image.clientHeight - stage.clientHeight) / 2);
+    const imageWidth = image.clientWidth || 0;
+    const imageHeight = image.clientHeight || 0;
+    let nextLeft = Math.max(0, (imageWidth - stage.clientWidth) / 2);
+    let nextTop = Math.max(0, (imageHeight - stage.clientHeight) / 2);
+    if (anchor && typeof anchor.ratioX === "number" && typeof anchor.ratioY === "number") {
+      const anchorLeft = imageWidth * anchor.ratioX;
+      const anchorTop = imageHeight * anchor.ratioY;
+      nextLeft = Math.max(0, anchorLeft - stage.clientWidth / 2);
+      nextTop = Math.max(0, anchorTop - stage.clientHeight / 2);
+    }
     stage.scrollLeft = nextLeft;
     stage.scrollTop = nextTop;
   }, []);
+
+  const handleStageClick = useCallback(
+    (event) => {
+      if (!viewerCanZoom) return;
+      if (!viewerZoomed) {
+        const image = viewerImageRef.current;
+        if (image) {
+          const rect = image.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) {
+            const nativeEvent = event?.nativeEvent ?? event;
+            const clientX = nativeEvent?.clientX;
+            const clientY = nativeEvent?.clientY;
+            if (typeof clientX === "number" && typeof clientY === "number") {
+              const ratioX = (clientX - rect.left) / rect.width;
+              const ratioY = (clientY - rect.top) / rect.height;
+              const clamp = (value) => Math.max(0, Math.min(1, value));
+              viewerCursorAnchorRef.current = {
+                ratioX: clamp(ratioX),
+                ratioY: clamp(ratioY),
+              };
+            }
+          }
+        }
+      } else {
+        viewerCursorAnchorRef.current = null;
+      }
+      handleViewerZoomToggle();
+    },
+    [viewerCanZoom, viewerZoomed, handleViewerZoomToggle],
+  );
 
   useEffect(() => {
     if (!viewerOpen) return undefined;
@@ -1150,6 +1189,7 @@ function PostView({
     if (!stage) return undefined;
     stage.scrollLeft = 0;
     stage.scrollTop = 0;
+    viewerCursorAnchorRef.current = null;
     return undefined;
   }, [viewerZoomed]);
 
@@ -1164,7 +1204,11 @@ function PostView({
       if (rafId !== null) return;
       rafId = window.requestAnimationFrame(() => {
         rafId = null;
-        centerZoomedImage();
+        const anchor = viewerCursorAnchorRef.current;
+        centerZoomedImage(anchor);
+        if (anchor) {
+          viewerCursorAnchorRef.current = null;
+        }
       });
     };
 
@@ -1622,7 +1666,7 @@ function PostView({
               aria-label={
                 viewerCanZoom ? (viewerZoomed ? "Zoom out (fit to screen)" : "Zoom in for full resolution") : undefined
               }
-              onClick={handleViewerZoomToggle}
+              onClick={handleStageClick}
               onKeyDown={(event) => {
                 if (!viewerCanZoom) return;
                 if (event.key === "Enter" || event.key === " ") {
