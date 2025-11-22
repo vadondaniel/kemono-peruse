@@ -57,6 +57,7 @@ function CreatorPage({
   const [cacheData, setCacheData] = useState(() => loadCreatorCache(service, creatorId));
   const [cacheReloadApplied, setCacheReloadApplied] = useState(0);
   const [cacheStorageError, setCacheStorageError] = useState(false);
+  const [cacheValidationState, setCacheValidationState] = useState("idle");
   const [profile, setProfile] = useState(null);
   const [posts, setPosts] = useState([]);
   const initialPageSizeRef = useRef(getInitialPageSize());
@@ -208,6 +209,9 @@ function CreatorPage({
   const pendingTagFetchRef = useRef(new Set());
   const prevFilterStorageKeyRef = useRef(filterStorageKey);
   const cacheFresh = useCache && cacheData ? isCacheFresh(cacheData) : false;
+  const reloadRequested = cacheReloadApplied !== reloadKey;
+  const wantsCacheValidation = Boolean(useCache && cacheData && (reloadRequested || !cacheFresh));
+  const cacheValidationPending = wantsCacheValidation && cacheValidationState === "pending";
   const canUseCacheUi = alreadySaved;
   const resolvedProfileCount = toNumericCount(profile?.post_count);
   const resolvedCacheCount = toNumericCount(cacheData?.totalPosts);
@@ -266,6 +270,16 @@ function CreatorPage({
   useEffect(() => {
     setCacheStorageError(false);
   }, [service, creatorId]);
+
+  useEffect(() => {
+    setCacheValidationState("idle");
+  }, [service, creatorId]);
+
+  useEffect(() => {
+    if (!useCache) {
+      setCacheValidationState("idle");
+    }
+  }, [useCache]);
 
   useEffect(() => {
     if (alreadySaved) return;
@@ -379,39 +393,70 @@ function CreatorPage({
       setLoadingProfile(true);
     }
 
-    const shouldFetch =
-      !useCache ||
-      !cachedProfile ||
-      !cacheFresh ||
-      cacheReloadApplied !== reloadKey;
+    const shouldFetch = !useCache || !cachedProfile || !cacheFresh || reloadRequested;
 
     if (!shouldFetch) {
+      setCacheValidationState((prev) => (prev === "idle" ? prev : "idle"));
       return () => {
         alive = false;
       };
     }
 
+    if (wantsCacheValidation) {
+      setCacheValidationState("pending");
+    }
+
     setLoadingProfile(true);
-    fetchJson(`${API_BASE}/${service}/user/${creatorId}/profile`).then((data) => {
-      if (!alive) return;
-      setProfile(data);
-      setLoadingProfile(false);
-      if (useCache) {
-        if (data) {
-          const numericCount = toNumericCount(data?.post_count);
-          updateCache((prev) => ({
-            ...prev,
-            profile: data,
-            totalPosts: numericCount ?? prev.totalPosts,
-          }));
+    fetchJson(`${API_BASE}/${service}/user/${creatorId}/profile`)
+      .then((data) => {
+        if (!alive) return;
+        setProfile(data);
+        setLoadingProfile(false);
+        if (useCache) {
+          if (data) {
+            const numericCount = toNumericCount(data?.post_count);
+            const cachedCount = toNumericCount(cacheData?.totalPosts ?? cachedProfile?.post_count);
+            const countsComparable = typeof numericCount === "number" && typeof cachedCount === "number";
+            const countsMatch = countsComparable && numericCount === cachedCount;
+            updateCache(
+              (prev) => ({
+                ...prev,
+                profile: data,
+                totalPosts: numericCount ?? prev.totalPosts,
+              }),
+              { updateTimestamp: !wantsCacheValidation || countsMatch },
+            );
+            if (wantsCacheValidation) {
+              if (countsMatch) {
+                setCacheReloadApplied(reloadKey);
+                setCacheValidationState("validated");
+              } else {
+                setCacheValidationState("stale");
+              }
+            } else {
+              setCacheValidationState((prev) => (prev === "idle" ? prev : "idle"));
+            }
+          } else if (wantsCacheValidation) {
+            setCacheValidationState("stale");
+          }
+        } else {
+          setCacheValidationState((prev) => (prev === "idle" ? prev : "idle"));
         }
-        setCacheReloadApplied(reloadKey);
-      }
-    });
+      })
+      .catch((error) => {
+        console.error("Failed to load profile", error);
+        if (!alive) return;
+        setLoadingProfile(false);
+        if (wantsCacheValidation) {
+          setCacheValidationState("error");
+        } else {
+          setCacheValidationState((prev) => (prev === "idle" ? prev : "idle"));
+        }
+      });
     return () => {
       alive = false;
     };
-  }, [service, creatorId, useCache, cacheData, cacheFresh, cacheReloadApplied, reloadKey, updateCache]);
+  }, [service, creatorId, useCache, cacheData, cacheFresh, reloadRequested, wantsCacheValidation, reloadKey, updateCache]);
 
   useEffect(() => {
     if (!profile) return;
@@ -822,9 +867,7 @@ function CreatorPage({
     })();
 
     const cachedChunks = useCache && cacheData?.chunks ? cacheData.chunks : null;
-    const responsesFromCache = cachedChunks
-      ? chunkOffsets.map((chunkOffset) => cachedChunks[String(chunkOffset)])
-      : [];
+    const responsesFromCache = cachedChunks ? chunkOffsets.map((chunkOffset) => cachedChunks[String(chunkOffset)]) : [];
     const allChunksCached =
       useCache && cachedChunks ? responsesFromCache.every((chunk) => Array.isArray(chunk)) : false;
 
@@ -896,11 +939,12 @@ function CreatorPage({
       return { combined, slice: deduped, hasMore };
     };
 
+    let cachedSliceResult = null;
     if (allChunksCached) {
-      const { slice, hasMore } = sliceFromResponses(responsesFromCache);
-      setPosts(slice);
-      setHasNextPage(hasMore);
-      if (cacheFresh && cacheReloadApplied === reloadKey) {
+      cachedSliceResult = sliceFromResponses(responsesFromCache);
+      setPosts(cachedSliceResult.slice);
+      setHasNextPage(cachedSliceResult.hasMore);
+      if ((cacheFresh && !reloadRequested) || cacheValidationPending) {
         setLoadingPosts(false);
         return () => {
           alive = false;
@@ -909,7 +953,14 @@ function CreatorPage({
       // continue to refresh cache if requested
     }
 
-    const shouldBypassCache = !useCache || !cacheFresh || cacheReloadApplied !== reloadKey;
+    if (cachedSliceResult && cacheValidationState === "error") {
+      setLoadingPosts(false);
+      return () => {
+        alive = false;
+      };
+    }
+
+    const shouldBypassCache = !useCache || !cacheFresh || reloadRequested;
     const offsetsToFetch = shouldBypassCache
       ? chunkOffsets
       : chunkOffsets.filter((chunkOffset) => !Array.isArray(cachedChunks?.[String(chunkOffset)]));
@@ -950,13 +1001,17 @@ function CreatorPage({
             totalPosts: profileCount ?? cacheCount ?? prev.totalPosts ?? null,
           }));
           setCacheReloadApplied(reloadKey);
+          setCacheValidationState((prev) => (prev === "idle" ? prev : "idle"));
         }
       })
       .catch((error) => {
         console.error("Failed to load posts", error);
         if (!alive) return;
-        setPosts([]);
-        setHasNextPage(false);
+        const hadCachedPosts = Boolean(cachedSliceResult && cachedSliceResult.slice.length > 0);
+        if (!hadCachedPosts) {
+          setPosts((prev) => (Array.isArray(prev) && prev.length > 0 ? prev : []));
+          setHasNextPage(false);
+        }
         setLoadingPosts(false);
       });
 
@@ -973,10 +1028,12 @@ function CreatorPage({
     useCache,
     cacheData,
     cacheFresh,
-    cacheReloadApplied,
+    reloadRequested,
     totalPosts,
     reverseOrder,
     updateCache,
+    cacheValidationPending,
+    cacheValidationState,
   ]);
 
   const cacheUpdatedAt = useCache && cacheData?.updatedAt ? cacheData.updatedAt : null;
@@ -984,6 +1041,27 @@ function CreatorPage({
   const cacheUpdatedLabel = cacheUpdatedStamp
     ? `${cacheUpdatedStamp.date}${cacheUpdatedStamp.time ? ` ${cacheUpdatedStamp.time}` : ""}`
     : null;
+  const cacheStatusMessage = (() => {
+    if (cacheStorageError) {
+      return "Cache unavailable (storage full)";
+    }
+    if (!useCache) {
+      return null;
+    }
+    if (cacheValidationPending) {
+      return "Checking for new posts...";
+    }
+    if (cacheValidationState === "error") {
+      return "API unavailable. Showing saved posts.";
+    }
+    if (cacheValidationState === "stale" || !cacheFresh) {
+      return "Refreshing posts from source...";
+    }
+    if (cacheFresh && cacheUpdatedLabel) {
+      return `Cached locally - updated ${cacheUpdatedLabel}`;
+    }
+    return cacheUpdatedLabel ? `Cached locally - updated ${cacheUpdatedLabel}` : "Cache ready";
+  })();
 
   useEffect(() => {
     if (!isFilterActive) return;
@@ -1571,11 +1649,7 @@ function CreatorPage({
                     </span>
                     {canUseCacheUi && (useCache || cacheStorageError) && (
                       <span className="muted small cache-status-line">
-                        {cacheStorageError
-                          ? "Cache unavailable (storage full)"
-                          : cacheFresh && cacheUpdatedLabel
-                            ? `Cached locally • updated ${cacheUpdatedLabel}`
-                            : "Cache refreshing from source..."}
+                        {cacheStatusMessage || "Cache ready"}
                       </span>
                     )}
                   </div>
