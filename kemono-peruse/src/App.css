@@ -2326,13 +2326,13 @@ html[data-theme="light"] .gallery-viewer-close {
   cursor: zoom-out;
   overflow: auto;
   align-items: flex-start;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 .gallery-viewer-stage.zoomed img {
   max-width: none;
   max-height: none;
-  margin: 0 auto;
+  margin: 0;
 }
 
 .gallery-viewer-meta {
