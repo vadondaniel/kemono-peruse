@@ -1,69 +1,128 @@
 # Kemono Peruse
 
-Single-page React UI for browsing Kemono posts plus a lightweight Node proxy to dodge browser CORS limits.
+Kemono Peruse is a clean, keyboard-friendly reader for Kemono posts.
 
-## Prerequisites
+## Why you might like it
 
-- Node.js 18+ (needed for the proxy's global `fetch`)
+- **Fast navigation** – browse a creator’s archive with instant pagination, filters, and cached reads.
+- **Comfortable reader** – adjustable typography, widths, and gallery-only view for image-heavy posts.
+- **Attachment focus** – inline gallery with zoomable viewer, attachment lists, and direct original links.
+- **Offline-friendly** – optional cached data stored per creator so repeated visits are instant.
+
+## Quick start (end user)
+
+1. **Install once**
+
+   ```bash
+   npm install --prefix kemono-peruse
+   ```
+
+2. **(Optional) set your ports** – copy `kemono-peruse/.env.example` to `kemono-peruse/.env` and edit the numbers you prefer:
+
+   ```ini
+   PROXY_PORT=4000
+   VITE_DEV_SERVER_PORT=5175
+   ```
+
+3. **Start the Kemono Peruse service** (the lightweight proxy) - from the repo root:
+
+   ```bash
+   cd kemono-peruse
+   npm run proxy
+   ```
+
+4. **Run the UI** - in a second terminal:
+
+   ```bash
+   cd kemono-peruse
+   npm run dev
+   ```
+
+5. Open `http://localhost:5173` (or whatever port you set) and browse creators. Leave both terminals running while you read.
+
+### Handy launchers
+
+- `npm run dev:all` - boots both the proxy (`npm run proxy`) and the Vite dev server in one terminal.
+- `npm run host:all` - same as above but starts Vite with `--host` so phones/other devices on your LAN can connect.
+- Windows shortcuts:
+  - `run-dev.bat` (opens your browser to `http://localhost:5151`, then runs `npm run dev:all`)
+  - `run-host.bat` (same idea, but calls `npm run host:all`)
+
+## How to use the app
+
+- **Search or paste a creator URL** on the landing page to load their feed. Saved creators show up in the sidebar for quick recall.
+- **Filter posts** using text or tag filters; filters sync with local storage so they persist across refreshes.
+- **Switch posts** with the navigation controls inside the reader view - respecting active filters.
+- **Inspect attachments** by expanding the attachment counter or switching to gallery view. Click any image to open the zoomable lightbox.
+- **Adjust reading preferences** via the Reader Settings button. Choices (typeface, width, gallery behavior, etc.) persist per saved/un-saved state.
+
+## Configuration options
+
+These settings live in `kemono-peruse/.env` (or `.env.local` for Vite). Restart both processes after changing them.
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `PROXY_PORT` (or `PORT`) | Where the Kemono Peruse service listens | `3001` |
+| `KEMONO_HOST` | Upstream Kemono host | `https://kemono.cr` |
+| `KEMONO_BASE_PATH` | Upstream API prefix | `/api/v1` |
+| `KEMONO_ACCEPT` | `Accept` header forwarded to Kemono | `text/css` |
+| `VITE_DEV_SERVER_PORT` / `VITE_PORT` | Vite dev server port | `5173` |
+
+Media URLs such as `/data/…` are automatically tunneled through the service at `/api/proxy/kemono/media/…`, so you normally do not need extra setup.
+
+## Troubleshooting
+
+- **Blank responses / timeouts**: make sure the service terminal is still running and that the UI is pointing to the same `PROXY_PORT`.
+- **Port already in use**: edit `.env`, pick unused values, then rerun both `npm run proxy` and `npm run dev`.
+- **Kemono mirror changed**: update `KEMONO_HOST` and (if needed) `KEMONO_BASE_PATH` to match the mirror you trust.
+- **Slow initial loads**: enable caching inside the app for creators you follow; post data will be stored locally for quicker revisits.
+
+## Developer notes
+
+> These details are for contributors or anyone customizing the stack.
+
+### Prerequisites
+
+- Node.js 18+ (needed for the proxy's use of the global `fetch`)
 - npm (bundled with Node)
 
-## Install Dependencies
+### Install dependencies
 
 ```bash
 cd kemono-peruse
 npm install
 ```
 
-## Run the Proxy
+### Run locally
 
-From the project root, start the proxy in its own terminal (create or edit `kemono-peruse/.env` first if you want different ports):
+Start the proxy from the project directory:
 
 ```bash
-node proxy-server.js
+npm run proxy
 ```
 
-Defaults:
-
-- listens on `http://localhost:3001`
-- rewrites `/api/proxy/kemono/…` → `https://kemono.cr/api/v1/…`
-- forces `Accept: text/css` on upstream requests
-
-Env overrides:
-
-- `PROXY_PORT` (falls back to `PORT`) - proxy port (default `3001`)
-- `KEMONO_HOST` - upstream host (default `https://kemono.cr`)
-- `KEMONO_BASE_PATH` - upstream API prefix (default `/api/v1`)
-- `KEMONO_ACCEPT` - custom `Accept` header (default `text/css`)
-
-Media URLs such as `/data/…` are also tunneled automatically via `/api/proxy/kemono/media/…`.
-
-## Run the Frontend
-
-In a second terminal:
+Then run Vite:
 
 ```bash
 cd kemono-peruse
 npm run dev
 ```
 
-Vite serves at `http://localhost:5173` (set `VITE_DEV_SERVER_PORT` or `VITE_PORT` to change it) and proxies `/api/proxy/kemono` requests to the Node proxy, so keep both processes running. The dev proxy target automatically honors the `PROXY_PORT` value.
+Vite proxies `/api/proxy/kemono` to the Node proxy automatically, honoring whatever `PROXY_PORT` you set.
 
-### Environment file
-
-Copy `kemono-peruse/.env.example` to `kemono-peruse/.env` (or `.env.local`) and edit it to change both servers. The file stays untracked so your local ports remain yours:
-
-```ini
-PROXY_PORT=4000
-VITE_DEV_SERVER_PORT=5175
-```
-
-Start the proxy (`node proxy-server.js`) and Vite (`npm run dev`) after saving the file so both processes pick up the new ports.
-
-## Production Build
+### Build for production
 
 ```bash
 cd kemono-peruse
 npm run build
 ```
 
-The static bundle lands in `kemono-peruse/dist`. Deploy it with any static host and expose the proxy under `/api/proxy/kemono` on the same origin (or point `VITE_API_BASE` at your deployed proxy if you add that env var).
+### Preview the production build locally
+
+After `npm run build`, keep the proxy running (`npm run proxy` in another terminal) and serve the compiled files with:
+
+```bash
+npm run preview
+```
+
+Vite's preview server will host `dist/` (default `http://localhost:4173`). For remote hosting, upload `dist` to any static host and expose the proxy under `/api/proxy/kemono` on the same origin (or set `VITE_API_BASE` to wherever your proxy lives).
