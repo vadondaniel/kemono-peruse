@@ -58,6 +58,16 @@ Kemono Peruse is a clean, keyboard-friendly reader for Kemono posts.
 
 Want Kemono Peruse to boot when Windows does? Create a shortcut to the batch file you prefer (`run-dev.bat`, `run-built.bat`, or `run-built-host.bat`), right-click the shortcut, choose **Properties**, and set **Run** to *Minimized*. Press `Win + R`, type `shell:startup`, and drop the shortcut into the Startup folder. Windows will launch it in the background after you sign in, bringing up the proxy plus the dev UI or built preview automatically. (Delete the `start "" http://localhost:*` line inside the batch file if you don't want your browser to pop open.)
 
+Need it completely silent (no console)? Wrap the batch file with a tiny VBScript such as:
+
+`run-built-hidden.vbs`:
+
+```vbscript
+CreateObject("Wscript.Shell").Run "cmd /c ""E:\Projects\Kemono\run-built.bat""", 0, False
+```
+
+Double-click the `.vbs` (or schedule it in Task Scheduler with the **Hidden** option) and the proxy + preview will start without showing a console window.
+
 ### Everyday use (built version, no dev server)
 
 1. Run `build.bat` once after updating the repo. This runs `npm run build` inside `kemono-peruse` and outputs the optimized bundle to `dist/`.
