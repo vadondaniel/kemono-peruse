@@ -360,6 +360,8 @@ function PostView({
     : serviceLabel;
   const lastResolvedTitleRef = useRef(null);
   const proseRef = useRef(null);
+  const viewerStageRef = useRef(null);
+  const viewerImageRef = useRef(null);
   const trimmedActiveFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
   const hasActiveFilter = trimmedActiveFilter.length > 0;
   useEffect(() => {
@@ -1119,6 +1121,16 @@ function PostView({
     setViewerZoomMode((prev) => (prev === "fit" ? "zoom" : "fit"));
   }, [viewerCanZoom]);
 
+  const centerZoomedImage = useCallback(() => {
+    const stage = viewerStageRef.current;
+    const image = viewerImageRef.current;
+    if (!stage || !image) return;
+    const nextLeft = Math.max(0, (image.clientWidth - stage.clientWidth) / 2);
+    const nextTop = Math.max(0, (image.clientHeight - stage.clientHeight) / 2);
+    stage.scrollLeft = nextLeft;
+    stage.scrollTop = nextTop;
+  }, []);
+
   useEffect(() => {
     if (!viewerOpen) return undefined;
     if (galleryLength > 0) return undefined;
@@ -1131,6 +1143,52 @@ function PostView({
       setViewerZoomMode("fit");
     }
   }, [viewerOpen]);
+
+  useEffect(() => {
+    if (viewerZoomed) return undefined;
+    const stage = viewerStageRef.current;
+    if (!stage) return undefined;
+    stage.scrollLeft = 0;
+    stage.scrollTop = 0;
+    return undefined;
+  }, [viewerZoomed]);
+
+  useEffect(() => {
+    if (!viewerOpen || !viewerZoomed) return undefined;
+    const stage = viewerStageRef.current;
+    const image = viewerImageRef.current;
+    if (!stage || !image) return undefined;
+
+    let rafId = null;
+    const queueCentering = () => {
+      if (rafId !== null) return;
+      rafId = window.requestAnimationFrame(() => {
+        rafId = null;
+        centerZoomedImage();
+      });
+    };
+
+    const handleImageLoad = () => queueCentering();
+    const handleResize = () => queueCentering();
+
+    if (image.complete && image.naturalWidth > 0) {
+      queueCentering();
+    } else {
+      image.addEventListener("load", handleImageLoad);
+      image.addEventListener("error", handleImageLoad);
+    }
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      if (rafId !== null) {
+        window.cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      image.removeEventListener("load", handleImageLoad);
+      image.removeEventListener("error", handleImageLoad);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [viewerOpen, viewerZoomed, viewerImageSrc, centerZoomedImage]);
 
   useEffect(() => {
     if (!viewerOpen) return undefined;
@@ -1558,6 +1616,7 @@ function PostView({
             </button>
             <div
               className={`gallery-viewer-stage${viewerZoomed ? " zoomed" : ""}`}
+              ref={viewerStageRef}
               role={viewerCanZoom ? "button" : undefined}
               tabIndex={viewerCanZoom ? 0 : undefined}
               aria-label={
@@ -1573,7 +1632,7 @@ function PostView({
               }}
             >
               {viewerImageSrc ? (
-                <img src={viewerImageSrc} alt={galleryActiveLabel} />
+                <img src={viewerImageSrc} alt={galleryActiveLabel} ref={viewerImageRef} />
               ) : (
                 <div className="gallery-stage-placeholder">
                   <span>Unable to preview this attachment.</span>
