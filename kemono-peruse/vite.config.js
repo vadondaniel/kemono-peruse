@@ -12,6 +12,7 @@ export default defineConfig(({ mode }) => {
 
   const proxyPort = toPort(env.PROXY_PORT, 3001)
   const devServerPort = toPort(env.VITE_DEV_SERVER_PORT || env.VITE_PORT, 5173)
+  const previewPort = toPort(env.VITE_PREVIEW_PORT, 4173)
 
   return {
     plugins: [react()],
@@ -24,6 +25,9 @@ export default defineConfig(({ mode }) => {
           secure: false,
         },
       },
+    },
+    preview: {
+      port: previewPort,
     },
   }
 })

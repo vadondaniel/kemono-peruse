@@ -22,6 +22,7 @@ Kemono Peruse is a clean, keyboard-friendly reader for Kemono posts.
    ```ini
    PROXY_PORT=4000
    VITE_DEV_SERVER_PORT=5175
+   VITE_PREVIEW_PORT=5179
    ```
 
 3. **Start the Kemono Peruse service** (the lightweight proxy) - from the repo root:
@@ -46,10 +47,10 @@ Kemono Peruse is a clean, keyboard-friendly reader for Kemono posts.
 - `npm run host:all` - same as above but starts Vite with `--host` so phones/other devices on your LAN can connect.
 - `npm run preview:all` - builds on `npm run preview` by also launching the proxy so you can test the production bundle locally.
 - Windows shortcuts:
-  - `run-dev.bat` (opens your browser to `http://localhost:5151`, then runs `npm run dev:all`)
-  - `run-host.bat` (same idea, but calls `npm run host:all`)
+  - `run-dev.bat` (opens the dev URL from `.env` – default `http://localhost:5173` – then runs `npm run dev:all`)
+  - `run-host.bat` (same idea, but calls `npm run host:all` for LAN testing)
   - `build.bat` (runs `npm run build` inside `kemono-peruse`)
-  - `run-built.bat` (opens `http://localhost:4173`, then runs `npm run preview:all` so the proxy and preview server start together)
+  - `run-built.bat` (opens the preview URL defined in `.env` – default `http://localhost:4173` – then runs `npm run preview:all` so the proxy and preview server start together)
 
 ## How to use the app
 
@@ -70,6 +71,7 @@ These settings live in `kemono-peruse/.env` (or `.env.local` for Vite). Restart 
 | `KEMONO_BASE_PATH` | Upstream API prefix | `/api/v1` |
 | `KEMONO_ACCEPT` | `Accept` header forwarded to Kemono | `text/css` |
 | `VITE_DEV_SERVER_PORT` / `VITE_PORT` | Vite dev server port | `5173` |
+| `VITE_PREVIEW_PORT` | Vite preview/built server port | `4173` |
 
 Media URLs such as `/data/…` are automatically tunneled through the service at `/api/proxy/kemono/media/…`, so you normally do not need extra setup.
 
@@ -137,4 +139,4 @@ After `npm run build`, either:
   npm run preview:all
   ```
 
-Vite's preview server will host `dist/` (default `http://localhost:4173`). For remote hosting, upload `dist` to any static host and expose the proxy under `/api/proxy/kemono` on the same origin (or set `VITE_API_BASE` to wherever your proxy lives).
+Vite's preview server will host `dist/` (default `http://localhost:4173`, or whatever you set via `VITE_PREVIEW_PORT`). For remote hosting, upload `dist` to any static host and expose the proxy under `/api/proxy/kemono` on the same origin (or set `VITE_API_BASE` to wherever your proxy lives).
