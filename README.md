@@ -47,6 +47,8 @@ Kemono Peruse is a clean, keyboard-friendly reader for Kemono posts.
 - Windows shortcuts:
   - `run-dev.bat` (opens your browser to `http://localhost:5151`, then runs `npm run dev:all`)
   - `run-host.bat` (same idea, but calls `npm run host:all`)
+  - `build.bat` (runs `npm run build` inside `kemono-peruse`)
+  - `run-built.bat` (opens the browser, starts `npm run proxy` + `npm run preview` so you can test the production bundle locally on port `4173`)
 
 ## How to use the app
 
