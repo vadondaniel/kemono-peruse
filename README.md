@@ -39,7 +39,7 @@ Kemono Peruse is a clean, keyboard-friendly reader for Kemono posts.
    npm run dev
    ```
 
-5. Open `http://localhost:5173` (or whatever port you set) and browse creators. Leave both terminals running while you read.
+5. Open `http://localhost:5173` (or whatever port you set) and browse creators. Leave both terminals running while you read. (These steps are for dev mode; if you just want to use the app without a dev environment, see “Everyday use” below.)
 
 ### Handy launchers
 
@@ -51,6 +51,18 @@ Kemono Peruse is a clean, keyboard-friendly reader for Kemono posts.
   - `run-host.bat` (same idea, but calls `npm run host:all` for LAN testing)
   - `build.bat` (runs `npm run build` inside `kemono-peruse`)
   - `run-built.bat` (opens the preview URL defined in `.env` – default `http://localhost:4173` – then runs `npm run preview:all` so the proxy and preview server start together)
+
+#### Auto-starting on Windows
+
+Want Kemono Peruse to boot when Windows does? Create a shortcut to the batch file you prefer (`run-dev.bat` during development or `run-built.bat` after building), right-click the shortcut, choose **Properties**, and set **Run** to *Minimized*. Press `Win + R`, type `shell:startup`, and drop the shortcut into the Startup folder. Windows will launch it in the background after you sign in, bringing up the proxy plus the UI (or built preview) automatically. (or you can delete the `start "" http://localhost:*` line if you don't want it to open the browser automatically)
+
+### Everyday use (built version, no dev server)
+
+1. Run `build.bat` once after updating the repo. This runs `npm run build` inside `kemono-peruse` and outputs the optimized bundle to `dist/`.
+2. Whenever you want to read Kemono, double-click `run-built.bat`. It:
+   - opens your configured preview URL (default `http://localhost:4173`)
+   - runs `npm run preview:all`, which starts the proxy (`npm run proxy`) and serves the built bundle via `npm run preview`
+3. Close the terminal when you are done; rerun `run-built.bat` next time. Rebuild only when you pull new changes or update .env settings for the preview server.
 
 ## How to use the app
 
