@@ -10,7 +10,8 @@
   "preview": "vite preview",
   "proxy": "node ../proxy-server.js",
   "dev:all": "concurrently \"npm run proxy\" \"npm run dev\"",
-  "host:all": "concurrently \"npm run proxy\" \"npx vite --host\""
+  "host:all": "concurrently \"npm run proxy\" \"npx vite --host\"",
+  "preview:all": "concurrently \"npm run proxy\" \"npm run preview\""
 },
   "dependencies": {
     "react": "^19.1.1",

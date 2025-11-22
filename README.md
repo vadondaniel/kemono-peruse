@@ -44,11 +44,12 @@ Kemono Peruse is a clean, keyboard-friendly reader for Kemono posts.
 
 - `npm run dev:all` - boots both the proxy (`npm run proxy`) and the Vite dev server in one terminal.
 - `npm run host:all` - same as above but starts Vite with `--host` so phones/other devices on your LAN can connect.
+- `npm run preview:all` - builds on `npm run preview` by also launching the proxy so you can test the production bundle locally.
 - Windows shortcuts:
   - `run-dev.bat` (opens your browser to `http://localhost:5151`, then runs `npm run dev:all`)
   - `run-host.bat` (same idea, but calls `npm run host:all`)
   - `build.bat` (runs `npm run build` inside `kemono-peruse`)
-  - `run-built.bat` (opens the browser, starts `npm run proxy` + `npm run preview` so you can test the production bundle locally on port `4173`)
+  - `run-built.bat` (opens `http://localhost:4173`, then runs `npm run preview:all` so the proxy and preview server start together)
 
 ## How to use the app
 
@@ -121,10 +122,19 @@ npm run build
 
 ### Preview the production build locally
 
-After `npm run build`, keep the proxy running (`npm run proxy` in another terminal) and serve the compiled files with:
+After `npm run build`, either:
 
-```bash
-npm run preview
-```
+- Run the proxy and preview separately:
+
+  ```bash
+  npm run proxy
+  npm run preview
+  ```
+
+- Or launch both together:
+
+  ```bash
+  npm run preview:all
+  ```
 
 Vite's preview server will host `dist/` (default `http://localhost:4173`). For remote hosting, upload `dist` to any static host and expose the proxy under `/api/proxy/kemono` on the same origin (or set `VITE_API_BASE` to wherever your proxy lives).
