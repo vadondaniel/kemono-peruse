@@ -2,5 +2,5 @@
 
 start "" http://localhost:5151
 
-cd kemono-explorer
+cd kemono-peruse
 npm run host:all

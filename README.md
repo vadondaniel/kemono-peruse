@@ -1,4 +1,4 @@
-# Kemono Explorer
+# Kemono Peruse
 
 Single-page React UI for browsing Kemono posts plus a lightweight Node proxy to dodge browser CORS limits.
 
@@ -10,13 +10,13 @@ Single-page React UI for browsing Kemono posts plus a lightweight Node proxy to 
 ## Install Dependencies
 
 ```bash
-cd kemono-explorer
+cd kemono-peruse
 npm install
 ```
 
 ## Run the Proxy
 
-From the project root, start the proxy in its own terminal (create or edit `kemono-explorer/.env` first if you want different ports):
+From the project root, start the proxy in its own terminal (create or edit `kemono-peruse/.env` first if you want different ports):
 
 ```bash
 node proxy-server.js
@@ -42,7 +42,7 @@ Media URLs such as `/data/…` are also tunneled automatically via `/api/proxy/k
 In a second terminal:
 
 ```bash
-cd kemono-explorer
+cd kemono-peruse
 npm run dev
 ```
 
@@ -50,7 +50,7 @@ Vite serves at `http://localhost:5173` (set `VITE_DEV_SERVER_PORT` or `VITE_PORT
 
 ### Environment file
 
-Copy `kemono-explorer/.env.example` to `kemono-explorer/.env` (or `.env.local`) and edit it to change both servers. The file stays untracked so your local ports remain yours:
+Copy `kemono-peruse/.env.example` to `kemono-peruse/.env` (or `.env.local`) and edit it to change both servers. The file stays untracked so your local ports remain yours:
 
 ```ini
 PROXY_PORT=4000
@@ -62,8 +62,8 @@ Start the proxy (`node proxy-server.js`) and Vite (`npm run dev`) after saving t
 ## Production Build
 
 ```bash
-cd kemono-explorer
+cd kemono-peruse
 npm run build
 ```
 
-The static bundle lands in `kemono-explorer/dist`. Deploy it with any static host and expose the proxy under `/api/proxy/kemono` on the same origin (or point `VITE_API_BASE` at your deployed proxy if you add that env var).
+The static bundle lands in `kemono-peruse/dist`. Deploy it with any static host and expose the proxy under `/api/proxy/kemono` on the same origin (or point `VITE_API_BASE` at your deployed proxy if you add that env var).

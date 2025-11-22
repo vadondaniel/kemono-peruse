@@ -69,7 +69,7 @@ const server = http.createServer(async (req, res) => {
       method: req.method,
       headers: {
         Accept: KEMONO_ACCEPT_HEADER,
-        "User-Agent": "Kemono-Explorer-Proxy/1.0",
+        "User-Agent": "Kemono-Peruse-Proxy/1.0",
       },
     });
 
@@ -121,8 +121,8 @@ function loadEnvDefaults() {
   const candidateFiles = [
     path.join(__dirname, ".env"),
     path.join(__dirname, ".env.local"),
-    path.join(__dirname, "kemono-explorer", ".env"),
-    path.join(__dirname, "kemono-explorer", ".env.local"),
+    path.join(__dirname, "kemono-peruse", ".env"),
+    path.join(__dirname, "kemono-peruse", ".env.local"),
   ];
 
   for (const file of candidateFiles) {

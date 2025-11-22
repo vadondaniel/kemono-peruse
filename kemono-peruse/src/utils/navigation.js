@@ -1,6 +1,6 @@
 import { RAW_BASE_PATH, SERVICE_LABELS } from "../constants";
 
-const BASE_TITLE = "Kemono Explorer";
+const BASE_TITLE = "Kemono Peruse";
 
 export function normalizeBasePath(value) {
   if (typeof value !== "string" || value.length === 0) {

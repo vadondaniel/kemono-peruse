@@ -1,6 +1,6 @@
 @import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;600&family=Source+Sans+3:wght@400;600&family=Merriweather:wght@400;600&family=Cormorant+Garamond:wght@400;600&family=Literata:wght@400;600&display=swap");
 
-/* Kemono Explorer styling - clean cards, flexible layout, no external deps */
+/* Kemono Peruse styling - clean cards, flexible layout, no external deps */
 :root {
   color-scheme: light;
   --bg: #f7f9fc;
