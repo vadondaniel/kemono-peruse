@@ -44,25 +44,27 @@ Kemono Peruse is a clean, keyboard-friendly reader for Kemono posts.
 ### Handy launchers
 
 - `npm run dev:all` - boots both the proxy (`npm run proxy`) and the Vite dev server in one terminal.
-- `npm run host:all` - same as above but starts Vite with `--host` so phones/other devices on your LAN can connect.
+- `npm run dev:host:all` - same as above but starts Vite with `--host` so phones/other devices on your LAN can connect.
 - `npm run preview:all` - builds on `npm run preview` by also launching the proxy so you can test the production bundle locally.
+- `npm run preview:host:all` - launches the proxy plus `vite preview --host` so the built app is reachable from other devices on your network.
 - Windows shortcuts:
   - `run-dev.bat` (opens the dev URL from `.env` – default `http://localhost:5173` – then runs `npm run dev:all`)
-  - `run-host.bat` (same idea, but calls `npm run host:all` for LAN testing)
+  - `run-host.bat` (same idea, but calls `npm run dev:host:all` for LAN testing)
   - `build.bat` (runs `npm run build` inside `kemono-peruse`)
   - `run-built.bat` (opens the preview URL defined in `.env` – default `http://localhost:4173` – then runs `npm run preview:all` so the proxy and preview server start together)
+  - `run-built-host.bat` (same as above but runs `npm run preview:host:all`, making the built site reachable over LAN)
 
 #### Auto-starting on Windows
 
-Want Kemono Peruse to boot when Windows does? Create a shortcut to the batch file you prefer (`run-dev.bat` during development or `run-built.bat` after building), right-click the shortcut, choose **Properties**, and set **Run** to *Minimized*. Press `Win + R`, type `shell:startup`, and drop the shortcut into the Startup folder. Windows will launch it in the background after you sign in, bringing up the proxy plus the UI (or built preview) automatically. (or you can delete the `start "" http://localhost:*` line if you don't want it to open the browser automatically)
+Want Kemono Peruse to boot when Windows does? Create a shortcut to the batch file you prefer (`run-dev.bat`, `run-built.bat`, or `run-built-host.bat`), right-click the shortcut, choose **Properties**, and set **Run** to *Minimized*. Press `Win + R`, type `shell:startup`, and drop the shortcut into the Startup folder. Windows will launch it in the background after you sign in, bringing up the proxy plus the dev UI or built preview automatically. (Delete the `start "" http://localhost:*` line inside the batch file if you don't want your browser to pop open.)
 
 ### Everyday use (built version, no dev server)
 
 1. Run `build.bat` once after updating the repo. This runs `npm run build` inside `kemono-peruse` and outputs the optimized bundle to `dist/`.
-2. Whenever you want to read Kemono, double-click `run-built.bat`. It:
-   - opens your configured preview URL (default `http://localhost:4173`)
-   - runs `npm run preview:all`, which starts the proxy (`npm run proxy`) and serves the built bundle via `npm run preview`
-3. Close the terminal when you are done; rerun `run-built.bat` next time. Rebuild only when you pull new changes or update .env settings for the preview server.
+2. Whenever you want to read Kemono, double-click whichever launcher fits:
+   - `run-built.bat` for local-only browsing. It opens your configured preview URL (default `http://localhost:4173`) and runs `npm run preview:all`, which starts the proxy plus `vite preview`.
+   - `run-built-host.bat` if you want phones/other devices on your LAN to connect. It opens the same URL and runs `npm run preview:host:all` (`vite preview --host`), so devices on the network can visit `http://<your-pc-ip>:<preview-port>`.
+3. Close the terminal when you are done; rerun the same launcher next time. Rebuild only when you pull new changes or update .env settings for the preview server.
 
 ## How to use the app
 
@@ -149,6 +151,12 @@ After `npm run build`, either:
 
   ```bash
   npm run preview:all
+  ```
+
+- Need LAN access? Use:
+
+  ```bash
+  npm run preview:host:all
   ```
 
 Vite's preview server will host `dist/` (default `http://localhost:4173`, or whatever you set via `VITE_PREVIEW_PORT`). For remote hosting, upload `dist` to any static host and expose the proxy under `/api/proxy/kemono` on the same origin (or set `VITE_API_BASE` to wherever your proxy lives).

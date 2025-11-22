@@ -1,7 +1,7 @@
 @echo off
 setlocal EnableDelayedExpansion
 
-set "DEV_PORT=5173"
+set "PREVIEW_PORT=4173"
 set "ENV_FILE=%~dp0kemono-peruse\.env"
 
 if exist "%ENV_FILE%" (
@@ -9,21 +9,17 @@ if exist "%ENV_FILE%" (
     set "key=%%A"
     set "value=%%B"
     for /f "tokens=* delims= " %%K in ("!key!") do set "key=%%K"
-    if /i "!key!"=="VITE_DEV_SERVER_PORT" (
+    if /i "!key!"=="VITE_PREVIEW_PORT" (
       for /f "tokens=1 delims=#;" %%C in ("!value!") do set "value=%%C"
       for /f "tokens=* delims= " %%C in ("!value!") do set "value=%%C"
       set "value=!value:"=!"
-      if defined value set "DEV_PORT=!value!"
-    ) else if /i "!key!"=="VITE_PORT" (
-      for /f "tokens=1 delims=#;" %%C in ("!value!") do set "value=%%C"
-      for /f "tokens=* delims= " %%C in ("!value!") do set "value=%%C"
-      set "value=!value:"=!"
-      if defined value set "DEV_PORT=!value!"
+      if defined value set "PREVIEW_PORT=!value!"
     )
   )
 )
 
-start "" http://localhost:%DEV_PORT%
+start "" http://localhost:%PREVIEW_PORT%
 
 cd /d "%~dp0kemono-peruse"
-npm run dev:host:all
+npm run preview:host:all
+pause

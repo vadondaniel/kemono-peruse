@@ -8,10 +8,12 @@
   "build": "vite build",
   "lint": "eslint .",
   "preview": "vite preview",
+  "preview:host": "vite preview --host",
   "proxy": "node ../proxy-server.js",
   "dev:all": "concurrently \"npm run proxy\" \"npm run dev\"",
-  "host:all": "concurrently \"npm run proxy\" \"npx vite --host\"",
-  "preview:all": "concurrently \"npm run proxy\" \"npm run preview\""
+  "dev:host:all": "concurrently \"npm run proxy\" \"npx vite --host\"",
+  "preview:all": "concurrently \"npm run proxy\" \"npm run preview\"",
+  "preview:host:all": "concurrently \"npm run proxy\" \"npm run preview:host\""
 },
   "dependencies": {
     "react": "^19.1.1",
