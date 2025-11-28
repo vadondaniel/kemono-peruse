@@ -1,6 +1,6 @@
 # Kemono Peruse
 
-Kemono Peruse is a clean, keyboard-friendly reader for Kemono posts.
+Kemono Peruse is a clean web reader for Kemono posts.
 
 ## Why you might like it
 
