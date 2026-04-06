@@ -34,6 +34,48 @@ const CREATOR_TOOL_TABS = [
   { value: "quick-add", label: "Quick add" },
 ];
 
+const runCreatorDirectorySearch = ({ directory, serviceFilter, tokens, limit }) => {
+  if (!Array.isArray(directory) || !Array.isArray(tokens) || tokens.length === 0) {
+    return { results: [], total: 0 };
+  }
+
+  const normalizedService = typeof serviceFilter === "string" ? serviceFilter : "all";
+  const normalizedTokens = tokens
+    .map((token) => String(token || "").trim().toLowerCase())
+    .filter(Boolean);
+
+  if (normalizedTokens.length === 0) {
+    return { results: [], total: 0 };
+  }
+
+  const matches = [];
+  for (const entry of directory) {
+    if (!entry) continue;
+    if (normalizedService !== "all" && entry.service !== normalizedService) {
+      continue;
+    }
+    const nameLower = typeof entry.nameLower === "string" ? entry.nameLower : "";
+    const idLower = typeof entry.idLower === "string" ? entry.idLower : "";
+    const isMatch = normalizedTokens.every((token) => nameLower.includes(token) || idLower.includes(token));
+    if (isMatch) {
+      matches.push(entry);
+    }
+  }
+
+  matches.sort((a, b) => {
+    if (b.favorited !== a.favorited) return b.favorited - a.favorited;
+    if (b.updated !== a.updated) return b.updated - a.updated;
+    if (b.indexed !== a.indexed) return b.indexed - a.indexed;
+    return (a.name || a.id).localeCompare(b.name || b.id);
+  });
+
+  const normalizedLimit = Number.isFinite(limit) && limit > 0 ? Math.floor(limit) : CREATOR_SEARCH_LIMIT;
+  return {
+    results: matches.slice(0, normalizedLimit),
+    total: matches.length,
+  };
+};
+
 function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, onOpenCreator }) {
   const [service, setService] = useState("patreon");
   const [creatorId, setCreatorId] = useState("");
@@ -51,12 +93,17 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
   const savedListRef = useRef(null);
   const creatorIdRef = useRef(null);
   const creatorDirectoryTokenRef = useRef(0);
+  const creatorSearchWorkerRef = useRef(null);
+  const creatorSearchRequestRef = useRef(0);
   const normalizedSearchQuery = creatorSearchQuery.trim().toLowerCase();
   const searchTokens = useMemo(
     () => normalizedSearchQuery.split(/\s+/).filter(Boolean),
     [normalizedSearchQuery],
   );
   const searchReady = normalizedSearchQuery.length >= 2;
+  const [creatorSearchResults, setCreatorSearchResults] = useState([]);
+  const [totalCreatorMatches, setTotalCreatorMatches] = useState(0);
+  const [creatorSearchPending, setCreatorSearchPending] = useState(false);
 
   useEffect(() => {
     if (!searchReady) return;
@@ -114,6 +161,90 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
     },
     [],
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof Worker === "undefined") return undefined;
+
+    const worker = new Worker(new URL("../workers/creatorSearch.worker.js", import.meta.url), {
+      type: "module",
+    });
+
+    worker.onmessage = (event) => {
+      const payload = event?.data;
+      if (!payload || payload.type !== "searchResult") return;
+      if (payload.requestId !== creatorSearchRequestRef.current) return;
+
+      const nextResults = Array.isArray(payload.results) ? payload.results : [];
+      const nextTotalNumber = Number(payload.total);
+      const nextTotal =
+        Number.isFinite(nextTotalNumber) && nextTotalNumber >= 0 ? Math.floor(nextTotalNumber) : 0;
+
+      setCreatorSearchResults(nextResults);
+      setTotalCreatorMatches(nextTotal);
+      setCreatorSearchPending(false);
+    };
+
+    worker.onerror = (error) => {
+      console.error("Creator search worker failed", error);
+      setCreatorSearchPending(false);
+    };
+
+    creatorSearchWorkerRef.current = worker;
+
+    return () => {
+      creatorSearchRequestRef.current += 1;
+      creatorSearchWorkerRef.current = null;
+      worker.terminate();
+    };
+  }, []);
+
+  useEffect(() => {
+    const worker = creatorSearchWorkerRef.current;
+    if (!worker) return;
+    worker.postMessage({
+      type: "setDirectory",
+      directory: Array.isArray(creatorDirectory) ? creatorDirectory : [],
+    });
+  }, [creatorDirectory]);
+
+  useEffect(() => {
+    const readyForSearch = Boolean(creatorDirectory && searchReady && searchTokens.length > 0);
+    if (!readyForSearch) {
+      creatorSearchRequestRef.current += 1;
+      setCreatorSearchResults([]);
+      setTotalCreatorMatches(0);
+      setCreatorSearchPending(false);
+      return;
+    }
+
+    const worker = creatorSearchWorkerRef.current;
+    const requestId = creatorSearchRequestRef.current + 1;
+    creatorSearchRequestRef.current = requestId;
+
+    if (worker) {
+      setCreatorSearchPending(true);
+      setCreatorSearchResults([]);
+      setTotalCreatorMatches(0);
+      worker.postMessage({
+        type: "search",
+        requestId,
+        serviceFilter: creatorSearchService,
+        tokens: searchTokens,
+        limit: CREATOR_SEARCH_LIMIT,
+      });
+      return;
+    }
+
+    const next = runCreatorDirectorySearch({
+      directory: creatorDirectory,
+      serviceFilter: creatorSearchService,
+      tokens: searchTokens,
+      limit: CREATOR_SEARCH_LIMIT,
+    });
+    setCreatorSearchResults(next.results);
+    setTotalCreatorMatches(next.total);
+    setCreatorSearchPending(false);
+  }, [creatorDirectory, searchReady, searchTokens, creatorSearchService]);
 
   const handleSave = (event) => {
     event.preventDefault();
@@ -229,36 +360,6 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
     return next;
   }, [savedCreators]);
 
-  const { creatorSearchResults, totalCreatorMatches } = useMemo(() => {
-    if (!creatorDirectory || !searchReady || searchTokens.length === 0) {
-      return { creatorSearchResults: [], totalCreatorMatches: 0 };
-    }
-    const matches = [];
-    for (const entry of creatorDirectory) {
-      if (!entry) continue;
-      if (creatorSearchService !== "all" && entry.service !== creatorSearchService) {
-        continue;
-      }
-      const match = searchTokens.every((token) => {
-        if (!token) return true;
-        return entry.nameLower.includes(token) || entry.idLower.includes(token);
-      });
-      if (match) {
-        matches.push(entry);
-      }
-    }
-    matches.sort((a, b) => {
-      if (b.favorited !== a.favorited) return b.favorited - a.favorited;
-      if (b.updated !== a.updated) return b.updated - a.updated;
-      if (b.indexed !== a.indexed) return b.indexed - a.indexed;
-      return (a.name || a.id).localeCompare(b.name || b.id);
-    });
-    return {
-      creatorSearchResults: matches.slice(0, CREATOR_SEARCH_LIMIT),
-      totalCreatorMatches: matches.length,
-    };
-  }, [creatorDirectory, creatorSearchService, searchReady, searchTokens]);
-
   const uniqueServiceCount = useMemo(() => {
     const services = new Set(savedCreators.map((entry) => entry.service));
     return services.size;
@@ -269,7 +370,8 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
   const hasFilter = savedFilter.trim().length > 0;
   const emptySearch = hasFilter && filteredCreators.length === 0;
   const activeServiceLabel = formatServiceLabel(service);
-  const searchLoading = creatorDirectoryStatus === "loading";
+  const directoryLoading = creatorDirectoryStatus === "loading";
+  const searchLoading = directoryLoading || creatorSearchPending;
   const searchErrored = creatorDirectoryStatus === "error";
   const searchHasQuery = creatorSearchQuery.trim().length > 0;
   const searchNeedsMoreInput = searchHasQuery && !searchReady;
@@ -284,8 +386,10 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
     searchStatusContent = "Search the Kemono directory.";
   } else if (searchNeedsMoreInput) {
     searchStatusContent = "Enter at least 2 characters.";
-  } else if (searchLoading) {
+  } else if (directoryLoading) {
     searchStatusContent = "Loading creator directory…";
+  } else if (creatorSearchPending) {
+    searchStatusContent = "Searching creators…";
   } else if (searchErrored) {
     searchStatusContent = (
       <>
