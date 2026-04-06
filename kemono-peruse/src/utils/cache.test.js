@@ -3,6 +3,8 @@ import {
   isCacheFresh,
   isPostDetailFresh,
   loadCreatorCache,
+  markArchiveChunkVerified,
+  mergeArchiveChunk,
   pruneCacheChunks,
   pruneCachePostDetails,
   writeCreatorCache,
@@ -30,20 +32,20 @@ describe("cache utils", () => {
 
   it("pruneCacheChunks sorts by offset and caps total items", () => {
     const chunks = {
-      "100": Array.from({ length: 600 }, (_, index) => ({ id: `a-${index}` })),
-      "0": Array.from({ length: 600 }, (_, index) => ({ id: `b-${index}` })),
+      "2500": Array.from({ length: 3000 }, (_, index) => ({ id: `a-${index}` })),
+      "0": Array.from({ length: 3000 }, (_, index) => ({ id: `b-${index}` })),
       bad: "not-array",
     };
     const pruned = pruneCacheChunks(chunks);
 
-    expect(Object.keys(pruned)).toEqual(["0", "100"]);
-    expect(pruned["0"]).toHaveLength(600);
-    expect(pruned["100"]).toHaveLength(400);
+    expect(Object.keys(pruned)).toEqual(["0", "2500"]);
+    expect(pruned["0"]).toHaveLength(3000);
+    expect(pruned["2500"]).toHaveLength(2000);
   });
 
   it("pruneCachePostDetails keeps most recent entries only", () => {
     const details = {};
-    for (let index = 0; index < 120; index += 1) {
+    for (let index = 0; index < 2100; index += 1) {
       details[`id-${index}`] = {
         data: { id: index },
         updatedAt: index,
@@ -52,9 +54,56 @@ describe("cache utils", () => {
     }
 
     const pruned = pruneCachePostDetails(details);
-    expect(Object.keys(pruned)).toHaveLength(100);
-    expect(pruned["id-119"]).toBeDefined();
+    expect(Object.keys(pruned)).toHaveLength(2000);
+    expect(pruned["id-2099"]).toBeDefined();
     expect(pruned["id-0"]).toBeUndefined();
+  });
+
+  it("mergeArchiveChunk keeps missing cached posts as archived-only", () => {
+    const now = 2000;
+    const merged = mergeArchiveChunk(
+      [
+        { id: "keep-me", title: "Old", firstSeenAt: 1000, lastSeenAt: 1500, lastVerifiedAt: 1500 },
+        { id: "still-live", title: "Old live", firstSeenAt: 1001, lastSeenAt: 1501, lastVerifiedAt: 1501 },
+      ],
+      [{ id: "still-live", title: "Fresh live" }],
+      now,
+    );
+
+    const live = merged.find((post) => post.id === "still-live");
+    const archived = merged.find((post) => post.id === "keep-me");
+
+    expect(live).toMatchObject({
+      id: "still-live",
+      title: "Fresh live",
+      archivedOnly: false,
+      firstSeenAt: 1001,
+      lastSeenAt: now,
+      lastVerifiedAt: now,
+    });
+    expect(archived).toMatchObject({
+      id: "keep-me",
+      archivedOnly: true,
+      firstSeenAt: 1000,
+      lastSeenAt: 1500,
+      lastVerifiedAt: now,
+    });
+  });
+
+  it("markArchiveChunkVerified only updates verification timestamps", () => {
+    const verified = markArchiveChunkVerified(
+      [{ id: "post-1", title: "A", firstSeenAt: 10, lastSeenAt: 12, archivedOnly: true }],
+      500,
+    );
+
+    expect(verified[0]).toMatchObject({
+      id: "post-1",
+      title: "A",
+      archivedOnly: true,
+      firstSeenAt: 10,
+      lastSeenAt: 12,
+      lastVerifiedAt: 500,
+    });
   });
 
   it("collectCachedPosts flattens sorted chunk entries with positions", () => {

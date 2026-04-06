@@ -140,7 +140,7 @@ describe("CreatorPage search behavior", () => {
     });
   });
 
-  it("uses stale-while-revalidate for cached post lists", async () => {
+  it("uses stale-while-revalidate for cached post lists and keeps removed posts archived", async () => {
     localStorage.setItem("kemono.cache.pref.patreon.50049787", "true");
     writeCreatorCache("patreon", "50049787", {
       updatedAt: 1,
@@ -177,6 +177,8 @@ describe("CreatorPage search behavior", () => {
       { id: "fresh-post", title: "Fresh title", published: "2025-01-02T00:00:00.000Z" },
     ]);
     await screen.findByText("Fresh title");
+    expect(screen.getByText("Cached title")).toBeInTheDocument();
+    expect(screen.getByText("Archived")).toBeInTheDocument();
   });
 
   it("sends conditional headers for cache revalidation and keeps cached chunks on 304", async () => {

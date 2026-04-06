@@ -364,6 +364,7 @@ function PostView({
 
   const [post, setPost] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [detailSyncState, setDetailSyncState] = useState("idle");
   const [neighbors, setNeighbors] = useState({ newerId: null, olderId: null });
   const [heroLoaded, setHeroLoaded] = useState(false);
   const [attachmentsExpanded, setAttachmentsExpanded] = useState(false);
@@ -386,6 +387,16 @@ function PostView({
   const viewerCursorAnchorRef = useRef(null);
   const trimmedActiveFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
   const hasActiveFilter = trimmedActiveFilter.length > 0;
+  const detailSyncMessage = (() => {
+    if (!useCache) return null;
+    if (detailSyncState === "refreshing") {
+      return "Refreshing archived copy...";
+    }
+    if (detailSyncState === "stale") {
+      return "Using stale archive copy (offline or source unavailable).";
+    }
+    return null;
+  })();
   useEffect(() => {
     if (!post || typeof onResolvePostTitle !== "function") return;
     const nextTitle = post.title || post.id || "";
@@ -489,37 +500,68 @@ function PostView({
       useCache && cacheData?.postDetails && cacheData.postDetails[postId]
         ? cacheData.postDetails[postId]
         : null;
+    const cachedPost = cachedEntry?.data ? normalizeCachedPost(cachedEntry.data) : null;
     const cachedDetailFresh = isPostDetailFresh(cachedEntry);
-    if (cachedEntry?.data) {
-      setPost(normalizeCachedPost(cachedEntry.data));
-      setLoading(!cachedDetailFresh);
+    if (cachedPost) {
+      setPost(cachedPost);
+      setLoading(false);
+      setDetailSyncState(cachedDetailFresh ? "idle" : "refreshing");
     } else {
       setLoading(true);
+      setDetailSyncState("idle");
     }
 
-    const shouldFetch = !useCache || !cachedEntry?.data || !cachedDetailFresh;
+    const shouldFetch = !useCache || !cachedPost || !cachedDetailFresh;
     if (!shouldFetch) {
       return () => {
         alive = false;
       };
     }
 
-    setLoading(true);
-    fetchJson(`${API_BASE}/${service}/user/${creatorId}/post/${postId}`).then((data) => {
-      if (!alive) return;
-      const nextPost = normalizePostPayload(data);
-      setPost(nextPost);
-      setLoading(false);
-      if (useCache && nextPost) {
-        updateCache((prev) => ({
-          ...prev,
-          postDetails: {
-            ...(prev.postDetails || {}),
-            [postId]: { data: nextPost, updatedAt: Date.now(), hydrated: true },
-          },
-        }), { updateTimestamp: false });
-      }
-    });
+    if (!cachedPost) {
+      setLoading(true);
+    }
+
+    fetchJson(`${API_BASE}/${service}/user/${creatorId}/post/${postId}`)
+      .then((data) => {
+        if (!alive) return;
+        const nextPost = normalizePostPayload(data);
+        if (nextPost) {
+          setPost(nextPost);
+          setDetailSyncState("idle");
+          if (useCache) {
+            updateCache(
+              (prev) => ({
+                ...prev,
+                postDetails: {
+                  ...(prev.postDetails || {}),
+                  [postId]: { data: nextPost, updatedAt: Date.now(), hydrated: true },
+                },
+              }),
+              { updateTimestamp: false },
+            );
+          }
+        } else if (cachedPost) {
+          setPost(cachedPost);
+          setDetailSyncState("stale");
+        } else {
+          setPost(null);
+          setDetailSyncState("stale");
+        }
+        setLoading(false);
+      })
+      .catch(() => {
+        if (!alive) return;
+        if (cachedPost) {
+          setPost(cachedPost);
+          setDetailSyncState("stale");
+          setLoading(false);
+          return;
+        }
+        setPost(null);
+        setDetailSyncState("stale");
+        setLoading(false);
+      });
     return () => {
       alive = false;
     };
@@ -1525,6 +1567,7 @@ function PostView({
             )}
           </div>
           <Timestamp value={post.published} prefix="Published" />
+          {detailSyncMessage && <p className="muted small">{detailSyncMessage}</p>}
         </header>
 
         {attachments.length > 0 && attachmentsExpanded && (

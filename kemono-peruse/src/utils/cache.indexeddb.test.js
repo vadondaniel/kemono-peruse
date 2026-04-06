@@ -606,7 +606,7 @@ describe("cache indexeddb integration", () => {
     });
 
     const cache = await import("./cache.js");
-    for (let index = 0; index < 82; index += 1) {
+    for (let index = 0; index < 152; index += 1) {
       const creatorId = String(100000 + index);
       const result = await cache.writeCreatorCacheAsync("patreon", creatorId, {
         updatedAt: index,
@@ -619,7 +619,7 @@ describe("cache indexeddb integration", () => {
 
     const store = fake.stores.get("creator-cache");
     const metaKeys = Array.from(store.keys()).filter((key) => key.endsWith("::meta"));
-    expect(metaKeys.length).toBeLessThanOrEqual(80);
+    expect(metaKeys.length).toBeLessThanOrEqual(150);
 
     vi.resetModules();
     Object.defineProperty(window, "indexedDB", {
@@ -631,12 +631,12 @@ describe("cache indexeddb integration", () => {
     const oldest = await reloadedCache.loadCreatorCacheAsync("patreon", "100000", {
       migrateLegacy: false,
     });
-    const newest = await reloadedCache.loadCreatorCacheAsync("patreon", "100081", {
+    const newest = await reloadedCache.loadCreatorCacheAsync("patreon", "100151", {
       migrateLegacy: false,
     });
 
     expect(oldest).toBeNull();
     expect(newest).toBeTruthy();
-    expect(newest.chunks["0"][0].id).toBe("post-81");
+    expect(newest.chunks["0"][0].id).toBe("post-151");
   });
 });

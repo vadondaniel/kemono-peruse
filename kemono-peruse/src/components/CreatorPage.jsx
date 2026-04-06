@@ -23,6 +23,8 @@ import {
   pruneCacheChunks,
   pruneCachePostDetails,
   collectCachedPosts,
+  markArchiveChunkVerified,
+  mergeArchiveChunk,
 } from "../utils/cache.js";
 import { formatDate } from "../utils/date.js";
 import { extractTagTokens, getPostExcerptHtml, getServiceLabel, toNumericCount } from "../utils/posts.js";
@@ -889,10 +891,17 @@ function CreatorPage({
           }
           let chunkMatchedViaText = false;
           let chunkMatchedViaTags = false;
-          if (useCache && mode.allowCache && chunk.length > 0) {
+          const shouldArchiveFetchedChunk =
+            useCache &&
+            mode.allowCache &&
+            chunk.length > 0 &&
+            !mode.queryParam &&
+            !mode.tagParam &&
+            !mode.fieldParam;
+          if (shouldArchiveFetchedChunk) {
             updateCache((prev) => {
               const prevChunks = prev?.chunks ? { ...prev.chunks } : {};
-              prevChunks[String(offset)] = chunk.slice();
+              prevChunks[String(offset)] = mergeArchiveChunk(prevChunks[String(offset)], chunk);
               return {
                 ...prev,
                 chunks: pruneCacheChunks(prevChunks),
@@ -1223,9 +1232,10 @@ function CreatorPage({
         fetchedChunks.forEach(({ offset, response }) => {
           const chunkKey = String(offset);
           if (response?.notModified && Array.isArray(mergedChunks[chunkKey])) {
-            // keep cached chunk data when server confirms no changes
+            mergedChunks[chunkKey] = markArchiveChunkVerified(mergedChunks[chunkKey]);
           } else {
-            mergedChunks[chunkKey] = Array.isArray(response?.data) ? response.data : [];
+            const incomingChunk = Array.isArray(response?.data) ? response.data : [];
+            mergedChunks[chunkKey] = mergeArchiveChunk(mergedChunks[chunkKey], incomingChunk);
           }
           const nextValidator = mergeValidator(mergedChunkValidators[chunkKey], response);
           if (nextValidator) {
@@ -1292,24 +1302,26 @@ function CreatorPage({
     : null;
   const cacheStatusMessage = (() => {
     if (cacheStorageError) {
-      return "Cache unavailable (storage full)";
+      return "Archive unavailable (storage full)";
     }
     if (!useCache) {
       return null;
     }
     if (cacheValidationPending) {
-      return "Checking for new posts...";
+      return "Checking archive for updates...";
     }
     if (cacheValidationState === "error") {
-      return "API unavailable. Showing saved posts.";
+      return "Source unavailable. Using archive copy.";
     }
     if (cacheValidationState === "stale" || !cacheFresh) {
-      return "Refreshing posts from source...";
+      return "Syncing archive from source...";
     }
     if (cacheFresh && cacheUpdatedLabel) {
-      return `Cached locally - updated ${cacheUpdatedLabel}`;
+      return `Archive available offline - updated ${cacheUpdatedLabel}`;
     }
-    return cacheUpdatedLabel ? `Cached locally - updated ${cacheUpdatedLabel}` : "Cache ready";
+    return cacheUpdatedLabel
+      ? `Archive available offline - updated ${cacheUpdatedLabel}`
+      : "Archive ready";
   })();
 
   useEffect(() => {
@@ -2065,7 +2077,7 @@ function CreatorPage({
                     </span>
                     {canUseCacheUi && (useCache || cacheStorageError) && (
                       <span className="muted small cache-status-line">
-                        {cacheStatusMessage || "Cache ready"}
+                        {cacheStatusMessage || "Archive ready"}
                       </span>
                     )}
                   </div>
@@ -2095,10 +2107,10 @@ function CreatorPage({
                   <span className="filter-toggle-track">
                     <span className="filter-toggle-thumb" />
                   </span>
-                  Cache data
+                  Archive posts locally
                 </label>
                 {cacheStorageError && (
-                  <p className="muted small cache-status-line">Storage full. Cache has been disabled.</p>
+                  <p className="muted small cache-status-line">Storage full. Archive has been disabled.</p>
                 )}
               </div>
             )}
@@ -2330,6 +2342,7 @@ function CreatorPage({
                 <div className="post-body">
                   <div className="post-head">
                     <span className="post-title">{post.title || post.id}</span>
+                    {post?.archivedOnly && <span className="tag post-archive-badge">Archived</span>}
                     <Timestamp value={post.published} />
                   </div>
                   {showTags && hasTags && (

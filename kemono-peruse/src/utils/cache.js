@@ -13,10 +13,10 @@ const CREATOR_CACHE_DB_NAME = "kemono-peruse-cache";
 const CREATOR_CACHE_DB_VERSION = 1;
 const CREATOR_CACHE_STORE = "creator-cache";
 const SPLIT_META_RECORD_TYPE = "creator-cache-meta-v2";
-const MAX_MEMORY_CACHE_CREATORS = 24;
-const MAX_MEMORY_CACHE_BYTES = 24 * 1024 * 1024;
-const MAX_PERSISTED_CACHE_CREATORS = 80;
-const MAX_PERSISTED_CACHE_BYTES = 96 * 1024 * 1024;
+const MAX_MEMORY_CACHE_CREATORS = 48;
+const MAX_MEMORY_CACHE_BYTES = 64 * 1024 * 1024;
+const MAX_PERSISTED_CACHE_CREATORS = 150;
+const MAX_PERSISTED_CACHE_BYTES = 256 * 1024 * 1024;
 const ACCESS_TOUCH_MIN_INTERVAL_MS = 30000;
 const CACHE_WRITE_DEBOUNCE_MS = 120;
 const cacheMemory = new Map();
@@ -131,6 +131,110 @@ const getIndexedDb = () => {
   return window.indexedDB || null;
 };
 
+const normalizeArchiveTimestamp = (value, fallback = 0) => {
+  const numeric = Number(value);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return Math.floor(numeric);
+  }
+  return Number.isFinite(fallback) && fallback > 0 ? Math.floor(fallback) : 0;
+};
+
+const normalizeCachedArchivePost = (post, overrides = {}) => {
+  if (!post || typeof post !== "object") return post;
+  const fallbackTimestamp = normalizeArchiveTimestamp(overrides.fallbackTimestamp, Date.now());
+  const existingFirstSeen = normalizeArchiveTimestamp(post.firstSeenAt, fallbackTimestamp);
+  const existingLastSeen = normalizeArchiveTimestamp(post.lastSeenAt, existingFirstSeen || fallbackTimestamp);
+  const existingLastVerified = normalizeArchiveTimestamp(
+    post.lastVerifiedAt,
+    existingLastSeen || existingFirstSeen || fallbackTimestamp,
+  );
+
+  const firstSeenAt = normalizeArchiveTimestamp(
+    overrides.firstSeenAt,
+    existingFirstSeen || fallbackTimestamp,
+  );
+  const lastSeenAt = normalizeArchiveTimestamp(
+    overrides.lastSeenAt,
+    existingLastSeen || firstSeenAt || fallbackTimestamp,
+  );
+  const lastVerifiedAt = normalizeArchiveTimestamp(
+    overrides.lastVerifiedAt,
+    existingLastVerified || lastSeenAt || firstSeenAt || fallbackTimestamp,
+  );
+  const archivedOnly =
+    overrides.archivedOnly !== undefined ? Boolean(overrides.archivedOnly) : Boolean(post.archivedOnly);
+
+  return {
+    ...post,
+    archivedOnly,
+    firstSeenAt,
+    lastSeenAt,
+    lastVerifiedAt,
+  };
+};
+
+export function markArchiveChunkVerified(chunk, timestamp = Date.now()) {
+  if (!Array.isArray(chunk)) return [];
+  const now = normalizeArchiveTimestamp(timestamp, Date.now());
+  return chunk.map((post) =>
+    normalizeCachedArchivePost(post, {
+      lastVerifiedAt: now,
+      fallbackTimestamp: now,
+    }),
+  );
+}
+
+export function mergeArchiveChunk(existingChunk, incomingChunk, timestamp = Date.now()) {
+  const now = normalizeArchiveTimestamp(timestamp, Date.now());
+  const previous = Array.isArray(existingChunk) ? existingChunk : [];
+  const incoming = Array.isArray(incomingChunk) ? incomingChunk : [];
+  const previousById = new Map();
+
+  previous.forEach((post) => {
+    if (!post || typeof post !== "object" || post.id === undefined || post.id === null) return;
+    const key = String(post.id);
+    if (!previousById.has(key)) {
+      previousById.set(key, post);
+    }
+  });
+
+  const seenIds = new Set();
+  const merged = incoming.map((post) => {
+    if (!post || typeof post !== "object") return post;
+    const key = post.id === undefined || post.id === null ? "" : String(post.id);
+    const previousEntry = key ? previousById.get(key) : null;
+    if (key) seenIds.add(key);
+    return normalizeCachedArchivePost(
+      {
+        ...(previousEntry || {}),
+        ...post,
+      },
+      {
+        archivedOnly: false,
+        firstSeenAt: normalizeArchiveTimestamp(previousEntry?.firstSeenAt, now),
+        lastSeenAt: now,
+        lastVerifiedAt: now,
+        fallbackTimestamp: now,
+      },
+    );
+  });
+
+  previous.forEach((post) => {
+    if (!post || typeof post !== "object" || post.id === undefined || post.id === null) return;
+    const key = String(post.id);
+    if (seenIds.has(key)) return;
+    merged.push(
+      normalizeCachedArchivePost(post, {
+        archivedOnly: true,
+        lastVerifiedAt: now,
+        fallbackTimestamp: now,
+      }),
+    );
+  });
+
+  return merged;
+}
+
 const normalizeCachePayload = (value) => {
   if (!value || typeof value !== "object" || value.version !== CACHE_VERSION) return null;
   const parsed = { ...value };
@@ -138,7 +242,9 @@ const normalizeCachePayload = (value) => {
     Object.keys(parsed.chunks).forEach((offset) => {
       if (!Array.isArray(parsed.chunks[offset])) {
         delete parsed.chunks[offset];
+        return;
       }
+      parsed.chunks[offset] = parsed.chunks[offset].map((post) => normalizeCachedArchivePost(post));
     });
   }
   if (parsed.postDetails && typeof parsed.postDetails === "object") {
