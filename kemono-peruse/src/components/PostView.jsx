@@ -32,7 +32,7 @@ import {
   loadCreatorCache,
   loadCreatorCacheAsync,
   writeCreatorCacheAsync,
-  isCacheFresh,
+  isPostDetailFresh,
   pruneCacheChunks,
   pruneCachePostDetails,
 } from "../utils/cache.js";
@@ -201,7 +201,6 @@ function PostView({
   const [cacheData, setCacheData] = useState(() => loadCreatorCache(service, creatorId));
   const readerSettingsStorageKey = alreadySaved ? READER_SETTINGS_KEY : READER_SETTINGS_UNSAVED_KEY;
   const [readerSettings, setReaderSettings] = useState(() => getInitialReaderSettings(readerSettingsStorageKey));
-  const cacheFresh = useCache && cacheData ? isCacheFresh(cacheData) : false;
   const handleCachePersistenceFailure = useCallback(() => {
     setUseCacheState(false);
     setCacheData(null);
@@ -490,14 +489,15 @@ function PostView({
       useCache && cacheData?.postDetails && cacheData.postDetails[postId]
         ? cacheData.postDetails[postId]
         : null;
+    const cachedDetailFresh = isPostDetailFresh(cachedEntry);
     if (cachedEntry?.data) {
       setPost(normalizeCachedPost(cachedEntry.data));
-      setLoading(false);
+      setLoading(!cachedDetailFresh);
     } else {
       setLoading(true);
     }
 
-    const shouldFetch = !useCache || !cachedEntry?.data || !cacheFresh;
+    const shouldFetch = !useCache || !cachedEntry?.data || !cachedDetailFresh;
     if (!shouldFetch) {
       return () => {
         alive = false;
@@ -517,13 +517,13 @@ function PostView({
             ...(prev.postDetails || {}),
             [postId]: { data: nextPost, updatedAt: Date.now(), hydrated: true },
           },
-        }));
+        }), { updateTimestamp: false });
       }
     });
     return () => {
       alive = false;
     };
-  }, [service, creatorId, postId, useCache, cacheData, cacheFresh, updateCache]);
+  }, [service, creatorId, postId, useCache, cacheData, updateCache]);
 
   useEffect(() => {
     let alive = true;

@@ -13,6 +13,7 @@ export const MAX_CACHE_POSTS = 1000;
 export const MAX_CACHE_POST_DETAILS = 100;
 export const CACHE_VERSION = 1;
 export const CACHE_MAX_AGE_MS = 1000 * 60 * 60 * 24;
+export const CACHE_POST_DETAIL_MAX_AGE_MS = 1000 * 60 * 60 * 6;
 export const CACHE_PREF_PREFIX = "kemono.cache.pref";
 export const CACHE_DATA_PREFIX = "kemono.cache";
 export const PAGE_SIZE_OPTIONS = [25, 50, 75, 100, 125, 150];

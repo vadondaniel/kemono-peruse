@@ -19,6 +19,7 @@ import {
   loadCreatorCacheAsync,
   writeCreatorCacheAsync,
   isCacheFresh,
+  isPostDetailFresh,
   pruneCacheChunks,
   pruneCachePostDetails,
   collectCachedPosts,
@@ -1269,7 +1270,7 @@ function CreatorPage({
       const needsExcerpt = showExcerpts && !existingExcerpt;
       if (!needsTags && !needsExcerpt) return;
       const cachedDetailEntry = cachedDetails?.[post.id];
-      const cachedEntry = cachedDetailEntry?.data;
+      const cachedEntry = isPostDetailFresh(cachedDetailEntry) ? cachedDetailEntry?.data : null;
       const hydrated = Boolean(cachedDetailEntry?.hydrated);
       let shouldFetch = false;
       if (!cachedEntry) {

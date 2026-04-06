@@ -2,6 +2,7 @@ import {
   API_PAGE_SIZE,
   CACHE_DATA_PREFIX,
   CACHE_MAX_AGE_MS,
+  CACHE_POST_DETAIL_MAX_AGE_MS,
   CACHE_PREF_PREFIX,
   CACHE_VERSION,
   MAX_CACHE_POSTS,
@@ -842,6 +843,15 @@ export async function writeCreatorCacheAsync(service, creatorId, data) {
 export function isCacheFresh(cache) {
   if (!cache || typeof cache.updatedAt !== "number") return false;
   return Date.now() - cache.updatedAt < CACHE_MAX_AGE_MS;
+}
+
+export function isPostDetailFresh(entry, maxAgeMs = CACHE_POST_DETAIL_MAX_AGE_MS) {
+  if (!entry || typeof entry !== "object" || !entry.data) return false;
+  const updatedAt = Number(entry.updatedAt);
+  if (!Number.isFinite(updatedAt) || updatedAt <= 0) return false;
+  const resolvedMaxAge =
+    Number.isFinite(maxAgeMs) && maxAgeMs > 0 ? Math.floor(maxAgeMs) : CACHE_POST_DETAIL_MAX_AGE_MS;
+  return Date.now() - updatedAt < resolvedMaxAge;
 }
 
 export function pruneCacheChunks(chunks) {

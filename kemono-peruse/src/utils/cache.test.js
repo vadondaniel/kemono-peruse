@@ -1,6 +1,7 @@
 import {
   collectCachedPosts,
   isCacheFresh,
+  isPostDetailFresh,
   loadCreatorCache,
   pruneCacheChunks,
   pruneCachePostDetails,
@@ -13,6 +14,17 @@ describe("cache utils", () => {
     expect(isCacheFresh({ updatedAt: 9_500 })).toBe(true);
     expect(isCacheFresh({ updatedAt: -100_000_000 })).toBe(false);
     expect(isCacheFresh({})).toBe(false);
+    vi.restoreAllMocks();
+  });
+
+  it("isPostDetailFresh uses a stricter age window and requires payload", () => {
+    vi.spyOn(Date, "now").mockReturnValue(10_000);
+
+    expect(isPostDetailFresh({ data: { id: "post" }, updatedAt: 9_000 })).toBe(true);
+    expect(isPostDetailFresh({ data: { id: "post" }, updatedAt: -5 })).toBe(false);
+    expect(isPostDetailFresh({ updatedAt: 9_000 })).toBe(false);
+    expect(isPostDetailFresh({ data: { id: "post" }, updatedAt: 9_000 }, 500)).toBe(false);
+
     vi.restoreAllMocks();
   });
 
