@@ -18,6 +18,7 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       port: devServerPort,
+      allowedHosts: ['peruse.lan','kemono.peruse'],
       proxy: {
         '/api/proxy/kemono': {
           target: `http://localhost:${proxyPort}`,
@@ -28,6 +29,7 @@ export default defineConfig(({ mode }) => {
     },
     preview: {
       port: previewPort,
+      allowedHosts: ['peruse.lan','kemono.peruse'],
     },
   }
 })
