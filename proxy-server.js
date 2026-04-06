@@ -64,7 +64,17 @@ const server = http.createServer(async (req, res) => {
     upstreamPathname = `${basePath}${normalized}` || "/";
   }
 
-  const upstreamUrl = new URL(upstreamPathname + requestUrl.search, KEMONO_API_HOST);
+  const upstreamSearchParams = new URLSearchParams(requestUrl.searchParams);
+  const liteParam = parseBooleanQuery(upstreamSearchParams.get("lite"));
+  const hasTextQuery = upstreamSearchParams.has("q");
+  const isPostsListPath = isPostsListEndpoint(upstreamPathname);
+  const shouldLitePosts = isPostsListPath && !hasTextQuery && liteParam !== false;
+  upstreamSearchParams.delete("lite");
+  const upstreamSearch = upstreamSearchParams.toString();
+  const upstreamUrl = new URL(
+    `${upstreamPathname}${upstreamSearch ? `?${upstreamSearch}` : ""}`,
+    KEMONO_API_HOST,
+  );
   const upstreamAbortController = new AbortController();
   let abortedByClient = false;
   const abortUpstream = () => {
@@ -89,9 +99,10 @@ const server = http.createServer(async (req, res) => {
       signal: upstreamAbortController.signal,
     });
 
+    const contentType = upstreamResponse.headers.get("content-type") || "application/json";
     const responseHeaders = {
       ...corsHeaders(),
-      "Content-Type": upstreamResponse.headers.get("content-type") || "application/json",
+      "Content-Type": contentType,
       "Cache-Control": upstreamResponse.headers.get("cache-control") || "public, max-age=120",
     };
 
@@ -99,6 +110,22 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "HEAD" || !upstreamResponse.body) {
       res.end();
+      return;
+    }
+
+    const canNormalize =
+      req.method === "GET" &&
+      upstreamResponse.ok &&
+      shouldLitePosts &&
+      contentType.toLowerCase().includes("application/json");
+    if (canNormalize) {
+      const rawBody = await upstreamResponse.text();
+      const normalized = normalizePostsListPayload(rawBody);
+      if (normalized !== null) {
+        res.end(JSON.stringify(normalized));
+        return;
+      }
+      res.end(rawBody);
       return;
     }
 
@@ -187,4 +214,40 @@ function stripWrappingQuotes(value) {
     return value.slice(1, -1);
   }
   return value;
+}
+
+function parseBooleanQuery(value) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on") return true;
+  if (normalized === "0" || normalized === "false" || normalized === "no" || normalized === "off") return false;
+  return null;
+}
+
+function isPostsListEndpoint(pathname) {
+  if (!pathname || typeof pathname !== "string") return false;
+  return /\/posts\/?$/.test(pathname);
+}
+
+function normalizePostsListPayload(rawBody) {
+  if (!rawBody || typeof rawBody !== "string") return null;
+  try {
+    const parsed = JSON.parse(rawBody);
+    if (!Array.isArray(parsed)) return null;
+    return parsed.map((entry) => stripHeavyPostFields(entry));
+  } catch {
+    return null;
+  }
+}
+
+function stripHeavyPostFields(entry) {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry;
+  const next = { ...entry };
+  delete next.content;
+  delete next.embed;
+  delete next.attachments;
+  delete next.poll;
+  delete next.captions;
+  return next;
 }
