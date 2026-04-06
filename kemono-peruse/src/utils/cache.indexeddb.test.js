@@ -41,6 +41,38 @@ const createFakeIndexedDb = () => {
           });
           return request;
         },
+        openCursor() {
+          const request = {};
+          const entries = Array.from(store.entries());
+          let index = 0;
+          const emit = () => {
+            if (index >= entries.length) {
+              request.result = null;
+              if (typeof request.onsuccess === "function") {
+                request.onsuccess();
+              }
+              return;
+            }
+            const [key, value] = entries[index];
+            request.result = {
+              key,
+              value: JSON.parse(JSON.stringify(value)),
+              continue() {
+                index += 1;
+                queueMicrotask(() => {
+                  emit();
+                });
+              },
+            };
+            if (typeof request.onsuccess === "function") {
+              request.onsuccess();
+            }
+          };
+          queueMicrotask(() => {
+            emit();
+          });
+          return request;
+        },
         put(value, key) {
           store.set(key, JSON.parse(JSON.stringify(value)));
           finish();
@@ -109,8 +141,13 @@ describe("cache indexeddb integration", () => {
     expect(meta).toMatchObject({
       type: "creator-cache-meta-v2",
       version: 1,
+      rootKey: cacheKey,
       chunkKeys: ["0"],
     });
+    expect(typeof meta.lastAccessedAt).toBe("number");
+    expect(meta.lastAccessedAt).toBeGreaterThan(0);
+    expect(typeof meta.sizeEstimate).toBe("number");
+    expect(meta.sizeEstimate).toBeGreaterThan(0);
     expect(store.get(`${cacheKey}::chunk::0`)[0].id).toBe("legacy-post");
     expect(store.get(cacheKey)).toBeUndefined();
   });
@@ -505,5 +542,54 @@ describe("cache indexeddb integration", () => {
       migrateLegacy: false,
     });
     expect(loaded).toBeNull();
+  });
+
+  it("evicts least-recently-used creators when global persisted creator limit is exceeded", async () => {
+    const fake = createFakeIndexedDb();
+    Object.defineProperty(window, "indexedDB", {
+      configurable: true,
+      writable: true,
+      value: fake.indexedDB,
+    });
+
+    let now = 1000;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => {
+      now += 1;
+      return now;
+    });
+
+    const cache = await import("./cache.js");
+    for (let index = 0; index < 82; index += 1) {
+      const creatorId = String(100000 + index);
+      const result = await cache.writeCreatorCacheAsync("patreon", creatorId, {
+        updatedAt: index,
+        chunks: { 0: [{ id: `post-${index}` }] },
+      });
+      expect(result).toBe(true);
+    }
+
+    nowSpy.mockRestore();
+
+    const store = fake.stores.get("creator-cache");
+    const metaKeys = Array.from(store.keys()).filter((key) => key.endsWith("::meta"));
+    expect(metaKeys.length).toBeLessThanOrEqual(80);
+
+    vi.resetModules();
+    Object.defineProperty(window, "indexedDB", {
+      configurable: true,
+      writable: true,
+      value: fake.indexedDB,
+    });
+    const reloadedCache = await import("./cache.js");
+    const oldest = await reloadedCache.loadCreatorCacheAsync("patreon", "100000", {
+      migrateLegacy: false,
+    });
+    const newest = await reloadedCache.loadCreatorCacheAsync("patreon", "100081", {
+      migrateLegacy: false,
+    });
+
+    expect(oldest).toBeNull();
+    expect(newest).toBeTruthy();
+    expect(newest.chunks["0"][0].id).toBe("post-81");
   });
 });

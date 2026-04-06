@@ -12,9 +12,17 @@ const CREATOR_CACHE_DB_NAME = "kemono-peruse-cache";
 const CREATOR_CACHE_DB_VERSION = 1;
 const CREATOR_CACHE_STORE = "creator-cache";
 const SPLIT_META_RECORD_TYPE = "creator-cache-meta-v2";
+const MAX_MEMORY_CACHE_CREATORS = 24;
+const MAX_MEMORY_CACHE_BYTES = 24 * 1024 * 1024;
+const MAX_PERSISTED_CACHE_CREATORS = 80;
+const MAX_PERSISTED_CACHE_BYTES = 96 * 1024 * 1024;
+const ACCESS_TOUCH_MIN_INTERVAL_MS = 30000;
 const cacheMemory = new Map();
+const cacheMemoryMeta = new Map();
 const writeQueues = new Map();
+const accessTouchMap = new Map();
 let dbPromise = null;
+let maintenanceQueue = Promise.resolve();
 
 export function getCachePreferenceKey(service, creatorId) {
   return `${CACHE_PREF_PREFIX}.${service}.${creatorId}`;
@@ -27,6 +35,93 @@ export function getCacheDataKey(service, creatorId) {
 const getCacheMetaKey = (key) => `${key}::meta`;
 const getCacheChunkKey = (key, offset) => `${key}::chunk::${offset}`;
 const getCachePostDetailKey = (key, postId) => `${key}::detail::${postId}`;
+const parseRootKeyFromMetaKey = (value) => {
+  if (typeof value !== "string" || !value.endsWith("::meta")) return "";
+  return value.slice(0, -6);
+};
+
+const estimatePayloadSize = (payload) => {
+  if (!payload || typeof payload !== "object") return 0;
+  try {
+    return JSON.stringify(payload).length;
+  } catch {
+    return 0;
+  }
+};
+
+const getTotalMemorySize = () => {
+  let total = 0;
+  cacheMemoryMeta.forEach((meta) => {
+    total += Number(meta?.sizeEstimate) || 0;
+  });
+  return total;
+};
+
+const dropMemoryEntry = (key) => {
+  cacheMemory.delete(key);
+  cacheMemoryMeta.delete(key);
+  accessTouchMap.delete(key);
+};
+
+const enforceMemoryCacheLimits = (protectedKey = "") => {
+  let creatorCount = cacheMemory.size;
+  let totalSize = getTotalMemorySize();
+  if (creatorCount <= MAX_MEMORY_CACHE_CREATORS && totalSize <= MAX_MEMORY_CACHE_BYTES) {
+    return;
+  }
+
+  const ordered = Array.from(cacheMemoryMeta.entries())
+    .filter(([key]) => key !== protectedKey)
+    .sort((left, right) => {
+      const leftTime = Number(left[1]?.lastAccessedAt) || 0;
+      const rightTime = Number(right[1]?.lastAccessedAt) || 0;
+      return leftTime - rightTime;
+    });
+
+  for (const [key, meta] of ordered) {
+    if (creatorCount <= MAX_MEMORY_CACHE_CREATORS && totalSize <= MAX_MEMORY_CACHE_BYTES) {
+      break;
+    }
+    creatorCount -= 1;
+    totalSize -= Number(meta?.sizeEstimate) || 0;
+    dropMemoryEntry(key);
+  }
+};
+
+const trackMemoryPayload = (key, payload, options = {}) => {
+  if (!key) return;
+  const { lastAccessedAt = Date.now(), sizeEstimate = estimatePayloadSize(payload) } = options;
+  cacheMemory.delete(key);
+  cacheMemory.set(key, payload);
+  cacheMemoryMeta.set(key, {
+    lastAccessedAt: Number.isFinite(lastAccessedAt) ? Math.floor(lastAccessedAt) : Date.now(),
+    sizeEstimate: Number.isFinite(sizeEstimate) && sizeEstimate >= 0 ? Math.floor(sizeEstimate) : 0,
+  });
+  enforceMemoryCacheLimits(key);
+};
+
+const touchMemoryEntry = (key) => {
+  if (!key || !cacheMemory.has(key)) return;
+  const payload = cacheMemory.get(key);
+  const existing = cacheMemoryMeta.get(key) || {};
+  trackMemoryPayload(key, payload, {
+    lastAccessedAt: Date.now(),
+    sizeEstimate: Number.isFinite(existing.sizeEstimate)
+      ? existing.sizeEstimate
+      : estimatePayloadSize(payload),
+  });
+};
+
+const queueMaintenance = (task) => {
+  maintenanceQueue = maintenanceQueue
+    .catch(() => null)
+    .then(() => task())
+    .catch((error) => {
+      console.error("Cache maintenance failed", error);
+      return null;
+    });
+  return maintenanceQueue;
+};
 
 const getIndexedDb = () => {
   if (typeof window === "undefined") return null;
@@ -87,20 +182,33 @@ const splitCachePayload = (payload) => {
   };
 };
 
-const normalizeMetaRecord = (value) => {
+const normalizeMetaRecord = (value, metaKey = "") => {
   if (!value || typeof value !== "object") return null;
   if (value.type !== SPLIT_META_RECORD_TYPE || value.version !== CACHE_VERSION) return null;
   const base = value.base && typeof value.base === "object" ? { ...value.base } : {};
   delete base.version;
   delete base.chunks;
   delete base.postDetails;
+  const rootKey =
+    (typeof value.rootKey === "string" && value.rootKey) || parseRootKeyFromMetaKey(metaKey);
   const chunkKeys = Array.isArray(value.chunkKeys)
     ? [...new Set(value.chunkKeys.map((key) => String(key || "")).filter(Boolean))]
     : [];
   const detailKeys = Array.isArray(value.detailKeys)
     ? [...new Set(value.detailKeys.map((key) => String(key || "")).filter(Boolean))]
     : [];
-  return { base, chunkKeys, detailKeys };
+  const lastAccessedAt = Number(value.lastAccessedAt);
+  const sizeEstimate = Number(value.sizeEstimate);
+  return {
+    metaKey: typeof metaKey === "string" ? metaKey : "",
+    rootKey,
+    base,
+    chunkKeys,
+    detailKeys,
+    lastAccessedAt:
+      Number.isFinite(lastAccessedAt) && lastAccessedAt >= 0 ? Math.floor(lastAccessedAt) : 0,
+    sizeEstimate: Number.isFinite(sizeEstimate) && sizeEstimate >= 0 ? Math.floor(sizeEstimate) : 0,
+  };
 };
 
 const valuesEqual = (left, right) => {
@@ -219,9 +327,164 @@ const readDbRecords = (db, recordKeys, errorMessage) => {
   });
 };
 
+const listMetaRecordsFromDb = (db) => {
+  if (!db) return Promise.resolve([]);
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(CREATOR_CACHE_STORE, "readonly");
+      const store = tx.objectStore(CREATOR_CACHE_STORE);
+      if (typeof store.openCursor !== "function") {
+        resolve([]);
+        return;
+      }
+
+      const entries = [];
+      const request = store.openCursor();
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) {
+          resolve(entries);
+          return;
+        }
+        const meta = normalizeMetaRecord(cursor.value, cursor.key);
+        if (meta?.rootKey) {
+          entries.push(meta);
+        }
+        cursor.continue();
+      };
+      request.onerror = () => {
+        console.error("Failed to read cache metadata for eviction", request.error);
+        resolve([]);
+      };
+    } catch (error) {
+      console.error("Failed to read cache metadata for eviction", error);
+      resolve([]);
+    }
+  });
+};
+
+const deleteCreatorCacheByMeta = (store, meta) => {
+  if (!store || !meta?.rootKey) return;
+  const metaKey = meta.metaKey || getCacheMetaKey(meta.rootKey);
+  (meta.chunkKeys || []).forEach((offset) => {
+    store.delete(getCacheChunkKey(meta.rootKey, offset));
+  });
+  (meta.detailKeys || []).forEach((postId) => {
+    store.delete(getCachePostDetailKey(meta.rootKey, postId));
+  });
+  store.delete(metaKey);
+  store.delete(meta.rootKey);
+};
+
+const enforceGlobalCacheLimits = async (keepKey = "") => {
+  const db = await openCacheDb();
+  if (!db) return;
+
+  const metas = await listMetaRecordsFromDb(db);
+  if (!metas.length) return;
+
+  let creatorCount = metas.length;
+  let totalSize = metas.reduce((sum, meta) => sum + (Number(meta?.sizeEstimate) || 0), 0);
+  if (creatorCount <= MAX_PERSISTED_CACHE_CREATORS && totalSize <= MAX_PERSISTED_CACHE_BYTES) {
+    return;
+  }
+
+  const victims = [];
+  const ordered = [...metas].sort((left, right) => {
+    const leftTime = Number(left?.lastAccessedAt) || 0;
+    const rightTime = Number(right?.lastAccessedAt) || 0;
+    return leftTime - rightTime;
+  });
+
+  for (const meta of ordered) {
+    if (creatorCount <= MAX_PERSISTED_CACHE_CREATORS && totalSize <= MAX_PERSISTED_CACHE_BYTES) {
+      break;
+    }
+    if (meta.rootKey === keepKey) continue;
+    victims.push(meta);
+    creatorCount -= 1;
+    totalSize -= Number(meta?.sizeEstimate) || 0;
+  }
+
+  if (!victims.length) return;
+
+  await new Promise((resolve) => {
+    try {
+      const tx = db.transaction(CREATOR_CACHE_STORE, "readwrite");
+      const store = tx.objectStore(CREATOR_CACHE_STORE);
+      victims.forEach((meta) => {
+        deleteCreatorCacheByMeta(store, meta);
+      });
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => {
+        console.error("Failed to evict creator cache entries", tx.error);
+        resolve(false);
+      };
+      tx.onabort = () => resolve(false);
+    } catch (error) {
+      console.error("Failed to evict creator cache entries", error);
+      resolve(false);
+    }
+  });
+
+  victims.forEach((meta) => {
+    dropMemoryEntry(meta.rootKey);
+  });
+};
+
+const touchCacheAccess = (key, payload = null) => {
+  if (!key) return;
+  const now = Date.now();
+  const lastTouch = accessTouchMap.get(key) || 0;
+  if (now - lastTouch < ACCESS_TOUCH_MIN_INTERVAL_MS) return;
+  accessTouchMap.set(key, now);
+  const sizeEstimate = payload ? estimatePayloadSize(payload) : null;
+
+  void queueMaintenance(async () => {
+    const db = await openCacheDb();
+    if (!db) return;
+    await new Promise((resolve) => {
+      try {
+        const tx = db.transaction(CREATOR_CACHE_STORE, "readwrite");
+        const store = tx.objectStore(CREATOR_CACHE_STORE);
+        const metaKey = getCacheMetaKey(key);
+        const request = store.get(metaKey);
+        request.onsuccess = () => {
+          const meta = normalizeMetaRecord(request.result, metaKey);
+          if (!meta) return;
+          store.put(
+            {
+              type: SPLIT_META_RECORD_TYPE,
+              version: CACHE_VERSION,
+              rootKey: meta.rootKey || key,
+              base: meta.base,
+              chunkKeys: meta.chunkKeys,
+              detailKeys: meta.detailKeys,
+              lastAccessedAt: now,
+              sizeEstimate:
+                Number.isFinite(sizeEstimate) && sizeEstimate >= 0 ? sizeEstimate : meta.sizeEstimate,
+            },
+            metaKey,
+          );
+        };
+        request.onerror = () => {
+          // ignore access touch failure
+        };
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => resolve(false);
+        tx.onabort = () => resolve(false);
+      } catch {
+        resolve(false);
+      }
+    });
+  });
+};
+
 const readSplitCacheFromDb = async (db, key) => {
+  const metaKey = getCacheMetaKey(key);
   const meta = normalizeMetaRecord(
-    await readDbRecord(db, getCacheMetaKey(key), "Failed to read creator cache from indexeddb"),
+    await readDbRecord(db, metaKey, "Failed to read creator cache from indexeddb"),
+    metaKey,
   );
   if (!meta) return null;
 
@@ -274,12 +537,14 @@ const readCacheFromDb = async (key) => {
 
   const splitPayload = await readSplitCacheFromDb(db, key);
   if (splitPayload) {
+    touchCacheAccess(key, splitPayload);
     return splitPayload;
   }
 
   const legacyBlob = await readLegacyBlobCacheFromDb(db, key);
   if (legacyBlob) {
     void queueCacheWrite(key, legacyBlob, null);
+    touchCacheAccess(key, legacyBlob);
     return legacyBlob;
   }
 
@@ -318,6 +583,8 @@ const writeCacheToDb = async (key, payload, previousPayload = null) => {
           deleteByParts(partsForDiff);
           return;
         }
+        const lastAccessedAt = Date.now();
+        const sizeEstimate = estimatePayloadSize(payload);
 
         const nextChunkSet = new Set(nextParts.chunkKeys);
         const nextDetailSet = new Set(nextParts.detailKeys);
@@ -354,9 +621,12 @@ const writeCacheToDb = async (key, payload, previousPayload = null) => {
           {
             type: SPLIT_META_RECORD_TYPE,
             version: CACHE_VERSION,
+            rootKey: key,
             base: nextParts.base,
             chunkKeys: nextParts.chunkKeys,
             detailKeys: nextParts.detailKeys,
+            lastAccessedAt,
+            sizeEstimate,
           },
           metaKey,
         );
@@ -370,7 +640,7 @@ const writeCacheToDb = async (key, payload, previousPayload = null) => {
         } else {
           const metaRequest = store.get(metaKey);
           metaRequest.onsuccess = () => {
-            const fromMeta = normalizeMetaRecord(metaRequest.result);
+            const fromMeta = normalizeMetaRecord(metaRequest.result, metaKey);
             deleteByParts(fromMeta);
           };
           metaRequest.onerror = () => {
@@ -383,7 +653,7 @@ const writeCacheToDb = async (key, payload, previousPayload = null) => {
       } else {
         const metaRequest = store.get(metaKey);
         metaRequest.onsuccess = () => {
-          const fromMeta = normalizeMetaRecord(metaRequest.result);
+          const fromMeta = normalizeMetaRecord(metaRequest.result, metaKey);
           applyWrite(fromMeta);
         };
         metaRequest.onerror = () => {
@@ -409,7 +679,13 @@ const queueCacheWrite = (key, payload, previousPayload = null) => {
   const previous = writeQueues.get(key) || Promise.resolve(true);
   const queued = previous
     .catch(() => true)
-    .then(() => writeCacheToDb(key, payload, previousPayload))
+    .then(async () => {
+      const success = await writeCacheToDb(key, payload, previousPayload);
+      if (success) {
+        await queueMaintenance(() => enforceGlobalCacheLimits(key));
+      }
+      return success;
+    })
     .finally(() => {
       if (writeQueues.get(key) === queued) {
         writeQueues.delete(key);
@@ -422,7 +698,12 @@ const queueCacheWrite = (key, payload, previousPayload = null) => {
 export function loadCreatorCache(service, creatorId) {
   const key = getCacheDataKey(service, creatorId);
   if (!key) return null;
-  return cacheMemory.get(key) ?? null;
+  const memoryEntry = cacheMemory.get(key) ?? null;
+  if (memoryEntry) {
+    touchMemoryEntry(key);
+    touchCacheAccess(key, memoryEntry);
+  }
+  return memoryEntry;
 }
 
 const isQuotaExceededError = (error) => {
@@ -440,9 +721,9 @@ export function writeCreatorCache(service, creatorId, data) {
   const previousPayload = cacheMemory.get(key) ?? null;
   const payload = data ? normalizeCachePayload({ version: CACHE_VERSION, ...data }) : null;
   if (payload) {
-    cacheMemory.set(key, payload);
+    trackMemoryPayload(key, payload);
   } else {
-    cacheMemory.delete(key);
+    dropMemoryEntry(key);
   }
   removeLegacyLocalStorageCache(key);
   void queueCacheWrite(key, payload, previousPayload);
@@ -454,26 +735,30 @@ export async function loadCreatorCacheAsync(service, creatorId, options = {}) {
   if (!key) return null;
   const { migrateLegacy = true } = options || {};
   const memoryEntry = cacheMemory.get(key);
-  if (memoryEntry) return memoryEntry;
+  if (memoryEntry) {
+    touchMemoryEntry(key);
+    touchCacheAccess(key, memoryEntry);
+    return memoryEntry;
+  }
 
   const fromDb = await readCacheFromDb(key);
   if (fromDb) {
-    cacheMemory.set(key, fromDb);
+    trackMemoryPayload(key, fromDb);
     return fromDb;
   }
 
   if (!migrateLegacy) {
-    cacheMemory.delete(key);
+    dropMemoryEntry(key);
     return null;
   }
 
   const legacy = readLegacyLocalStorageCache(key);
   if (!legacy) {
-    cacheMemory.delete(key);
+    dropMemoryEntry(key);
     return null;
   }
 
-  cacheMemory.set(key, legacy);
+  trackMemoryPayload(key, legacy);
   const migrated = await queueCacheWrite(key, legacy, null);
   if (migrated) {
     removeLegacyLocalStorageCache(key);
@@ -487,9 +772,9 @@ export async function writeCreatorCacheAsync(service, creatorId, data) {
   const previousPayload = cacheMemory.get(key) ?? null;
   const payload = data ? normalizeCachePayload({ version: CACHE_VERSION, ...data }) : null;
   if (payload) {
-    cacheMemory.set(key, payload);
+    trackMemoryPayload(key, payload);
   } else {
-    cacheMemory.delete(key);
+    dropMemoryEntry(key);
   }
   removeLegacyLocalStorageCache(key);
 
@@ -497,7 +782,7 @@ export async function writeCreatorCacheAsync(service, creatorId, data) {
     return await queueCacheWrite(key, payload, previousPayload);
   } catch (error) {
     if (isQuotaExceededError(error)) {
-      cacheMemory.delete(key);
+      dropMemoryEntry(key);
     }
     console.error("Failed to persist creator cache", error);
     return false;
