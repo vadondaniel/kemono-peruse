@@ -8,6 +8,13 @@ import {
   MAX_CACHE_POST_DETAILS,
 } from "../constants";
 
+const CREATOR_CACHE_DB_NAME = "kemono-peruse-cache";
+const CREATOR_CACHE_DB_VERSION = 1;
+const CREATOR_CACHE_STORE = "creator-cache";
+const cacheMemory = new Map();
+const writeQueues = new Map();
+let dbPromise = null;
+
 export function getCachePreferenceKey(service, creatorId) {
   return `${CACHE_PREF_PREFIX}.${service}.${creatorId}`;
 }
@@ -16,35 +23,149 @@ export function getCacheDataKey(service, creatorId) {
   return `${CACHE_DATA_PREFIX}.${service}.${creatorId}`;
 }
 
-export function loadCreatorCache(service, creatorId) {
+const getIndexedDb = () => {
   if (typeof window === "undefined") return null;
-  const key = getCacheDataKey(service, creatorId);
+  return window.indexedDB || null;
+};
+
+const normalizeCachePayload = (value) => {
+  if (!value || typeof value !== "object" || value.version !== CACHE_VERSION) return null;
+  const parsed = { ...value };
+  if (parsed.chunks && typeof parsed.chunks === "object") {
+    Object.keys(parsed.chunks).forEach((offset) => {
+      if (!Array.isArray(parsed.chunks[offset])) {
+        delete parsed.chunks[offset];
+      }
+    });
+  }
+  if (parsed.postDetails && typeof parsed.postDetails === "object") {
+    Object.keys(parsed.postDetails).forEach((postId) => {
+      const entry = parsed.postDetails[postId];
+      if (!entry || typeof entry !== "object" || !entry.data) {
+        delete parsed.postDetails[postId];
+        return;
+      }
+      parsed.postDetails[postId] = {
+        ...entry,
+        hydrated: Boolean(entry.hydrated),
+      };
+    });
+  }
+  return parsed;
+};
+
+const readLegacyLocalStorageCache = (key) => {
+  if (typeof window === "undefined" || !window.localStorage || !key) return null;
   try {
-    const stored = window.localStorage.getItem(key);
-    if (!stored) return null;
-    const parsed = JSON.parse(stored);
-    if (!parsed || parsed.version !== CACHE_VERSION) return null;
-    if (parsed.chunks && typeof parsed.chunks === "object") {
-      Object.keys(parsed.chunks).forEach((offset) => {
-        if (!Array.isArray(parsed.chunks[offset])) {
-          delete parsed.chunks[offset];
-        }
-      });
-    }
-    if (parsed.postDetails && typeof parsed.postDetails === "object") {
-      Object.keys(parsed.postDetails).forEach((postId) => {
-        const entry = parsed.postDetails[postId];
-        if (!entry || typeof entry !== "object" || !entry.data) {
-          delete parsed.postDetails[postId];
-          return;
-        }
-        entry.hydrated = Boolean(entry.hydrated);
-      });
-    }
-    return parsed;
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return normalizeCachePayload(parsed);
   } catch {
     return null;
   }
+};
+
+const removeLegacyLocalStorageCache = (key) => {
+  if (typeof window === "undefined" || !window.localStorage || !key) return;
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // ignore legacy cleanup failures
+  }
+};
+
+const openCacheDb = () => {
+  const indexedDb = getIndexedDb();
+  if (!indexedDb) return Promise.resolve(null);
+  if (dbPromise) return dbPromise;
+
+  dbPromise = new Promise((resolve) => {
+    try {
+      const request = indexedDb.open(CREATOR_CACHE_DB_NAME, CREATOR_CACHE_DB_VERSION);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(CREATOR_CACHE_STORE)) {
+          db.createObjectStore(CREATOR_CACHE_STORE);
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => {
+        console.error("Failed to open creator cache database", request.error);
+        resolve(null);
+      };
+    } catch (error) {
+      console.error("Failed to initialize creator cache database", error);
+      resolve(null);
+    }
+  });
+
+  return dbPromise;
+};
+
+const readCacheFromDb = async (key) => {
+  const db = await openCacheDb();
+  if (!db || !key) return null;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(CREATOR_CACHE_STORE, "readonly");
+      const store = tx.objectStore(CREATOR_CACHE_STORE);
+      const request = store.get(key);
+      request.onsuccess = () => resolve(normalizeCachePayload(request.result));
+      request.onerror = () => {
+        console.error("Failed to read creator cache from indexeddb", request.error);
+        resolve(null);
+      };
+    } catch (error) {
+      console.error("Failed to read creator cache from indexeddb", error);
+      resolve(null);
+    }
+  });
+};
+
+const writeCacheToDb = async (key, payload) => {
+  const db = await openCacheDb();
+  if (!db || !key) return false;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(CREATOR_CACHE_STORE, "readwrite");
+      const store = tx.objectStore(CREATOR_CACHE_STORE);
+      if (payload) {
+        store.put(payload, key);
+      } else {
+        store.delete(key);
+      }
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => {
+        console.error("Failed to persist creator cache to indexeddb", tx.error);
+        resolve(false);
+      };
+      tx.onabort = () => resolve(false);
+    } catch (error) {
+      console.error("Failed to persist creator cache to indexeddb", error);
+      resolve(false);
+    }
+  });
+};
+
+const queueCacheWrite = (key, payload) => {
+  const previous = writeQueues.get(key) || Promise.resolve(true);
+  const queued = previous
+    .catch(() => true)
+    .then(() => writeCacheToDb(key, payload))
+    .finally(() => {
+      if (writeQueues.get(key) === queued) {
+        writeQueues.delete(key);
+      }
+    });
+  writeQueues.set(key, queued);
+  return queued;
+};
+
+export function loadCreatorCache(service, creatorId) {
+  const key = getCacheDataKey(service, creatorId);
+  if (!key) return null;
+  return cacheMemory.get(key) ?? null;
 }
 
 const isQuotaExceededError = (error) => {
@@ -57,30 +178,67 @@ const isQuotaExceededError = (error) => {
 };
 
 export function writeCreatorCache(service, creatorId, data) {
-  if (typeof window === "undefined") return true;
   const key = getCacheDataKey(service, creatorId);
-  if (!key) return false;
-  if (!data) {
-    try {
-      window.localStorage.removeItem(key);
-      return true;
-    } catch {
-      return false;
-    }
+  if (!key) return true;
+  const payload = data ? normalizeCachePayload({ version: CACHE_VERSION, ...data }) : null;
+  if (payload) {
+    cacheMemory.set(key, payload);
+  } else {
+    cacheMemory.delete(key);
   }
-  const payload = { version: CACHE_VERSION, ...data };
+  removeLegacyLocalStorageCache(key);
+  void queueCacheWrite(key, payload);
+  return true;
+}
+
+export async function loadCreatorCacheAsync(service, creatorId, options = {}) {
+  const key = getCacheDataKey(service, creatorId);
+  if (!key) return null;
+  const { migrateLegacy = true } = options || {};
+  const memoryEntry = cacheMemory.get(key);
+  if (memoryEntry) return memoryEntry;
+
+  const fromDb = await readCacheFromDb(key);
+  if (fromDb) {
+    cacheMemory.set(key, fromDb);
+    return fromDb;
+  }
+
+  if (!migrateLegacy) {
+    cacheMemory.delete(key);
+    return null;
+  }
+
+  const legacy = readLegacyLocalStorageCache(key);
+  if (!legacy) {
+    cacheMemory.delete(key);
+    return null;
+  }
+
+  cacheMemory.set(key, legacy);
+  const migrated = await queueCacheWrite(key, legacy);
+  if (migrated) {
+    removeLegacyLocalStorageCache(key);
+  }
+  return legacy;
+}
+
+export async function writeCreatorCacheAsync(service, creatorId, data) {
+  const key = getCacheDataKey(service, creatorId);
+  if (!key) return true;
+  const payload = data ? normalizeCachePayload({ version: CACHE_VERSION, ...data }) : null;
+  if (payload) {
+    cacheMemory.set(key, payload);
+  } else {
+    cacheMemory.delete(key);
+  }
+  removeLegacyLocalStorageCache(key);
+
   try {
-    const serialized = JSON.stringify(payload);
-    window.localStorage.removeItem(key);
-    window.localStorage.setItem(key, serialized);
-    return true;
+    return await queueCacheWrite(key, payload);
   } catch (error) {
     if (isQuotaExceededError(error)) {
-      try {
-        window.localStorage.removeItem(key);
-      } catch {
-        // ignore cleanup failure
-      }
+      cacheMemory.delete(key);
     }
     console.error("Failed to persist creator cache", error);
     return false;

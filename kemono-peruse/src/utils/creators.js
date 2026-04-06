@@ -1,4 +1,4 @@
-import { getCachePreferenceKey, writeCreatorCache } from "./cache.js";
+import { getCachePreferenceKey, writeCreatorCacheAsync } from "./cache.js";
 
 const SAVED_CREATORS_STORAGE_KEY = "kemono.savedCreators";
 const CREATOR_NAME_CACHE_KEY = "kemono.creatorNameCache";
@@ -123,7 +123,7 @@ export const purgeCreatorLocalState = (service, creatorId) => {
       // ignore failures clearing cache preference
     }
   }
-  writeCreatorCache(service, creatorId, null);
+  void writeCreatorCacheAsync(service, creatorId, null);
 };
 
 export const copyUnsavedCreatorSettingsTo = (service, creatorId) => {

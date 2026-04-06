@@ -27,7 +27,15 @@ import {
   ORIGINAL_MEDIA_BASE,
 } from "../constants.js";
 import { fetchJson } from "../utils/api.js";
-import { getCachePreferenceKey, loadCreatorCache, writeCreatorCache, isCacheFresh, pruneCacheChunks, pruneCachePostDetails } from "../utils/cache.js";
+import {
+  getCachePreferenceKey,
+  loadCreatorCache,
+  loadCreatorCacheAsync,
+  writeCreatorCacheAsync,
+  isCacheFresh,
+  pruneCacheChunks,
+  pruneCachePostDetails,
+} from "../utils/cache.js";
 import { cacheCreatorName, getCachedCreatorName, getSavedCreatorName, resolveProfileDisplayName } from "../utils/creators.js";
 import { extractTagTokens, getServiceLabel, normalizePostHtml } from "../utils/posts.js";
 import { getInitialPageSize, getInitialReaderSettings, getTypefacePreviewStyle, readBooleanPreference } from "../utils/preferences.js";
@@ -197,7 +205,7 @@ function PostView({
   const handleCachePersistenceFailure = useCallback(() => {
     setUseCacheState(false);
     setCacheData(null);
-    writeCreatorCache(service, creatorId, null);
+    void writeCreatorCacheAsync(service, creatorId, null);
     if (typeof window !== "undefined" && window.localStorage) {
       try {
         window.localStorage.setItem(cachePrefKey, "false");
@@ -232,17 +240,31 @@ function PostView({
         resolvedNext = next;
         return next;
       });
-      const success = writeCreatorCache(service, creatorId, resolvedNext);
-      if (!success) {
-        handleCachePersistenceFailure();
-      }
+      void writeCreatorCacheAsync(service, creatorId, resolvedNext).then((success) => {
+        if (!success) {
+          handleCachePersistenceFailure();
+        }
+      });
     },
     [service, creatorId, handleCachePersistenceFailure],
   );
 
   useEffect(() => {
-    setUseCacheState(cachingAllowed ? readBooleanPreference(cachePrefKey, false) : false);
-    setCacheData(loadCreatorCache(service, creatorId));
+    let alive = true;
+    const nextUseCache = cachingAllowed ? readBooleanPreference(cachePrefKey, false) : false;
+    setUseCacheState(nextUseCache);
+    if (nextUseCache) {
+      setCacheData(loadCreatorCache(service, creatorId));
+      void loadCreatorCacheAsync(service, creatorId).then((storedCache) => {
+        if (!alive) return;
+        setCacheData(storedCache);
+      });
+    } else {
+      setCacheData(null);
+    }
+    return () => {
+      alive = false;
+    };
   }, [cachePrefKey, service, creatorId, cachingAllowed]);
 
   useEffect(() => {

@@ -13,7 +13,16 @@ import {
   PAGE_SIZE_OPTIONS,
 } from "../constants.js";
 import { fetchJson } from "../utils/api.js";
-import { getCachePreferenceKey, loadCreatorCache, writeCreatorCache, isCacheFresh, pruneCacheChunks, pruneCachePostDetails, collectCachedPosts } from "../utils/cache.js";
+import {
+  getCachePreferenceKey,
+  loadCreatorCache,
+  loadCreatorCacheAsync,
+  writeCreatorCacheAsync,
+  isCacheFresh,
+  pruneCacheChunks,
+  pruneCachePostDetails,
+  collectCachedPosts,
+} from "../utils/cache.js";
 import { formatDate } from "../utils/date.js";
 import { extractTagTokens, getPostExcerptHtml, getServiceLabel, toNumericCount } from "../utils/posts.js";
 import { cacheCreatorName, getCachedCreatorName, getSavedCreatorName, purgeCreatorLocalState, resolveProfileDisplayName, getCreatorScopedStorageKey } from "../utils/creators.js";
@@ -148,7 +157,7 @@ function CreatorPage({
     setCacheStorageError(true);
     setUseCache(false);
     setCacheData(null);
-    writeCreatorCache(service, creatorId, null);
+    void writeCreatorCacheAsync(service, creatorId, null);
   }, [service, creatorId]);
 
   const updateCache = useCallback(
@@ -176,10 +185,11 @@ function CreatorPage({
         resolvedNext = next;
         return next;
       });
-      const success = writeCreatorCache(service, creatorId, resolvedNext);
-      if (!success) {
-        handleCachePersistenceFailure();
-      }
+      void writeCreatorCacheAsync(service, creatorId, resolvedNext).then((success) => {
+        if (!success) {
+          handleCachePersistenceFailure();
+        }
+      });
     },
     [service, creatorId, handleCachePersistenceFailure],
   );
@@ -269,10 +279,23 @@ function CreatorPage({
 
 
   useEffect(() => {
-    setUseCache(readBooleanPreference(cachePrefKey, false));
-    setCacheData(loadCreatorCache(service, creatorId));
+    let alive = true;
+    const nextUseCache = readBooleanPreference(cachePrefKey, false);
+    setUseCache(nextUseCache);
+    if (nextUseCache) {
+      setCacheData(loadCreatorCache(service, creatorId));
+      void loadCreatorCacheAsync(service, creatorId).then((storedCache) => {
+        if (!alive) return;
+        setCacheData(storedCache);
+      });
+    } else {
+      setCacheData(null);
+    }
     setCacheReloadApplied(0);
     setReverseOrder(reversePrefKey ? readBooleanPreference(reversePrefKey, false) : false);
+    return () => {
+      alive = false;
+    };
   }, [cachePrefKey, service, creatorId, reversePrefKey]);
 
   useEffect(() => {
@@ -333,13 +356,21 @@ function CreatorPage({
 
   useEffect(() => {
     if (!useCache) return;
+    let alive = true;
     setCacheData((prev) => (prev ? prev : loadCreatorCache(service, creatorId)));
+    void loadCreatorCacheAsync(service, creatorId).then((storedCache) => {
+      if (!alive) return;
+      setCacheData((prev) => (prev ? prev : storedCache));
+    });
+    return () => {
+      alive = false;
+    };
   }, [useCache, service, creatorId]);
 
   useEffect(() => {
     if (useCache) return;
     setCacheData(null);
-    writeCreatorCache(service, creatorId, null);
+    void writeCreatorCacheAsync(service, creatorId, null);
   }, [useCache, service, creatorId]);
 
   useEffect(
