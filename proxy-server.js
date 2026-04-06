@@ -10,6 +10,8 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
+const { Readable } = require("node:stream");
+const { pipeline } = require("node:stream/promises");
 const { URL } = require("node:url");
 
 loadEnvDefaults();
@@ -63,6 +65,19 @@ const server = http.createServer(async (req, res) => {
   }
 
   const upstreamUrl = new URL(upstreamPathname + requestUrl.search, KEMONO_API_HOST);
+  const upstreamAbortController = new AbortController();
+  let abortedByClient = false;
+  const abortUpstream = () => {
+    abortedByClient = true;
+    upstreamAbortController.abort();
+  };
+  const handleResponseClose = () => {
+    if (!res.writableEnded) {
+      abortUpstream();
+    }
+  };
+  req.once("aborted", abortUpstream);
+  res.once("close", handleResponseClose);
 
   try {
     const upstreamResponse = await fetch(upstreamUrl, {
@@ -71,6 +86,7 @@ const server = http.createServer(async (req, res) => {
         Accept: KEMONO_ACCEPT_HEADER,
         "User-Agent": "Kemono-Peruse-Proxy/1.0",
       },
+      signal: upstreamAbortController.signal,
     });
 
     const responseHeaders = {
@@ -81,20 +97,29 @@ const server = http.createServer(async (req, res) => {
 
     res.writeHead(upstreamResponse.status, responseHeaders);
 
-    if (req.method === "HEAD") {
+    if (req.method === "HEAD" || !upstreamResponse.body) {
       res.end();
       return;
     }
 
-    const bodyBuffer = Buffer.from(await upstreamResponse.arrayBuffer());
-    res.end(bodyBuffer);
+    await pipeline(Readable.fromWeb(upstreamResponse.body), res);
   } catch (error) {
+    if (abortedByClient || error?.name === "AbortError") {
+      return;
+    }
     console.error("Kemono proxy failed:", error);
+    if (res.headersSent) {
+      if (!res.writableEnded) res.end();
+      return;
+    }
     res.writeHead(502, {
       ...corsHeaders(),
       "Content-Type": "application/json",
     });
     res.end(JSON.stringify({ error: "Failed to reach Kemono API" }));
+  } finally {
+    req.removeListener("aborted", abortUpstream);
+    res.removeListener("close", handleResponseClose);
   }
 });
 
