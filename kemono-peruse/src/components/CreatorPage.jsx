@@ -218,7 +218,10 @@ function CreatorPage({
   const totalPosts = resolvedProfileCount ?? resolvedCacheCount ?? null;
   const normalizedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
   const isFilterActive = normalizedFilter.length > 0;
-  const activeTags = filterFields.tags ? extractTagTokens(normalizedFilter) : [];
+  const activeTags = useMemo(
+    () => (filterFields.tags ? extractTagTokens(normalizedFilter) : []),
+    [filterFields.tags, normalizedFilter],
+  );
   const effectiveLimit = limit > 0 ? limit : API_PAGE_SIZE;
   const totalFilteredPosts = searchResults.length;
   const filteredTotalPages = isFilterActive
@@ -226,11 +229,21 @@ function CreatorPage({
     : 1;
   const clampedSearchPage = isFilterActive ? Math.min(Math.max(searchPage, 1), filteredTotalPages) : 1;
   const pageStart = isFilterActive ? Math.max(0, (clampedSearchPage - 1) * effectiveLimit) : 0;
-  const baseSearchResults = reverseOrder ? [...searchResults].reverse() : searchResults;
-  const displayedPosts = isFilterActive ? baseSearchResults.slice(pageStart, pageStart + effectiveLimit) : posts;
+  const baseSearchResults = useMemo(
+    () => (reverseOrder ? [...searchResults].reverse() : searchResults),
+    [reverseOrder, searchResults],
+  );
+  const displayedPosts = useMemo(
+    () => (isFilterActive ? baseSearchResults.slice(pageStart, pageStart + effectiveLimit) : posts),
+    [isFilterActive, baseSearchResults, pageStart, effectiveLimit, posts],
+  );
   const listLoading = isFilterActive ? searchLoading && displayedPosts.length === 0 : loadingPosts;
-  const orderedPosts = !isFilterActive && reverseOrder ? [...displayedPosts].reverse() : displayedPosts;
+  const orderedPosts = useMemo(
+    () => (!isFilterActive && reverseOrder ? [...displayedPosts].reverse() : displayedPosts),
+    [isFilterActive, reverseOrder, displayedPosts],
+  );
   const currentFilteredOffset = isFilterActive ? Math.max(0, (clampedSearchPage - 1) * effectiveLimit) : null;
+  const cachedPostsForSearch = useMemo(() => collectCachedPosts(cacheData), [cacheData?.chunks]);
   const getInitialCreatorName = () =>
     getSavedCreatorName(service, creatorId) ||
     (typeof creatorName === "string" ? creatorName.trim() : "") ||
@@ -577,7 +590,6 @@ function CreatorPage({
     let matchedViaTags = false;
 
     if (useCache && cacheFresh) {
-      const cachedPostsForSearch = collectCachedPosts(cacheData);
       if (cachedPostsForSearch && cachedPostsForSearch.length > 0) {
         const results = cachedPostsForSearch.filter((post) => {
           if (!post) return false;

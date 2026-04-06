@@ -1,15 +1,16 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 
 import "./App.css";
 
-import CreatorPage from "./components/CreatorPage.jsx";
-import Home from "./components/Home.jsx";
-import PostView from "./components/PostView.jsx";
 import { API_BASE } from "./constants.js";
 import { buildHistoryState, ensureView, getInitialView, getTitleForView, getUrlForView, getViewFromHistoryState, viewsEqual } from "./utils/navigation.js";
 import { fetchJson } from "./utils/api.js";
 import { resolveProfileDisplayName, purgeCreatorLocalState, copyUnsavedCreatorSettingsTo } from "./utils/creators.js";
 import { getInitialPageSize, copyReaderSettings } from "./utils/preferences.js";
+
+const CreatorPage = lazy(() => import("./components/CreatorPage.jsx"));
+const Home = lazy(() => import("./components/Home.jsx"));
+const PostView = lazy(() => import("./components/PostView.jsx"));
 
 function App() {
   const [view, setViewState] = useState(getInitialView);
@@ -433,97 +434,99 @@ function App() {
 
       <div className="app-shell">
         <main className="app-main">
-          {view.name === "home" && (
-            <Home
-              savedCreators={savedCreators}
-              onSaveCreator={(entry) =>
-                saveCreatorEntry({ service: entry.service, creatorId: entry.id, initialName: entry.name })
-              }
-              onRenameCreator={(entry) =>
-                setSavedCreators((prev) =>
-                  prev.map((c) => {
-                    if (c.service !== entry.service || c.id !== entry.id) return c;
-                    const nextName = typeof entry.name === "string" ? entry.name.trim() : "";
-                    return { ...c, name: nextName };
-                  })
-                )
-              }
-              onRemoveCreator={(service, id) => {
-                updateCreatorFilter(service, id, "");
-                forgetCreatorPosition(service, id);
-                purgeCreatorLocalState(service, id);
-                setSavedCreators((prev) => prev.filter((c) => !(c.service === service && c.id === id)));
-              }}
-              onOpenCreator={(service, id, name) => openCreator(service, id, name, 0)}
-            />
-          )}
+          <Suspense fallback={<p className="muted">Loading view...</p>}>
+            {view.name === "home" && (
+              <Home
+                savedCreators={savedCreators}
+                onSaveCreator={(entry) =>
+                  saveCreatorEntry({ service: entry.service, creatorId: entry.id, initialName: entry.name })
+                }
+                onRenameCreator={(entry) =>
+                  setSavedCreators((prev) =>
+                    prev.map((c) => {
+                      if (c.service !== entry.service || c.id !== entry.id) return c;
+                      const nextName = typeof entry.name === "string" ? entry.name.trim() : "";
+                      return { ...c, name: nextName };
+                    })
+                  )
+                }
+                onRemoveCreator={(service, id) => {
+                  updateCreatorFilter(service, id, "");
+                  forgetCreatorPosition(service, id);
+                  purgeCreatorLocalState(service, id);
+                  setSavedCreators((prev) => prev.filter((c) => !(c.service === service && c.id === id)));
+                }}
+                onOpenCreator={(service, id, name) => openCreator(service, id, name, 0)}
+              />
+            )}
 
-          {view.name === "creator" && (
-            <CreatorPage
-              service={view.service}
-              creatorId={view.creatorId}
-              creatorName={view.creatorName}
-              alreadySaved={isCreatorSaved(view.service, view.creatorId)}
-              onOpenPost={(postId, postTitle, position) =>
-                openPost(view.service, view.creatorId, view.creatorName, postId, postTitle, position)
-              }
-              onSave={handleSaveCurrentCreator}
-              activeFilter={getCreatorFilter(view.service, view.creatorId)}
-              onUpdateFilter={(value) => updateCreatorFilter(view.service, view.creatorId, value)}
-              initialPosition={
-                typeof view.position === "number"
-                  ? view.position
-                  : getCreatorOffset(view.service, view.creatorId)
-              }
-              onRememberPosition={(position, options) =>
-                updateCreatorPosition(view.service, view.creatorId, position, options)
-              }
-            />
-          )}
-
-          {view.name === "post" && (() => {
-            const rawFilter = getCreatorFilter(view.service, view.creatorId);
-            const currentPosition =
-              typeof view.position === "number"
-                ? view.position
-                : getCreatorOffset(view.service, view.creatorId);
-            return (
-              <PostView
+            {view.name === "creator" && (
+              <CreatorPage
                 service={view.service}
                 creatorId={view.creatorId}
                 creatorName={view.creatorName}
-                postId={view.postId}
                 alreadySaved={isCreatorSaved(view.service, view.creatorId)}
-                creatorPosition={currentPosition}
-                activeFilter={rawFilter}
-                readerSettingsOpen={readerSettingsOpen}
-                onCloseReaderSettings={() => setReaderSettingsOpen(false)}
-                onBack={() => {
-                  navigate({
-                    name: "creator",
-                    service: view.service,
-                    creatorId: view.creatorId,
-                    creatorName: view.creatorName,
-                    position: currentPosition > 0 ? currentPosition : undefined,
-                  });
-                }}
-                onNavigate={(nextPostId) => {
-                  navigate({
-                    name: "post",
-                    service: view.service,
-                    creatorId: view.creatorId,
-                    creatorName: view.creatorName,
-                    postId: nextPostId,
-                    position: currentPosition > 0 ? currentPosition : undefined,
-                  });
-                }}
-                onResolvePostTitle={handleResolvePostTitle}
-                onResolveCreatorPosition={(position, options) =>
+                onOpenPost={(postId, postTitle, position) =>
+                  openPost(view.service, view.creatorId, view.creatorName, postId, postTitle, position)
+                }
+                onSave={handleSaveCurrentCreator}
+                activeFilter={getCreatorFilter(view.service, view.creatorId)}
+                onUpdateFilter={(value) => updateCreatorFilter(view.service, view.creatorId, value)}
+                initialPosition={
+                  typeof view.position === "number"
+                    ? view.position
+                    : getCreatorOffset(view.service, view.creatorId)
+                }
+                onRememberPosition={(position, options) =>
                   updateCreatorPosition(view.service, view.creatorId, position, options)
                 }
               />
-            );
-          })()}
+            )}
+
+            {view.name === "post" && (() => {
+              const rawFilter = getCreatorFilter(view.service, view.creatorId);
+              const currentPosition =
+                typeof view.position === "number"
+                  ? view.position
+                  : getCreatorOffset(view.service, view.creatorId);
+              return (
+                <PostView
+                  service={view.service}
+                  creatorId={view.creatorId}
+                  creatorName={view.creatorName}
+                  postId={view.postId}
+                  alreadySaved={isCreatorSaved(view.service, view.creatorId)}
+                  creatorPosition={currentPosition}
+                  activeFilter={rawFilter}
+                  readerSettingsOpen={readerSettingsOpen}
+                  onCloseReaderSettings={() => setReaderSettingsOpen(false)}
+                  onBack={() => {
+                    navigate({
+                      name: "creator",
+                      service: view.service,
+                      creatorId: view.creatorId,
+                      creatorName: view.creatorName,
+                      position: currentPosition > 0 ? currentPosition : undefined,
+                    });
+                  }}
+                  onNavigate={(nextPostId) => {
+                    navigate({
+                      name: "post",
+                      service: view.service,
+                      creatorId: view.creatorId,
+                      creatorName: view.creatorName,
+                      postId: nextPostId,
+                      position: currentPosition > 0 ? currentPosition : undefined,
+                    });
+                  }}
+                  onResolvePostTitle={handleResolvePostTitle}
+                  onResolveCreatorPosition={(position, options) =>
+                    updateCreatorPosition(view.service, view.creatorId, position, options)
+                  }
+                />
+              );
+            })()}
+          </Suspense>
         </main>
       </div>
     </div>
