@@ -12,4 +12,18 @@ describe("date utils", () => {
     expect(typeof result.time).toBe("string");
     expect(result.time).toMatch(/^\d{2}:\d{2}$/);
   });
+
+  it("falls back to raw string when formatter throws", () => {
+    const formatterSpy = vi.spyOn(Intl, "DateTimeFormat").mockImplementation(() => {
+      throw new Error("intl unavailable");
+    });
+
+    expect(formatDate("2025-01-01T10:30:00.000Z")).toEqual({
+      date: "2025-01-01T10:30:00.000Z",
+      time: "",
+    });
+    expect(formatDate(123)).toEqual({ date: "-", time: "" });
+
+    formatterSpy.mockRestore();
+  });
 });

@@ -28,6 +28,17 @@ describe("preferences utils", () => {
     expect(getInitialPageSize()).toBe(API_PAGE_SIZE);
   });
 
+  it("getInitialPageSize falls back when storage access throws", () => {
+    const getItemSpy = vi
+      .spyOn(Storage.prototype, "getItem")
+      .mockImplementation(() => {
+        throw new Error("no access");
+      });
+
+    expect(getInitialPageSize()).toBe(API_PAGE_SIZE);
+    getItemSpy.mockRestore();
+  });
+
   it("normalizeReaderSettings supports legacy mappings", () => {
     const normalized = normalizeReaderSettings({
       galleryEnabled: true,
@@ -59,6 +70,39 @@ describe("preferences utils", () => {
     copyReaderSettings("reader.from", "reader.to");
 
     expect(window.localStorage.getItem("reader.to")).toBe(JSON.stringify({ textScale: "small" }));
+  });
+
+  it("copyReaderSettings skips no-op key copies", () => {
+    window.localStorage.setItem("reader.same", JSON.stringify({ textScale: "small" }));
+    copyReaderSettings("reader.same", "reader.same");
+
+    expect(window.localStorage.getItem("reader.same")).toBe(JSON.stringify({ textScale: "small" }));
+  });
+
+  it("readBooleanPreference and reader settings handle storage failures safely", () => {
+    const getItemSpy = vi
+      .spyOn(Storage.prototype, "getItem")
+      .mockImplementation(() => {
+        throw new Error("storage unavailable");
+      });
+
+    expect(readBooleanPreference("any", true)).toBe(true);
+    expect(getInitialReaderSettings("reader.missing")).toEqual(
+      expect.objectContaining({ textScale: "base" }),
+    );
+
+    getItemSpy.mockRestore();
+  });
+
+  it("normalizeReaderSettings handles fallback gallery/typeface values", () => {
+    const normalized = normalizeReaderSettings({
+      galleryMode: "invalid",
+      serifBody: false,
+      typeface: "missing",
+    });
+
+    expect(normalized.galleryMode).toBe("none");
+    expect(normalized.typeface).toBe("default");
   });
 
   it("getTypefacePreviewStyle resolves known styles only", () => {

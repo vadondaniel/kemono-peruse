@@ -1,6 +1,6 @@
 import { runCreatorDirectorySearch } from "./creatorSearch.js";
 
-const creators = [
+const baseCreators = [
   {
     id: "50049787",
     idLower: "50049787",
@@ -33,10 +33,44 @@ const creators = [
   },
 ];
 
+const creators = [
+  ...baseCreators,
+  {
+    id: "2000",
+    idLower: "2000",
+    service: "patreon",
+    name: "Bravo Name",
+    nameLower: "bravo name",
+    favorited: 10,
+    indexed: 1680000000002,
+    updated: 1680000000001,
+  },
+  {
+    id: "2001",
+    idLower: "2001",
+    service: "patreon",
+    name: "Alpha Name",
+    nameLower: "alpha name",
+    favorited: 10,
+    indexed: 1680000000002,
+    updated: 1680000000001,
+  },
+  {
+    id: "2002",
+    idLower: "2002",
+    service: "patreon",
+    name: "Zulu Name",
+    nameLower: "zulu name",
+    favorited: 10,
+    indexed: 1680000000003,
+    updated: 1680000000001,
+  },
+];
+
 describe("runCreatorDirectorySearch", () => {
   it("returns empty result when tokens are missing", () => {
     const result = runCreatorDirectorySearch({
-      directory: creators,
+      directory: baseCreators,
       serviceFilter: "all",
       tokens: [],
       limit: 30,
@@ -45,9 +79,20 @@ describe("runCreatorDirectorySearch", () => {
     expect(result).toEqual({ results: [], total: 0 });
   });
 
+  it("returns empty result when tokens only contain whitespace", () => {
+    const result = runCreatorDirectorySearch({
+      directory: baseCreators,
+      serviceFilter: "all",
+      tokens: ["   ", ""],
+      limit: 30,
+    });
+
+    expect(result).toEqual({ results: [], total: 0 });
+  });
+
   it("filters by service and matches name/id tokens case-insensitively", () => {
     const result = runCreatorDirectorySearch({
-      directory: creators,
+      directory: baseCreators,
       serviceFilter: "patreon",
       tokens: ["ALPHA"],
       limit: 30,
@@ -59,7 +104,7 @@ describe("runCreatorDirectorySearch", () => {
 
   it("sorts by favorited desc, then updated desc, then indexed desc", () => {
     const result = runCreatorDirectorySearch({
-      directory: creators,
+      directory: baseCreators,
       serviceFilter: "all",
       tokens: ["a"],
       limit: 30,
@@ -71,7 +116,7 @@ describe("runCreatorDirectorySearch", () => {
 
   it("respects limit", () => {
     const result = runCreatorDirectorySearch({
-      directory: creators,
+      directory: baseCreators,
       serviceFilter: "all",
       tokens: ["a"],
       limit: 2,
@@ -79,5 +124,16 @@ describe("runCreatorDirectorySearch", () => {
 
     expect(result.total).toBe(3);
     expect(result.results).toHaveLength(2);
+  });
+
+  it("uses indexed and locale tie-breakers when favorited and updated are equal", () => {
+    const result = runCreatorDirectorySearch({
+      directory: creators,
+      serviceFilter: "patreon",
+      tokens: ["name"],
+      limit: 30,
+    });
+
+    expect(result.results.map((entry) => entry.id)).toEqual(["2002", "2001", "2000"]);
   });
 });

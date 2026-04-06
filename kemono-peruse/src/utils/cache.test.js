@@ -1,8 +1,10 @@
 import {
   collectCachedPosts,
   isCacheFresh,
+  loadCreatorCache,
   pruneCacheChunks,
   pruneCachePostDetails,
+  writeCreatorCache,
 } from "./cache.js";
 
 describe("cache utils", () => {
@@ -58,5 +60,36 @@ describe("cache utils", () => {
     expect(posts[0]).toMatchObject({ id: "a", __position: 0 });
     expect(posts[1]).toMatchObject({ id: "b", __position: 1 });
     expect(posts[50]).toMatchObject({ id: "c", __position: 50 });
+  });
+
+  it("writeCreatorCache updates in-memory cache and supports clearing entries", () => {
+    const stored = writeCreatorCache("patreon", "50049787", {
+      updatedAt: 111,
+      chunks: { 0: [{ id: "a" }] },
+    });
+    expect(stored).toBe(true);
+    expect(loadCreatorCache("patreon", "50049787")).toMatchObject({
+      updatedAt: 111,
+      chunks: { 0: [{ id: "a" }] },
+    });
+
+    const cleared = writeCreatorCache("patreon", "50049787", null);
+    expect(cleared).toBe(true);
+    expect(loadCreatorCache("patreon", "50049787")).toBeNull();
+  });
+
+  it("writeCreatorCache tolerates legacy localStorage removal failures", () => {
+    const removeSpy = vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => {
+      throw new Error("storage blocked");
+    });
+
+    expect(
+      writeCreatorCache("patreon", "50049787", {
+        updatedAt: 321,
+        chunks: { 0: [{ id: "b" }] },
+      }),
+    ).toBe(true);
+
+    removeSpy.mockRestore();
   });
 });
