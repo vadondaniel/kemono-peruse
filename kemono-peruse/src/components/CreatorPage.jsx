@@ -49,6 +49,19 @@ const resolveOffsetForPosition = (position, pageSize) => {
   return Math.max(0, Math.floor(position / pageSize) * pageSize);
 };
 
+const VIRTUAL_CARD_MIN_WIDTH = 260;
+const VIRTUAL_GRID_GAP = 16;
+const VIRTUAL_OVERSCAN_ROWS = 4;
+const VIRTUALIZATION_MIN_ITEMS = 48;
+
+const resolveVirtualRowHeight = ({ showExcerpts, showTags, showFeatureBackgrounds }) => {
+  let estimate = 176;
+  if (showTags) estimate += 34;
+  if (showExcerpts) estimate += 98;
+  if (showFeatureBackgrounds) estimate += 8;
+  return estimate + VIRTUAL_GRID_GAP;
+};
+
 const resolvePostFeatureKey = (post, index) => {
   if (post && post.id != null) {
     return `post-${String(post.id)}`;
@@ -232,6 +245,16 @@ function CreatorPage({
   const featureVisibleKeysRef = useRef(new Set());
   const postListRef = useRef(null);
   const [visibleFeatureKeys, setVisibleFeatureKeys] = useState(() => new Set());
+  const [virtualWindow, setVirtualWindow] = useState({
+    startRow: 0,
+    endRow: 0,
+    columns: 1,
+    rowHeight: resolveVirtualRowHeight({
+      showExcerpts: false,
+      showTags: false,
+      showFeatureBackgrounds: false,
+    }),
+  });
   const cacheFresh = useCache && cacheData ? isCacheFresh(cacheData) : false;
   const reloadRequested = cacheReloadApplied !== reloadKey;
   const wantsCacheValidation = Boolean(useCache && cacheData && (reloadRequested || !cacheFresh));
@@ -266,6 +289,54 @@ function CreatorPage({
     () => (!isFilterActive && reverseOrder ? [...displayedPosts].reverse() : displayedPosts),
     [isFilterActive, reverseOrder, displayedPosts],
   );
+  const virtualizationActive = orderedPosts.length > VIRTUALIZATION_MIN_ITEMS;
+  const virtualizedPosts = useMemo(() => {
+    if (!virtualizationActive) {
+      return {
+        items: orderedPosts,
+        startIndex: 0,
+        topSpacer: 0,
+        bottomSpacer: 0,
+      };
+    }
+
+    const columns = Math.max(1, virtualWindow.columns || 1);
+    const rowHeight = Math.max(1, virtualWindow.rowHeight || resolveVirtualRowHeight({
+      showExcerpts,
+      showTags,
+      showFeatureBackgrounds,
+    }));
+    const totalRows = Math.ceil(orderedPosts.length / columns);
+    if (totalRows <= 0) {
+      return {
+        items: [],
+        startIndex: 0,
+        topSpacer: 0,
+        bottomSpacer: 0,
+      };
+    }
+
+    const startRow = Math.min(Math.max(0, virtualWindow.startRow), totalRows - 1);
+    const endRow = Math.min(Math.max(startRow, virtualWindow.endRow), totalRows - 1);
+    const startIndex = startRow * columns;
+    const endIndex = Math.min(orderedPosts.length, (endRow + 1) * columns);
+    return {
+      items: orderedPosts.slice(startIndex, endIndex),
+      startIndex,
+      topSpacer: startRow * rowHeight,
+      bottomSpacer: Math.max(0, (totalRows - endRow - 1) * rowHeight),
+    };
+  }, [
+    orderedPosts,
+    virtualizationActive,
+    virtualWindow.columns,
+    virtualWindow.rowHeight,
+    virtualWindow.startRow,
+    virtualWindow.endRow,
+    showExcerpts,
+    showTags,
+    showFeatureBackgrounds,
+  ]);
   const currentFilteredOffset = isFilterActive ? Math.max(0, (clampedSearchPage - 1) * effectiveLimit) : null;
   const cachedPostsForSearch = useMemo(() => collectCachedPosts(cacheData), [cacheData?.chunks]);
   const getInitialCreatorName = () =>
@@ -1521,6 +1592,87 @@ function CreatorPage({
     };
   }, []);
 
+  const updateVirtualWindow = useCallback(() => {
+    if (typeof window === "undefined") return;
+    const listNode = postListRef.current;
+    if (!listNode) return;
+
+    const rowHeight = resolveVirtualRowHeight({
+      showExcerpts,
+      showTags,
+      showFeatureBackgrounds,
+    });
+
+    const width = listNode.clientWidth || 0;
+    const columns = Math.max(1, Math.floor((width + VIRTUAL_GRID_GAP) / (VIRTUAL_CARD_MIN_WIDTH + VIRTUAL_GRID_GAP)));
+
+    if (!virtualizationActive) {
+      const totalRows = Math.max(1, Math.ceil(Math.max(orderedPosts.length, 1) / columns));
+      setVirtualWindow({
+        startRow: 0,
+        endRow: Math.max(0, totalRows - 1),
+        columns,
+        rowHeight,
+      });
+      return;
+    }
+
+    const totalRows = Math.max(1, Math.ceil(orderedPosts.length / columns));
+    const rect = listNode.getBoundingClientRect();
+    const listTop = rect.top + window.scrollY;
+    const viewportTop = window.scrollY - listTop;
+    const viewportBottom = viewportTop + (window.innerHeight || 0);
+
+    const startRow = Math.max(0, Math.floor(viewportTop / rowHeight) - VIRTUAL_OVERSCAN_ROWS);
+    const endRow = Math.min(totalRows - 1, Math.ceil(viewportBottom / rowHeight) + VIRTUAL_OVERSCAN_ROWS);
+
+    setVirtualWindow((prev) => {
+      if (
+        prev.startRow === startRow &&
+        prev.endRow === endRow &&
+        prev.columns === columns &&
+        prev.rowHeight === rowHeight
+      ) {
+        return prev;
+      }
+      return { startRow, endRow, columns, rowHeight };
+    });
+  }, [showExcerpts, showTags, showFeatureBackgrounds, virtualizationActive, orderedPosts.length]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let frameId = 0;
+    const scheduleUpdate = () => {
+      if (frameId) return;
+      frameId = window.requestAnimationFrame(() => {
+        frameId = 0;
+        updateVirtualWindow();
+      });
+    };
+
+    scheduleUpdate();
+
+    window.addEventListener("resize", scheduleUpdate);
+    window.addEventListener("scroll", scheduleUpdate, { passive: true });
+
+    let observer = null;
+    if (typeof window.ResizeObserver !== "undefined" && postListRef.current) {
+      observer = new window.ResizeObserver(() => scheduleUpdate());
+      observer.observe(postListRef.current);
+    }
+
+    return () => {
+      if (frameId) {
+        window.cancelAnimationFrame(frameId);
+      }
+      window.removeEventListener("resize", scheduleUpdate);
+      window.removeEventListener("scroll", scheduleUpdate);
+      if (observer) {
+        observer.disconnect();
+      }
+    };
+  }, [updateVirtualWindow]);
+
   function goToPage(page) {
     if (!limit) return;
     const nextOffset = Math.max(0, (page - 1) * limit);
@@ -1647,7 +1799,7 @@ function CreatorPage({
         featureVisibilityObserverRef.current = null;
       }
     };
-  }, [showFeatureBackgrounds, orderedPosts, markFeatureCardsVisible]);
+  }, [showFeatureBackgrounds, markFeatureCardsVisible, virtualizedPosts.items, virtualizedPosts.startIndex]);
 
   const handleOrderToggle = () => {
     if (isFilterActive) {
@@ -2034,7 +2186,11 @@ function CreatorPage({
         </div>
         {renderPagination()}
         <div className="post-list" ref={postListRef}>
-          {orderedPosts.map((post, index) => {
+          {virtualizedPosts.topSpacer > 0 && (
+            <div className="post-list-spacer" style={{ height: `${virtualizedPosts.topSpacer}px` }} aria-hidden="true" />
+          )}
+          {virtualizedPosts.items.map((post, localIndex) => {
+            const index = virtualizedPosts.startIndex + localIndex;
             const detailData = postDetailMap[post.id];
             const excerptHtml = showExcerpts ? getPostExcerptHtml(detailData || post) : null;
             const postTags = Array.isArray(post.tags) ? post.tags : postTagMap[post.id];
@@ -2108,6 +2264,9 @@ function CreatorPage({
               </a>
             );
           })}
+          {virtualizedPosts.bottomSpacer > 0 && (
+            <div className="post-list-spacer" style={{ height: `${virtualizedPosts.bottomSpacer}px` }} aria-hidden="true" />
+          )}
         </div>
         {!listLoading && displayedPosts.length === 0 && (
           <div className="muted empty-state">

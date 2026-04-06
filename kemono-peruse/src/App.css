@@ -1473,6 +1473,11 @@ html[data-theme="dark"] .hero-stat {
   gap: 16px;
 }
 
+.post-list-spacer {
+  grid-column: 1 / -1;
+  pointer-events: none;
+}
+
 .post-item {
   display: flex;
   flex-direction: column;
