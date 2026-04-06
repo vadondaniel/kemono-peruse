@@ -627,17 +627,27 @@ function CreatorPage({
     const filterTitle = normalizedFields.title ? "true" : "false";
     const filterTags = normalizedFields.tags ? "true" : "false";
     const fieldParams = `&title=${filterTitle}&tags=${filterTags}&body=${filterBody}`;
+    const tagFieldParams = normalizedFields.body
+      ? fieldParams
+      : `&title=${filterTitle}&tags=${filterTags}&body=true`;
     const tagParams = hasTagSearch ? tagTokens.map((tag) => `&tag=${encodeURIComponent(tag)}`).join("") : "";
 
     const searchModes = [];
     if (hasTextSearch) {
-      searchModes.push({ type: "text", queryParam: `&q=${encodedQuery}`, tagParam: "", allowCache: true });
+      searchModes.push({
+        type: "text",
+        queryParam: `&q=${encodedQuery}`,
+        tagParam: "",
+        fieldParam: fieldParams,
+        allowCache: true,
+      });
     }
     if (hasTagSearch) {
       searchModes.push({
         type: "tags",
         queryParam: "",
         tagParam: tagParams,
+        fieldParam: tagFieldParams,
         allowCache: !hasTextSearch,
       });
     }
@@ -658,7 +668,7 @@ function CreatorPage({
         const needsTextFiltering = mode.type === "text" && hasTextSearch;
         while (!exhausted && workingResults.length < MAX_SEARCH_RESULTS) {
           const chunk = await fetchJson(
-            `${API_BASE}/${service}/user/${creatorId}/posts?o=${offset}&n=${API_PAGE_SIZE}${mode.queryParam}${fieldParams}${mode.tagParam}`,
+            `${API_BASE}/${service}/user/${creatorId}/posts?o=${offset}&n=${API_PAGE_SIZE}${mode.queryParam}${mode.fieldParam}${mode.tagParam}`,
           );
           if (token !== searchTokenRef.current) return;
           if (!Array.isArray(chunk) || chunk.length === 0) {

@@ -455,9 +455,11 @@ function PostView({
       return defaults;
     }
   };
-  const buildFieldQueryParams = (fields) => {
+  const buildFieldQueryParams = (fields, options = {}) => {
     const resolved = fields || getStoredFilterFields();
-    return `&title=${resolved.title ? "true" : "false"}&tags=${resolved.tags ? "true" : "false"}&body=${resolved.body ? "true" : "false"}`;
+    const forceBodyForTags = Boolean(options?.forceBodyForTags);
+    const resolvedBody = forceBodyForTags && resolved.tags ? true : resolved.body;
+    return `&title=${resolved.title ? "true" : "false"}&tags=${resolved.tags ? "true" : "false"}&body=${resolvedBody ? "true" : "false"}`;
   };
 
   useEffect(() => {
@@ -508,13 +510,14 @@ function PostView({
     const trimmedFilter = trimmedActiveFilter;
     const storedFields = getStoredFilterFields();
     const tagTokens = trimmedFilter ? extractTagTokens(trimmedFilter) : [];
+    const hasTagFilter = trimmedFilter && storedFields.tags && tagTokens.length > 0;
     const textQueryEnabled = storedFields.title || storedFields.body;
     const applyTextQuery = textQueryEnabled && (!storedFields.tags || tagTokens.length === 0);
     const textQuery = applyTextQuery ? trimmedFilter : "";
     const queryParam = textQuery ? `&q=${encodeURIComponent(textQuery)}` : "";
-    const fieldParams = trimmedFilter ? buildFieldQueryParams(storedFields) : "";
+    const fieldParams = trimmedFilter ? buildFieldQueryParams(storedFields, { forceBodyForTags: hasTagFilter }) : "";
     const tagParams =
-      trimmedFilter && storedFields.tags && tagTokens.length > 0
+      hasTagFilter
         ? tagTokens.map((tag) => `&tag=${encodeURIComponent(tag)}`).join("")
         : "";
 
