@@ -1,5 +1,6 @@
 const DEFAULT_TIMEOUT_MS = 15000;
 const inFlightRequests = new Map();
+const inFlightMetaRequests = new Map();
 
 const isAbortError = (error) => error?.name === "AbortError";
 
@@ -26,7 +27,21 @@ const attachAbortListener = (promise, signal) => {
   });
 };
 
-export async function fetchJson(url, options = {}) {
+const resolveHeaderValue = (headers, name) => {
+  if (!headers || typeof headers.get !== "function" || !name) return "";
+  const value = headers.get(name);
+  return typeof value === "string" ? value.trim() : "";
+};
+
+const createEmptyMetaResponse = () => ({
+  data: null,
+  status: null,
+  notModified: false,
+  etag: "",
+  lastModified: "",
+});
+
+const requestJsonWithMeta = async (url, options = {}, inFlightMap) => {
   const {
     signal,
     timeoutMs = DEFAULT_TIMEOUT_MS,
@@ -36,7 +51,7 @@ export async function fetchJson(url, options = {}) {
   } = options || {};
 
   const requestKey = dedupe ? dedupeKey || url : null;
-  const sharedRequest = requestKey ? inFlightRequests.get(requestKey) : null;
+  const sharedRequest = requestKey ? inFlightMap.get(requestKey) : null;
   if (sharedRequest) {
     return attachAbortListener(sharedRequest, signal);
   }
@@ -67,13 +82,30 @@ export async function fetchJson(url, options = {}) {
         headers: { Accept: "text/css", ...(headers || {}) },
         signal: controller ? controller.signal : signal,
       });
+      const etag = resolveHeaderValue(res.headers, "ETag");
+      const lastModified = resolveHeaderValue(res.headers, "Last-Modified");
+      if (res.status === 304) {
+        return {
+          data: null,
+          status: 304,
+          notModified: true,
+          etag,
+          lastModified,
+        };
+      }
       if (!res.ok) throw new Error(`Request failed: ${res.status}`);
-      return await res.json();
+      return {
+        data: await res.json(),
+        status: res.status,
+        notModified: false,
+        etag,
+        lastModified,
+      };
     } catch (error) {
       if (!isAbortError(error)) {
-        console.error("fetchJson failed", error);
+        console.error("fetchJsonWithMeta failed", error);
       }
-      return null;
+      return createEmptyMetaResponse();
     } finally {
       if (timeoutId) clearTimeout(timeoutId);
       if (detachAbort) detachAbort();
@@ -82,11 +114,24 @@ export async function fetchJson(url, options = {}) {
 
   if (requestKey) {
     const tracked = fetchPromise.finally(() => {
-      inFlightRequests.delete(requestKey);
+      inFlightMap.delete(requestKey);
     });
-    inFlightRequests.set(requestKey, tracked);
+    inFlightMap.set(requestKey, tracked);
     return attachAbortListener(tracked, signal);
   }
 
   return fetchPromise;
+};
+
+export async function fetchJsonWithMeta(url, options = {}) {
+  const response = await requestJsonWithMeta(url, options, inFlightMetaRequests);
+  return response || createEmptyMetaResponse();
+}
+
+export async function fetchJson(url, options = {}) {
+  const response = await requestJsonWithMeta(url, options, inFlightRequests);
+  if (!response || response.notModified) {
+    return null;
+  }
+  return response.data;
 }

@@ -12,7 +12,7 @@ import {
   PAGE_SIZE_KEY,
   PAGE_SIZE_OPTIONS,
 } from "../constants.js";
-import { fetchJson } from "../utils/api.js";
+import { fetchJson, fetchJsonWithMeta } from "../utils/api.js";
 import {
   getCachePreferenceKey,
   loadCreatorCache,
@@ -48,6 +48,31 @@ const dedupePostsById = (items) => {
 const resolveOffsetForPosition = (position, pageSize) => {
   if (!Number.isFinite(position) || !Number.isFinite(pageSize) || pageSize <= 0) return 0;
   return Math.max(0, Math.floor(position / pageSize) * pageSize);
+};
+
+const toValidatorValue = (value) => (typeof value === "string" ? value.trim() : "");
+
+const buildConditionalHeaders = (validator) => {
+  if (!validator || typeof validator !== "object") return null;
+  const etag = toValidatorValue(validator.etag);
+  const lastModified = toValidatorValue(validator.lastModified);
+  const headers = {};
+  if (etag) headers["If-None-Match"] = etag;
+  if (lastModified) headers["If-Modified-Since"] = lastModified;
+  return Object.keys(headers).length > 0 ? headers : null;
+};
+
+const mergeValidator = (previous, response) => {
+  const previousEtag = toValidatorValue(previous?.etag);
+  const previousLastModified = toValidatorValue(previous?.lastModified);
+  const nextEtag = toValidatorValue(response?.etag) || previousEtag;
+  const nextLastModified = toValidatorValue(response?.lastModified) || previousLastModified;
+  if (!nextEtag && !nextLastModified) return null;
+  return {
+    etag: nextEtag,
+    lastModified: nextLastModified,
+    checkedAt: Date.now(),
+  };
 };
 
 const VIRTUAL_CARD_MIN_WIDTH = 260;
@@ -537,9 +562,42 @@ function CreatorPage({
     }
 
     setLoadingProfile(true);
-    fetchJson(`${API_BASE}/${service}/user/${creatorId}/profile`)
-      .then((data) => {
+    const cachedProfileValidator = cacheData?.revalidation?.profile;
+    const profileHeaders =
+      useCache && cachedProfile ? buildConditionalHeaders(cachedProfileValidator) : null;
+
+    fetchJsonWithMeta(`${API_BASE}/${service}/user/${creatorId}/profile`, {
+      headers: profileHeaders || undefined,
+    })
+      .then((response) => {
         if (!alive) return;
+        const data = response?.data ?? null;
+        if (response?.notModified && cachedProfile) {
+          setProfile(cachedProfile);
+          setLoadingProfile(false);
+          if (useCache) {
+            updateCache(
+              (prev) => {
+                const profileValidator = mergeValidator(prev?.revalidation?.profile, response);
+                return {
+                  ...prev,
+                  revalidation: {
+                    ...(prev?.revalidation || {}),
+                    profile: profileValidator,
+                  },
+                };
+              },
+              { updateTimestamp: true },
+            );
+            if (wantsCacheValidation) {
+              setCacheValidationState("validated");
+            } else {
+              setCacheValidationState((prev) => (prev === "idle" ? prev : "idle"));
+            }
+          }
+          return;
+        }
+
         setProfile(data);
         setLoadingProfile(false);
         if (useCache) {
@@ -553,6 +611,10 @@ function CreatorPage({
                 ...prev,
                 profile: data,
                 totalPosts: numericCount ?? prev.totalPosts,
+                revalidation: {
+                  ...(prev?.revalidation || {}),
+                  profile: mergeValidator(prev?.revalidation?.profile, response),
+                },
               }),
               { updateTimestamp: !wantsCacheValidation },
             );
@@ -1140,18 +1202,35 @@ function CreatorPage({
     const hasCachedSlice = Boolean(cachedSliceResult && cachedSliceResult.slice.length > 0);
     setLoadingPosts(!hasCachedSlice);
 
-    const fetchPromises = offsetsToFetch.map((chunkOffset) =>
-      fetchJson(`${API_BASE}/${service}/user/${creatorId}/posts?o=${chunkOffset}&n=${API_PAGE_SIZE}`).then(
-        (data) => ({ offset: chunkOffset, data }),
-      ),
-    );
+    const cachedChunkValidators =
+      useCache && cacheData?.revalidation?.chunks && typeof cacheData.revalidation.chunks === "object"
+        ? cacheData.revalidation.chunks
+        : {};
+    const fetchPromises = offsetsToFetch.map((chunkOffset) => {
+      const validator = cachedChunkValidators[String(chunkOffset)];
+      const headers = useCache ? buildConditionalHeaders(validator) : null;
+      return fetchJsonWithMeta(
+        `${API_BASE}/${service}/user/${creatorId}/posts?o=${chunkOffset}&n=${API_PAGE_SIZE}`,
+        { headers: headers || undefined },
+      ).then((response) => ({ offset: chunkOffset, response }));
+    });
 
     Promise.all(fetchPromises)
       .then((fetchedChunks) => {
         if (!alive) return;
         const mergedChunks = { ...(cachedChunks || {}) };
-        fetchedChunks.forEach(({ offset, data }) => {
-          mergedChunks[String(offset)] = Array.isArray(data) ? data : [];
+        const mergedChunkValidators = { ...cachedChunkValidators };
+        fetchedChunks.forEach(({ offset, response }) => {
+          const chunkKey = String(offset);
+          if (response?.notModified && Array.isArray(mergedChunks[chunkKey])) {
+            // keep cached chunk data when server confirms no changes
+          } else {
+            mergedChunks[chunkKey] = Array.isArray(response?.data) ? response.data : [];
+          }
+          const nextValidator = mergeValidator(mergedChunkValidators[chunkKey], response);
+          if (nextValidator) {
+            mergedChunkValidators[chunkKey] = nextValidator;
+          }
         });
         const responses = chunkOffsets.map((chunkOffset) => mergedChunks[String(chunkOffset)] ?? []);
         const { slice, hasMore } = sliceFromResponses(responses);
@@ -1165,6 +1244,10 @@ function CreatorPage({
             ...prev,
             chunks: mergedChunks,
             totalPosts: profileCount ?? cacheCount ?? prev.totalPosts ?? null,
+            revalidation: {
+              ...(prev?.revalidation || {}),
+              chunks: mergedChunkValidators,
+            },
           }));
           setCacheReloadApplied(reloadKey);
           setCacheValidationState((prev) => (prev === "idle" ? prev : "idle"));

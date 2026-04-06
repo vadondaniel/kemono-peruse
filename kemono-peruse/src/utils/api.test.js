@@ -1,4 +1,4 @@
-import { fetchJson } from "./api.js";
+import { fetchJson, fetchJsonWithMeta } from "./api.js";
 
 describe("fetchJson", () => {
   beforeEach(() => {
@@ -144,5 +144,61 @@ describe("fetchJson", () => {
 
     await expect(pending).resolves.toBeNull();
     expect(consoleSpy).not.toHaveBeenCalled();
+  });
+
+  it("returns response metadata for successful requests", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: {
+          get: (name) =>
+            name === "ETag"
+              ? 'W/"profile-v1"'
+              : name === "Last-Modified"
+                ? "Tue, 01 Apr 2025 12:00:00 GMT"
+                : null,
+        },
+        json: async () => ({ ok: 1 }),
+      }),
+    );
+
+    await expect(fetchJsonWithMeta("/ok-meta")).resolves.toEqual({
+      data: { ok: 1 },
+      status: 200,
+      notModified: false,
+      etag: 'W/"profile-v1"',
+      lastModified: "Tue, 01 Apr 2025 12:00:00 GMT",
+    });
+  });
+
+  it("supports 304 not modified responses for conditional requests", async () => {
+    const jsonSpy = vi.fn();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 304,
+        headers: {
+          get: (name) => (name === "ETag" ? '"posts-v2"' : null),
+        },
+        json: jsonSpy,
+      }),
+    );
+
+    const meta = await fetchJsonWithMeta("/conditional", {
+      headers: { "If-None-Match": '"posts-v2"' },
+    });
+    expect(meta).toEqual({
+      data: null,
+      status: 304,
+      notModified: true,
+      etag: '"posts-v2"',
+      lastModified: "",
+    });
+    expect(jsonSpy).not.toHaveBeenCalled();
+
+    await expect(fetchJson("/conditional")).resolves.toBeNull();
   });
 });

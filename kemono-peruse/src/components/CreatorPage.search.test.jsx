@@ -2,9 +2,11 @@ import React, { useState } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const fetchJsonMock = vi.fn();
+const fetchJsonWithMetaMock = vi.fn();
 
 vi.mock("../utils/api.js", () => ({
   fetchJson: (...args) => fetchJsonMock(...args),
+  fetchJsonWithMeta: (...args) => fetchJsonWithMetaMock(...args),
 }));
 
 import CreatorPage from "./CreatorPage.jsx";
@@ -48,6 +50,14 @@ describe("CreatorPage search behavior", () => {
   beforeEach(() => {
     cleanup();
     fetchJsonMock.mockReset();
+    fetchJsonWithMetaMock.mockReset();
+    fetchJsonWithMetaMock.mockImplementation(async (...args) => ({
+      data: await fetchJsonMock(...args),
+      status: 200,
+      notModified: false,
+      etag: "",
+      lastModified: "",
+    }));
     localStorage.clear();
     writeCreatorCache("patreon", "50049787", null);
     setupMatchMedia();
@@ -167,5 +177,73 @@ describe("CreatorPage search behavior", () => {
       { id: "fresh-post", title: "Fresh title", published: "2025-01-02T00:00:00.000Z" },
     ]);
     await screen.findByText("Fresh title");
+  });
+
+  it("sends conditional headers for cache revalidation and keeps cached chunks on 304", async () => {
+    localStorage.setItem("kemono.cache.pref.patreon.50049787", "true");
+    writeCreatorCache("patreon", "50049787", {
+      updatedAt: 1,
+      totalPosts: 1,
+      profile: { id: "50049787", service: "patreon", name: "AYEH", post_count: 1 },
+      chunks: {
+        0: [{ id: "cached-post", title: "Cached title", published: "2025-01-01T00:00:00.000Z" }],
+      },
+      revalidation: {
+        profile: {
+          etag: '"profile-v1"',
+          lastModified: "Tue, 01 Apr 2025 12:00:00 GMT",
+        },
+        chunks: {
+          0: {
+            etag: '"chunk-v1"',
+            lastModified: "Tue, 01 Apr 2025 12:05:00 GMT",
+          },
+        },
+      },
+    });
+
+    const metaCalls = [];
+    fetchJsonWithMetaMock.mockImplementation(async (url, options = {}) => {
+      const target = String(url);
+      metaCalls.push({ url: target, headers: options?.headers || {} });
+      if (target.includes("/profile")) {
+        return {
+          data: null,
+          status: 304,
+          notModified: true,
+          etag: '"profile-v1"',
+          lastModified: "Tue, 01 Apr 2025 12:00:00 GMT",
+        };
+      }
+      if (target.includes("/posts?o=0&n=50")) {
+        return {
+          data: null,
+          status: 304,
+          notModified: true,
+          etag: '"chunk-v1"',
+          lastModified: "Tue, 01 Apr 2025 12:05:00 GMT",
+        };
+      }
+      return { data: [], status: 200, notModified: false, etag: "", lastModified: "" };
+    });
+
+    render(<CreatorHarness initialFilter="" alreadySaved />);
+
+    await screen.findByText("Cached title");
+    await waitFor(() => {
+      expect(metaCalls.some((call) => call.url.includes("/posts?o=0&n=50"))).toBe(true);
+    });
+
+    const profileCall = metaCalls.find((call) => call.url.includes("/profile"));
+    const postsCall = metaCalls.find((call) => call.url.includes("/posts?o=0&n=50"));
+    expect(profileCall?.headers).toMatchObject({
+      "If-None-Match": '"profile-v1"',
+      "If-Modified-Since": "Tue, 01 Apr 2025 12:00:00 GMT",
+    });
+    expect(postsCall?.headers).toMatchObject({
+      "If-None-Match": '"chunk-v1"',
+      "If-Modified-Since": "Tue, 01 Apr 2025 12:05:00 GMT",
+    });
+    expect(screen.getByText("Cached title")).toBeInTheDocument();
   });
 });
