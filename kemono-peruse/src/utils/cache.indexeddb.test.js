@@ -105,7 +105,14 @@ describe("cache indexeddb integration", () => {
 
     const store = stores.get("creator-cache");
     expect(store).toBeTruthy();
-    expect(store.get(cacheKey).chunks["0"][0].id).toBe("legacy-post");
+    const meta = store.get(`${cacheKey}::meta`);
+    expect(meta).toMatchObject({
+      type: "creator-cache-meta-v2",
+      version: 1,
+      chunkKeys: ["0"],
+    });
+    expect(store.get(`${cacheKey}::chunk::0`)[0].id).toBe("legacy-post");
+    expect(store.get(cacheKey)).toBeUndefined();
   });
 
   it("does not migrate legacy cache when migrateLegacy is false", async () => {
