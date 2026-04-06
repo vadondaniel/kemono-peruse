@@ -553,11 +553,10 @@ function CreatorPage({
                 profile: data,
                 totalPosts: numericCount ?? prev.totalPosts,
               }),
-              { updateTimestamp: !wantsCacheValidation || countsMatch },
+              { updateTimestamp: !wantsCacheValidation },
             );
             if (wantsCacheValidation) {
               if (countsMatch) {
-                setCacheReloadApplied(reloadKey);
                 setCacheValidationState("validated");
               } else {
                 setCacheValidationState("stale");
@@ -585,7 +584,7 @@ function CreatorPage({
     return () => {
       alive = false;
     };
-  }, [service, creatorId, useCache, cacheData, cacheFresh, reloadRequested, wantsCacheValidation, reloadKey, updateCache]);
+  }, [service, creatorId, useCache, cacheData, cacheFresh, reloadRequested, wantsCacheValidation, updateCache]);
 
   useEffect(() => {
     if (!profile) return;
@@ -1109,7 +1108,7 @@ function CreatorPage({
       cachedSliceResult = sliceFromResponses(responsesFromCache);
       setPosts(cachedSliceResult.slice);
       setHasNextPage(cachedSliceResult.hasMore);
-      if ((cacheFresh && !reloadRequested) || cacheValidationPending) {
+      if (cacheFresh && !reloadRequested) {
         setLoadingPosts(false);
         return () => {
           alive = false;
@@ -1137,7 +1136,8 @@ function CreatorPage({
       };
     }
 
-    setLoadingPosts(true);
+    const hasCachedSlice = Boolean(cachedSliceResult && cachedSliceResult.slice.length > 0);
+    setLoadingPosts(!hasCachedSlice);
 
     const fetchPromises = offsetsToFetch.map((chunkOffset) =>
       fetchJson(`${API_BASE}/${service}/user/${creatorId}/posts?o=${chunkOffset}&n=${API_PAGE_SIZE}`).then(

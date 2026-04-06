@@ -8,15 +8,16 @@ vi.mock("../utils/api.js", () => ({
 }));
 
 import CreatorPage from "./CreatorPage.jsx";
+import { writeCreatorCache } from "../utils/cache.js";
 
-function CreatorHarness({ initialFilter = "alpha" }) {
+function CreatorHarness({ initialFilter = "alpha", alreadySaved = false }) {
   const [filter, setFilter] = useState(initialFilter);
   return (
     <CreatorPage
       service="patreon"
       creatorId="50049787"
       creatorName="AYEH"
-      alreadySaved={false}
+      alreadySaved={alreadySaved}
       onOpenPost={vi.fn()}
       onSave={vi.fn()}
       activeFilter={filter}
@@ -48,6 +49,7 @@ describe("CreatorPage search behavior", () => {
     cleanup();
     fetchJsonMock.mockReset();
     localStorage.clear();
+    writeCreatorCache("patreon", "50049787", null);
     setupMatchMedia();
   });
 
@@ -126,5 +128,44 @@ describe("CreatorPage search behavior", () => {
     await waitFor(() => {
       expect(screen.queryByText("alpha title")).not.toBeInTheDocument();
     });
+  });
+
+  it("uses stale-while-revalidate for cached post lists", async () => {
+    localStorage.setItem("kemono.cache.pref.patreon.50049787", "true");
+    writeCreatorCache("patreon", "50049787", {
+      updatedAt: 1,
+      totalPosts: 1,
+      profile: { id: "50049787", service: "patreon", name: "AYEH", post_count: 1 },
+      chunks: {
+        0: [{ id: "cached-post", title: "Cached title", published: "2025-01-01T00:00:00.000Z" }],
+      },
+    });
+
+    let resolvePosts;
+    fetchJsonMock.mockImplementation((url) => {
+      const target = String(url);
+      if (target.includes("/profile")) {
+        return Promise.resolve({ id: "50049787", service: "patreon", name: "AYEH", post_count: 2 });
+      }
+      if (target.includes("/posts?o=0&n=50")) {
+        return new Promise((resolve) => {
+          resolvePosts = resolve;
+        });
+      }
+      return Promise.resolve([]);
+    });
+
+    render(<CreatorHarness initialFilter="" alreadySaved />);
+
+    await screen.findByText("Cached title");
+    expect(screen.getByText("Showing 1 items")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(fetchJsonMock.mock.calls.some((call) => String(call[0]).includes("/posts?o=0&n=50"))).toBe(true);
+    });
+
+    resolvePosts([
+      { id: "fresh-post", title: "Fresh title", published: "2025-01-02T00:00:00.000Z" },
+    ]);
+    await screen.findByText("Fresh title");
   });
 });
