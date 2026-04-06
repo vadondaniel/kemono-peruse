@@ -206,6 +206,7 @@ function CreatorPage({
   const [hasNextPage, setHasNextPage] = useState(false);
   const [compactPagination, setCompactPagination] = useState(false);
   const searchTokenRef = useRef(0);
+  const searchAbortRef = useRef(null);
   const pendingTagFetchRef = useRef(new Set());
   const prevFilterStorageKeyRef = useRef(filterStorageKey);
   const cacheFresh = useCache && cacheData ? isCacheFresh(cacheData) : false;
@@ -535,6 +536,10 @@ function CreatorPage({
 
   useEffect(() => {
     const trimmedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
+    if (searchAbortRef.current) {
+      searchAbortRef.current.abort();
+      searchAbortRef.current = null;
+    }
     setSearchInput(trimmedFilter);
     searchTokenRef.current += 1;
     setSearchPage(1);
@@ -549,6 +554,16 @@ function CreatorPage({
     setSearchCapped(false);
     runSearch({ query: trimmedFilter });
   }, [service, creatorId, activeFilter, reloadKey]);
+
+  useEffect(
+    () => () => {
+      if (searchAbortRef.current) {
+        searchAbortRef.current.abort();
+        searchAbortRef.current = null;
+      }
+    },
+    [],
+  );
 
   const runSearch = async ({ query } = {}) => {
     const trimmed = (query || "").trim();
@@ -633,6 +648,13 @@ function CreatorPage({
       }
     }
 
+    if (searchAbortRef.current) {
+      searchAbortRef.current.abort();
+    }
+    const requestController = typeof AbortController !== "undefined" ? new AbortController() : null;
+    searchAbortRef.current = requestController;
+    const requestSignal = requestController?.signal;
+
     const token = (searchTokenRef.current += 1);
     const encodedQuery = hasTextSearch ? encodeURIComponent(normalizedTextQuery) : "";
     const filterBody = normalizedFields.body ? "true" : "false";
@@ -681,8 +703,9 @@ function CreatorPage({
         while (!exhausted && workingResults.length < MAX_SEARCH_RESULTS) {
           const chunk = await fetchJson(
             `${API_BASE}/${service}/user/${creatorId}/posts?o=${offset}&n=${API_PAGE_SIZE}${mode.queryParam}${mode.fieldParam}${mode.tagParam}`,
+            { signal: requestSignal, dedupe: false },
           );
-          if (token !== searchTokenRef.current) return;
+          if (requestSignal?.aborted || token !== searchTokenRef.current) return;
           if (!Array.isArray(chunk) || chunk.length === 0) {
             exhausted = true;
             break;
@@ -744,13 +767,18 @@ function CreatorPage({
         tags: hasTagSearch && matchedViaTags,
       });
     } catch (error) {
-      console.error("Post search failed", error);
+      if (!requestSignal?.aborted) {
+        console.error("Post search failed", error);
+      }
       if (token !== searchTokenRef.current) return;
       setSearchResults([]);
       setSearchCapped(false);
       setSearchMatchSources({ text: false, tags: false });
     } finally {
-      if (token === searchTokenRef.current) {
+      if (searchAbortRef.current === requestController) {
+        searchAbortRef.current = null;
+      }
+      if (token === searchTokenRef.current && !requestSignal?.aborted) {
         setSearchLoading(false);
       }
     }
