@@ -49,6 +49,15 @@ const resolveOffsetForPosition = (position, pageSize) => {
   return Math.max(0, Math.floor(position / pageSize) * pageSize);
 };
 
+const resolvePostFeatureKey = (post, index) => {
+  if (post && post.id != null) {
+    return `post-${String(post.id)}`;
+  }
+  const fallbackPosition = Number.isFinite(post?.__position) ? post.__position : "na";
+  const fallbackUpdated = post?.updated || post?.published || "na";
+  return `post-fallback-${fallbackPosition}-${fallbackUpdated}-${index}`;
+};
+
 function CreatorPage({
   service,
   creatorId,
@@ -219,6 +228,10 @@ function CreatorPage({
   const searchAbortRef = useRef(null);
   const pendingTagFetchRef = useRef(new Set());
   const prevFilterStorageKeyRef = useRef(filterStorageKey);
+  const featureVisibilityObserverRef = useRef(null);
+  const featureVisibleKeysRef = useRef(new Set());
+  const postListRef = useRef(null);
+  const [visibleFeatureKeys, setVisibleFeatureKeys] = useState(() => new Set());
   const cacheFresh = useCache && cacheData ? isCacheFresh(cacheData) : false;
   const reloadRequested = cacheReloadApplied !== reloadKey;
   const wantsCacheValidation = Boolean(useCache && cacheData && (reloadRequested || !cacheFresh));
@@ -1550,6 +1563,92 @@ function CreatorPage({
         }
       : null;
 
+  const markFeatureCardsVisible = useCallback((keys) => {
+    if (!Array.isArray(keys) || keys.length === 0) return;
+    let changed = false;
+    keys.forEach((key) => {
+      if (!key || featureVisibleKeysRef.current.has(key)) return;
+      featureVisibleKeysRef.current.add(key);
+      changed = true;
+    });
+    if (changed) {
+      setVisibleFeatureKeys(new Set(featureVisibleKeysRef.current));
+    }
+  }, []);
+
+  useEffect(() => {
+    featureVisibleKeysRef.current = new Set();
+    setVisibleFeatureKeys(new Set());
+    if (featureVisibilityObserverRef.current) {
+      featureVisibilityObserverRef.current.disconnect();
+      featureVisibilityObserverRef.current = null;
+    }
+  }, [service, creatorId, showFeatureBackgrounds, isFilterActive, clampedSearchPage, currentPage, reverseOrder]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!showFeatureBackgrounds) return;
+    if (!postListRef.current) return;
+
+    const cards = Array.from(postListRef.current.querySelectorAll("[data-feature-key]"));
+    if (cards.length === 0) return;
+
+    if (featureVisibilityObserverRef.current) {
+      featureVisibilityObserverRef.current.disconnect();
+      featureVisibilityObserverRef.current = null;
+    }
+
+    const observer = new window.IntersectionObserver(
+      (entries) => {
+        const newlyVisible = [];
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting && entry.intersectionRatio <= 0) return;
+          const key = entry.target.getAttribute("data-feature-key");
+          if (!key) return;
+          newlyVisible.push(key);
+          observer.unobserve(entry.target);
+        });
+        if (newlyVisible.length > 0) {
+          markFeatureCardsVisible(newlyVisible);
+        }
+      },
+      {
+        root: null,
+        rootMargin: "320px 0px",
+        threshold: 0.01,
+      },
+    );
+
+    featureVisibilityObserverRef.current = observer;
+    const viewportHeight = window.innerHeight || 0;
+    const nearViewport = [];
+
+    cards.forEach((card) => {
+      const key = card.getAttribute("data-feature-key");
+      if (!key || featureVisibleKeysRef.current.has(key)) return;
+
+      const rect = card.getBoundingClientRect();
+      const insidePrefetchBand = rect.bottom >= -320 && rect.top <= viewportHeight + 320;
+      if (insidePrefetchBand) {
+        nearViewport.push(key);
+        return;
+      }
+
+      observer.observe(card);
+    });
+
+    if (nearViewport.length > 0) {
+      markFeatureCardsVisible(nearViewport);
+    }
+
+    return () => {
+      observer.disconnect();
+      if (featureVisibilityObserverRef.current === observer) {
+        featureVisibilityObserverRef.current = null;
+      }
+    };
+  }, [showFeatureBackgrounds, orderedPosts, markFeatureCardsVisible]);
+
   const handleOrderToggle = () => {
     if (isFilterActive) {
       setSearchPage(1);
@@ -1934,7 +2033,7 @@ function CreatorPage({
           </div>
         </div>
         {renderPagination()}
-        <div className="post-list">
+        <div className="post-list" ref={postListRef}>
           {orderedPosts.map((post, index) => {
             const detailData = postDetailMap[post.id];
             const excerptHtml = showExcerpts ? getPostExcerptHtml(detailData || post) : null;
@@ -1964,11 +2063,13 @@ function CreatorPage({
             });
             const featureFile =
               post?.file && (post.file.path || post.file.url || post.file.name) ? post.file : null;
+            const featureKey = resolvePostFeatureKey(post, index);
+            const isFeatureCandidate = showFeatureBackgrounds && Boolean(featureFile);
             const featureProxySrc = featureFile?.path ? `${MEDIA_BASE}${featureFile.path}` : null;
             const featureOriginalSrc =
               featureFile?.url || (featureFile?.path ? `${ORIGINAL_MEDIA_BASE}${featureFile.path}` : null);
             const featureImage =
-              showFeatureBackgrounds && featureFile ? featureProxySrc || featureOriginalSrc : null;
+              isFeatureCandidate && visibleFeatureKeys.has(featureKey) ? featureProxySrc || featureOriginalSrc : null;
             const postItemClass = `post-item${featureImage ? " feature-background" : ""}`;
             const postItemStyle = featureImage ? { "--post-feature-image": `url("${featureImage}")` } : undefined;
             return (
@@ -1977,6 +2078,7 @@ function CreatorPage({
                 style={postItemStyle}
                 key={`${post?.id ?? `idx-${index}`}-${Number.isFinite(post?.__position) ? post.__position : post.updated || post.published || index}`}
                 href={postHref}
+                data-feature-key={isFeatureCandidate ? featureKey : undefined}
                 onClick={(event) => {
                   if (isModifiedClick(event)) {
                     return;
