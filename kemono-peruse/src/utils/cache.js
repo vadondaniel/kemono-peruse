@@ -17,9 +17,11 @@ const MAX_MEMORY_CACHE_BYTES = 24 * 1024 * 1024;
 const MAX_PERSISTED_CACHE_CREATORS = 80;
 const MAX_PERSISTED_CACHE_BYTES = 96 * 1024 * 1024;
 const ACCESS_TOUCH_MIN_INTERVAL_MS = 30000;
+const CACHE_WRITE_DEBOUNCE_MS = 120;
 const cacheMemory = new Map();
 const cacheMemoryMeta = new Map();
 const writeQueues = new Map();
+const debouncedWrites = new Map();
 const accessTouchMap = new Map();
 let dbPromise = null;
 let maintenanceQueue = Promise.resolve();
@@ -675,7 +677,7 @@ const writeCacheToDb = async (key, payload, previousPayload = null) => {
   });
 };
 
-const queueCacheWrite = (key, payload, previousPayload = null) => {
+const enqueueCacheWrite = (key, payload, previousPayload = null) => {
   const previous = writeQueues.get(key) || Promise.resolve(true);
   const queued = previous
     .catch(() => true)
@@ -693,6 +695,52 @@ const queueCacheWrite = (key, payload, previousPayload = null) => {
     });
   writeQueues.set(key, queued);
   return queued;
+};
+
+const flushDebouncedCacheWrite = (key) => {
+  const pending = debouncedWrites.get(key);
+  if (!pending) return;
+  debouncedWrites.delete(key);
+  clearTimeout(pending.timerId);
+  void enqueueCacheWrite(key, pending.payload, pending.previousPayload)
+    .then((result) => pending.resolve(result))
+    .catch(() => pending.resolve(false));
+};
+
+const queueCacheWrite = (key, payload, previousPayload = null, options = {}) => {
+  const debounceMs = Number(options?.debounceMs);
+  const normalizedDebounceMs =
+    Number.isFinite(debounceMs) && debounceMs > 0 ? Math.floor(debounceMs) : 0;
+  const hasPendingQueue = writeQueues.has(key) || debouncedWrites.has(key);
+
+  if (normalizedDebounceMs <= 0 || !hasPendingQueue) {
+    return enqueueCacheWrite(key, payload, previousPayload);
+  }
+
+  const existing = debouncedWrites.get(key);
+  if (existing) {
+    existing.payload = payload;
+    if (!existing.previousPayload && previousPayload) {
+      existing.previousPayload = previousPayload;
+    }
+    clearTimeout(existing.timerId);
+    existing.timerId = setTimeout(() => flushDebouncedCacheWrite(key), normalizedDebounceMs);
+    return existing.promise;
+  }
+
+  let resolvePromise;
+  const promise = new Promise((resolve) => {
+    resolvePromise = resolve;
+  });
+  const pending = {
+    payload,
+    previousPayload,
+    promise,
+    resolve: resolvePromise,
+    timerId: setTimeout(() => flushDebouncedCacheWrite(key), normalizedDebounceMs),
+  };
+  debouncedWrites.set(key, pending);
+  return promise;
 };
 
 export function loadCreatorCache(service, creatorId) {
@@ -726,7 +774,7 @@ export function writeCreatorCache(service, creatorId, data) {
     dropMemoryEntry(key);
   }
   removeLegacyLocalStorageCache(key);
-  void queueCacheWrite(key, payload, previousPayload);
+  void queueCacheWrite(key, payload, previousPayload, { debounceMs: CACHE_WRITE_DEBOUNCE_MS });
   return true;
 }
 
@@ -779,7 +827,9 @@ export async function writeCreatorCacheAsync(service, creatorId, data) {
   removeLegacyLocalStorageCache(key);
 
   try {
-    return await queueCacheWrite(key, payload, previousPayload);
+    return await queueCacheWrite(key, payload, previousPayload, {
+      debounceMs: CACHE_WRITE_DEBOUNCE_MS,
+    });
   } catch (error) {
     if (isQuotaExceededError(error)) {
       dropMemoryEntry(key);

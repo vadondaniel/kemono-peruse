@@ -1,5 +1,8 @@
 const createFakeIndexedDb = () => {
   const stores = new Map();
+  const stats = {
+    readWriteTransactions: 0,
+  };
 
   const db = {
     objectStoreNames: {
@@ -13,7 +16,10 @@ const createFakeIndexedDb = () => {
       }
       return {};
     },
-    transaction(storeName) {
+    transaction(storeName, mode) {
+      if (mode === "readwrite") {
+        stats.readWriteTransactions += 1;
+      }
       if (!stores.has(storeName)) {
         stores.set(storeName, new Map());
       }
@@ -103,7 +109,7 @@ const createFakeIndexedDb = () => {
     },
   };
 
-  return { indexedDB, stores };
+  return { indexedDB, stores, stats };
 };
 
 describe("cache indexeddb integration", () => {
@@ -209,6 +215,47 @@ describe("cache indexeddb integration", () => {
 
     expect(loaded.updatedAt).toBe(2);
     expect(loaded.chunks["0"][0].id).toBe("second");
+  });
+
+  it("coalesces burst writes into a single debounced queued write", async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = createFakeIndexedDb();
+      Object.defineProperty(window, "indexedDB", {
+        configurable: true,
+        writable: true,
+        value: fake.indexedDB,
+      });
+
+      const cache = await import("./cache.js");
+
+      const first = cache.writeCreatorCacheAsync("patreon", "50049787", {
+        updatedAt: 1,
+        chunks: { 0: [{ id: "first" }] },
+      });
+      const second = cache.writeCreatorCacheAsync("patreon", "50049787", {
+        updatedAt: 2,
+        chunks: { 0: [{ id: "second" }] },
+      });
+      const third = cache.writeCreatorCacheAsync("patreon", "50049787", {
+        updatedAt: 3,
+        chunks: { 0: [{ id: "third" }] },
+      });
+
+      await vi.runAllTimersAsync();
+      await Promise.all([first, second, third]);
+
+      const cacheKey = "kemono.cache.patreon.50049787";
+      const store = fake.stores.get("creator-cache");
+      const meta = store.get(`${cacheKey}::meta`);
+      const chunk = store.get(`${cacheKey}::chunk::0`);
+
+      expect(meta.base.updatedAt).toBe(3);
+      expect(chunk[0].id).toBe("third");
+      expect(fake.stats.readWriteTransactions).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps legacy cache when indexeddb is unavailable", async () => {
