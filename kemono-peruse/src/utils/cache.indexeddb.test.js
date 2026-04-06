@@ -166,4 +166,55 @@ describe("cache indexeddb integration", () => {
     expect(loaded.updatedAt).toBe(2);
     expect(loaded.chunks["0"][0].id).toBe("second");
   });
+
+  it("keeps legacy cache when indexeddb is unavailable", async () => {
+    Object.defineProperty(window, "indexedDB", {
+      configurable: true,
+      writable: true,
+      value: null,
+    });
+
+    const cacheKey = "kemono.cache.patreon.50049787";
+    localStorage.setItem(
+      cacheKey,
+      JSON.stringify({
+        version: 1,
+        updatedAt: 456,
+        chunks: {
+          0: [{ id: "legacy-only" }],
+        },
+      }),
+    );
+
+    const cache = await import("./cache.js");
+    const loaded = await cache.loadCreatorCacheAsync("patreon", "50049787");
+
+    expect(loaded).toBeTruthy();
+    expect(loaded.chunks["0"][0].id).toBe("legacy-only");
+    expect(localStorage.getItem(cacheKey)).not.toBeNull();
+  });
+
+  it("returns false from async write when indexeddb open throws", async () => {
+    const failingIndexedDb = {
+      open() {
+        throw new Error("open failed");
+      },
+    };
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    Object.defineProperty(window, "indexedDB", {
+      configurable: true,
+      writable: true,
+      value: failingIndexedDb,
+    });
+
+    const cache = await import("./cache.js");
+    const result = await cache.writeCreatorCacheAsync("patreon", "50049787", {
+      updatedAt: 999,
+      chunks: { 0: [{ id: "payload" }] },
+    });
+
+    expect(result).toBe(false);
+    expect(consoleSpy).toHaveBeenCalled();
+  });
 });
