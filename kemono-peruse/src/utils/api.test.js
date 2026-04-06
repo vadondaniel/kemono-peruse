@@ -42,4 +42,29 @@ describe("fetchJson", () => {
     expect(b).toEqual({ ok: true });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it("returns null for aborted requests without logging errors", async () => {
+    const controller = new AbortController();
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((url, options) => {
+        return new Promise((resolve, reject) => {
+          options.signal.addEventListener("abort", () => {
+            const error = new Error("aborted");
+            error.name = "AbortError";
+            reject(error);
+          });
+          setTimeout(() => resolve({ ok: true, json: async () => ({ never: "used" }) }), 20);
+        });
+      }),
+    );
+
+    const pending = fetchJson("/abort-me", { signal: controller.signal, dedupe: false });
+    controller.abort();
+
+    await expect(pending).resolves.toBeNull();
+    expect(consoleSpy).not.toHaveBeenCalled();
+  });
 });
