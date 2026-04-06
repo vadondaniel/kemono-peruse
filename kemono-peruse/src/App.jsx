@@ -11,11 +11,46 @@ import { getInitialPageSize, copyReaderSettings } from "./utils/preferences.js";
 const CreatorPage = lazy(() => import("./components/CreatorPage.jsx"));
 const Home = lazy(() => import("./components/Home.jsx"));
 const PostView = lazy(() => import("./components/PostView.jsx"));
+const STORAGE_WRITE_DEBOUNCE_MS = 250;
 
 function App() {
   const [view, setViewState] = useState(getInitialView);
   const viewRef = useRef(view);
   const initialViewRef = useRef(view);
+  const storageWriteQueueRef = useRef(new Map());
+  const scheduleStorageWrite = useCallback((key, payload) => {
+    if (typeof window === "undefined" || !window.localStorage) return;
+    const pending = storageWriteQueueRef.current.get(key);
+    if (pending?.timerId) {
+      window.clearTimeout(pending.timerId);
+    }
+    const serialized = JSON.stringify(payload);
+    const timerId = window.setTimeout(() => {
+      try {
+        window.localStorage.setItem(key, serialized);
+      } catch {
+        // ignore persistence failures
+      } finally {
+        storageWriteQueueRef.current.delete(key);
+      }
+    }, STORAGE_WRITE_DEBOUNCE_MS);
+    storageWriteQueueRef.current.set(key, { timerId, serialized });
+  }, []);
+  useEffect(
+    () => () => {
+      if (typeof window === "undefined" || !window.localStorage) return;
+      storageWriteQueueRef.current.forEach(({ timerId, serialized }, key) => {
+        window.clearTimeout(timerId);
+        try {
+          window.localStorage.setItem(key, serialized);
+        } catch {
+          // ignore persistence failures
+        }
+      });
+      storageWriteQueueRef.current.clear();
+    },
+    [],
+  );
   const resolvePageSize = useCallback((value) => {
     if (Number.isFinite(value) && value > 0) {
       return Math.max(1, Math.floor(value));
@@ -100,8 +135,8 @@ function App() {
   });
 
   useEffect(() => {
-    localStorage.setItem("kemono.savedCreators", JSON.stringify(savedCreators));
-  }, [savedCreators]);
+    scheduleStorageWrite("kemono.savedCreators", savedCreators);
+  }, [savedCreators, scheduleStorageWrite]);
 
   const [creatorFilters, setCreatorFilters] = useState(() => {
     try {
@@ -112,12 +147,8 @@ function App() {
   });
 
   useEffect(() => {
-    try {
-      localStorage.setItem("kemono.creatorFilters", JSON.stringify(creatorFilters));
-    } catch {
-      // ignore
-    }
-  }, [creatorFilters]);
+    scheduleStorageWrite("kemono.creatorFilters", creatorFilters);
+  }, [creatorFilters, scheduleStorageWrite]);
 
   const [creatorPositions, setCreatorPositions] = useState(() => {
     try {
@@ -128,12 +159,8 @@ function App() {
   });
 
   useEffect(() => {
-    try {
-      localStorage.setItem("kemono.creatorPositions", JSON.stringify(creatorPositions));
-    } catch {
-      // ignore persistence failures
-    }
-  }, [creatorPositions]);
+    scheduleStorageWrite("kemono.creatorPositions", creatorPositions);
+  }, [creatorPositions, scheduleStorageWrite]);
 
   const getInitialThemeMode = () => {
     if (typeof window !== "undefined" && window.localStorage) {
