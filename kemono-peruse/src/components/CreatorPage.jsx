@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import Timestamp from "./Timestamp.jsx";
 import {
@@ -115,7 +115,7 @@ const mergeValidator = (previous, response) => {
 const VIRTUAL_CARD_MIN_WIDTH = 260;
 const VIRTUAL_GRID_GAP = 16;
 const VIRTUAL_OVERSCAN_ROWS = 4;
-const VIRTUALIZATION_MIN_ITEMS = 48;
+const VIRTUALIZATION_MIN_ITEMS = 50;
 
 const resolveVirtualRowHeight = ({ showExcerpts, showTags, showFeatureBackgrounds }) => {
   let estimate = 176;
@@ -123,6 +123,45 @@ const resolveVirtualRowHeight = ({ showExcerpts, showTags, showFeatureBackground
   if (showExcerpts) estimate += 98;
   if (showFeatureBackgrounds) estimate += 8;
   return estimate + VIRTUAL_GRID_GAP;
+};
+
+const buildRowOffsets = (totalRows, fallbackRowHeight, measuredRows) => {
+  const safeRows = Math.max(0, Math.floor(totalRows || 0));
+  const safeFallback = Math.max(1, Math.floor(fallbackRowHeight || 1));
+  const offsets = new Array(safeRows + 1);
+  offsets[0] = 0;
+  for (let row = 0; row < safeRows; row += 1) {
+    const measured = measuredRows?.get?.(row);
+    const rowHeight =
+      Number.isFinite(measured) && measured > 0 ? Math.floor(measured) : safeFallback;
+    offsets[row + 1] = offsets[row] + rowHeight;
+  }
+  return offsets;
+};
+
+const findRowForOffset = (rowOffsets, offset) => {
+  if (!Array.isArray(rowOffsets) || rowOffsets.length <= 1) return 0;
+  const totalRows = rowOffsets.length - 1;
+  const normalized = Number.isFinite(offset) ? offset : 0;
+  if (normalized <= 0) return 0;
+  if (normalized >= rowOffsets[totalRows]) return Math.max(0, totalRows - 1);
+
+  let low = 0;
+  let high = totalRows - 1;
+  while (low <= high) {
+    const mid = Math.floor((low + high) / 2);
+    const start = rowOffsets[mid];
+    const end = rowOffsets[mid + 1];
+    if (normalized < start) {
+      high = mid - 1;
+    } else if (normalized >= end) {
+      low = mid + 1;
+    } else {
+      return mid;
+    }
+  }
+
+  return Math.max(0, Math.min(totalRows - 1, low));
 };
 
 const resolvePostFeatureKey = (post, index) => {
@@ -307,8 +346,10 @@ function CreatorPage({
   const prevFilterStorageKeyRef = useRef(filterStorageKey);
   const featureVisibilityObserverRef = useRef(null);
   const featureVisibleKeysRef = useRef(new Set());
+  const measuredRowHeightsRef = useRef(new Map());
   const postListRef = useRef(null);
   const [visibleFeatureKeys, setVisibleFeatureKeys] = useState(() => new Set());
+  const [rowMetricsVersion, setRowMetricsVersion] = useState(0);
   const [virtualWindow, setVirtualWindow] = useState({
     startRow: 0,
     endRow: 0,
@@ -382,13 +423,15 @@ function CreatorPage({
 
     const startRow = Math.min(Math.max(0, virtualWindow.startRow), totalRows - 1);
     const endRow = Math.min(Math.max(startRow, virtualWindow.endRow), totalRows - 1);
+    const rowOffsets = buildRowOffsets(totalRows, rowHeight, measuredRowHeightsRef.current);
+    const totalHeight = rowOffsets[totalRows] || 0;
     const startIndex = startRow * columns;
     const endIndex = Math.min(orderedPosts.length, (endRow + 1) * columns);
     return {
       items: orderedPosts.slice(startIndex, endIndex),
       startIndex,
-      topSpacer: startRow * rowHeight,
-      bottomSpacer: Math.max(0, (totalRows - endRow - 1) * rowHeight),
+      topSpacer: rowOffsets[startRow] || 0,
+      bottomSpacer: Math.max(0, totalHeight - (rowOffsets[endRow + 1] || 0)),
     };
   }, [
     orderedPosts,
@@ -397,6 +440,7 @@ function CreatorPage({
     virtualWindow.rowHeight,
     virtualWindow.startRow,
     virtualWindow.endRow,
+    rowMetricsVersion,
     showExcerpts,
     showTags,
     showFeatureBackgrounds,
@@ -1763,6 +1807,22 @@ function CreatorPage({
     };
   }, []);
 
+  useEffect(() => {
+    measuredRowHeightsRef.current = new Map();
+    setRowMetricsVersion((value) => value + 1);
+  }, [
+    service,
+    creatorId,
+    isFilterActive,
+    clampedSearchPage,
+    currentPage,
+    reverseOrder,
+    showExcerpts,
+    showTags,
+    showFeatureBackgrounds,
+    virtualWindow.columns,
+  ]);
+
   const updateVirtualWindow = useCallback(() => {
     if (typeof window === "undefined") return;
     const listNode = postListRef.current;
@@ -1789,13 +1849,16 @@ function CreatorPage({
     }
 
     const totalRows = Math.max(1, Math.ceil(orderedPosts.length / columns));
+    const rowOffsets = buildRowOffsets(totalRows, rowHeight, measuredRowHeightsRef.current);
     const rect = listNode.getBoundingClientRect();
     const listTop = rect.top + window.scrollY;
-    const viewportTop = window.scrollY - listTop;
-    const viewportBottom = viewportTop + (window.innerHeight || 0);
+    const viewportTop = Math.max(0, window.scrollY - listTop);
+    const viewportBottom = Math.max(viewportTop, viewportTop + (window.innerHeight || 0));
 
-    const startRow = Math.max(0, Math.floor(viewportTop / rowHeight) - VIRTUAL_OVERSCAN_ROWS);
-    const endRow = Math.min(totalRows - 1, Math.ceil(viewportBottom / rowHeight) + VIRTUAL_OVERSCAN_ROWS);
+    const startCandidate = findRowForOffset(rowOffsets, viewportTop);
+    const endCandidate = findRowForOffset(rowOffsets, viewportBottom);
+    const startRow = Math.max(0, startCandidate - VIRTUAL_OVERSCAN_ROWS);
+    const endRow = Math.min(totalRows - 1, endCandidate + VIRTUAL_OVERSCAN_ROWS);
 
     setVirtualWindow((prev) => {
       if (
@@ -1808,7 +1871,7 @@ function CreatorPage({
       }
       return { startRow, endRow, columns, rowHeight };
     });
-  }, [showExcerpts, showTags, showFeatureBackgrounds, virtualizationActive, orderedPosts.length]);
+  }, [showExcerpts, showTags, showFeatureBackgrounds, virtualizationActive, orderedPosts.length, rowMetricsVersion]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1843,6 +1906,42 @@ function CreatorPage({
       }
     };
   }, [updateVirtualWindow]);
+
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!virtualizationActive) return;
+    const listNode = postListRef.current;
+    if (!listNode) return;
+    const cards = Array.from(listNode.querySelectorAll(".post-item[data-virtual-row]"));
+    if (cards.length === 0) return;
+
+    const measuredByRow = new Map();
+    cards.forEach((card) => {
+      const rawRow = card.getAttribute("data-virtual-row");
+      const row = Number(rawRow);
+      if (!Number.isFinite(row) || row < 0) return;
+      const measured = Math.ceil(card.getBoundingClientRect().height + VIRTUAL_GRID_GAP);
+      const previous = measuredByRow.get(row);
+      if (!Number.isFinite(previous) || measured > previous) {
+        measuredByRow.set(row, measured);
+      }
+    });
+
+    if (measuredByRow.size === 0) return;
+
+    let changed = false;
+    measuredByRow.forEach((height, row) => {
+      const previous = measuredRowHeightsRef.current.get(row);
+      if (!Number.isFinite(previous) || Math.abs(previous - height) > 1) {
+        measuredRowHeightsRef.current.set(row, height);
+        changed = true;
+      }
+    });
+
+    if (changed) {
+      setRowMetricsVersion((value) => value + 1);
+    }
+  }, [virtualizationActive, virtualizedPosts.startIndex, virtualizedPosts.items, virtualWindow.columns]);
 
   function goToPage(page) {
     if (!limit) return;
@@ -2365,6 +2464,7 @@ function CreatorPage({
           )}
           {virtualizedPosts.items.map((post, localIndex) => {
             const index = virtualizedPosts.startIndex + localIndex;
+            const virtualRow = Math.floor(index / Math.max(1, virtualWindow.columns || 1));
             const detailData = postDetailMap[post.id];
             const excerptHtml = showExcerpts ? getPostExcerptHtml(detailData || post) : null;
             const postTags = Array.isArray(post.tags) ? post.tags : postTagMap[post.id];
@@ -2409,6 +2509,7 @@ function CreatorPage({
                 key={`${post?.id ?? `idx-${index}`}-${Number.isFinite(post?.__position) ? post.__position : post.updated || post.published || index}`}
                 href={postHref}
                 data-feature-key={isFeatureCandidate ? featureKey : undefined}
+                data-virtual-row={virtualizationActive ? String(virtualRow) : undefined}
                 onClick={(event) => {
                   if (isModifiedClick(event)) {
                     return;

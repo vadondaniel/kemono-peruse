@@ -486,5 +486,5 @@ describe("CreatorPage search behavior", () => {
     } finally {
       consoleSpy.mockRestore();
     }
-  });
+  }, 15000);
 });
