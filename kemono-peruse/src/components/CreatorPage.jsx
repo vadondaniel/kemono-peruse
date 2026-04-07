@@ -2102,6 +2102,7 @@ function CreatorPage({
   const handleOrderToggle = () => {
     if (isFilterActive) {
       setSearchPage(1);
+      rememberPosition(0, { pageSize: effectiveLimit });
     } else {
       setOffset(0);
       rememberPosition(0, { pageSize: limit });

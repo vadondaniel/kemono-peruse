@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const fetchJsonMock = vi.fn();
 const fetchJsonWithMetaMock = vi.fn();
@@ -49,6 +49,12 @@ const setupMatchMedia = () => {
 };
 
 describe("CreatorPage search behavior", () => {
+  const findPageLabel = (page, total) =>
+    screen.getByText((_, element) => {
+      const text = element?.textContent?.replace(/\s+/g, " ").trim() || "";
+      return text === `Page ${page} of ${total}`;
+    });
+
   beforeEach(() => {
     cleanup();
     fetchJsonMock.mockReset();
@@ -514,4 +520,153 @@ describe("CreatorPage search behavior", () => {
       consoleSpy.mockRestore();
     }
   }, 15000);
+
+  it("resets unfiltered pagination when order is toggled and persists reverse order for unsaved creators", async () => {
+    localStorage.setItem(PAGE_SIZE_KEY, "25");
+    const posts = Array.from({ length: 60 }, (_, index) => ({
+      id: `post-${index + 1}`,
+      title: `post ${index + 1}`,
+      published: "2025-01-01T00:00:00.000Z",
+    }));
+
+    fetchJsonMock.mockImplementation(async (url) => {
+      const target = String(url);
+      if (target.includes("/profile")) {
+        return { id: "50049787", service: "patreon", name: "AYEH", post_count: posts.length };
+      }
+      if (target.includes("/posts?")) {
+        const parsed = new URL(target, "https://example.invalid");
+        const offset = Number(parsed.searchParams.get("o") || 0);
+        const limit = Number(parsed.searchParams.get("n") || 50);
+        return posts.slice(offset, offset + limit);
+      }
+      return [];
+    });
+
+    const { unmount } = render(<CreatorHarness initialFilter="" alreadySaved={false} />);
+
+    await screen.findByText("post 1");
+    expect(findPageLabel(1, 3)).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("link", { name: /next/i })[0]);
+    await screen.findByText("post 26");
+    expect(findPageLabel(2, 3)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Newest first" }));
+    await waitFor(() => {
+      expect(findPageLabel(1, 3)).toBeInTheDocument();
+    });
+    expect(localStorage.getItem("kemono.reverseOrder.__unsaved__")).toBe("true");
+
+    unmount();
+    render(<CreatorHarness initialFilter="" alreadySaved={false} />);
+    await screen.findByText("post 1");
+    expect(screen.getByRole("button", { name: "Oldest first" })).toBeInTheDocument();
+  });
+
+  it("does not intercept modified clicks on pagination links", async () => {
+    localStorage.setItem(PAGE_SIZE_KEY, "25");
+    const posts = Array.from({ length: 60 }, (_, index) => ({
+      id: `post-${index + 1}`,
+      title: `post ${index + 1}`,
+      published: "2025-01-01T00:00:00.000Z",
+    }));
+
+    fetchJsonMock.mockImplementation(async (url) => {
+      const target = String(url);
+      if (target.includes("/profile")) {
+        return { id: "50049787", service: "patreon", name: "AYEH", post_count: posts.length };
+      }
+      if (target.includes("/posts?")) {
+        const parsed = new URL(target, "https://example.invalid");
+        const offset = Number(parsed.searchParams.get("o") || 0);
+        const limit = Number(parsed.searchParams.get("n") || 50);
+        return posts.slice(offset, offset + limit);
+      }
+      return [];
+    });
+
+    render(<CreatorHarness initialFilter="" alreadySaved={false} />);
+
+    await screen.findByText("post 1");
+    expect(findPageLabel(1, 3)).toBeInTheDocument();
+    const nextLink = screen.getAllByRole("link", { name: /next/i })[0];
+    const ctrlClick = createEvent.click(nextLink, { ctrlKey: true, button: 0 });
+    fireEvent(nextLink, ctrlClick);
+
+    expect(ctrlClick.defaultPrevented).toBe(false);
+    expect(findPageLabel(1, 3)).toBeInTheDocument();
+    expect(fetchJsonMock.mock.calls.some((call) => String(call[0]).includes("/posts?o=25&n=50"))).toBe(false);
+  });
+
+  it("resets filtered pagination to first page when order is toggled", async () => {
+    localStorage.setItem("kemono.cache.pref.patreon.50049787", "true");
+    localStorage.setItem(PAGE_SIZE_KEY, "50");
+    const cachedPosts = Array.from({ length: 120 }, (_, index) => ({
+      id: `alpha-${index + 1}`,
+      title: `alpha ${index + 1}`,
+      published: "2025-01-01T00:00:00.000Z",
+    }));
+    writeCreatorCache("patreon", "50049787", {
+      updatedAt: 1,
+      totalPosts: cachedPosts.length,
+      profile: { id: "50049787", service: "patreon", name: "AYEH", post_count: cachedPosts.length },
+      chunks: {
+        0: cachedPosts,
+      },
+    });
+
+    fetchJsonMock.mockImplementation(async (url) => {
+      const target = String(url);
+      if (target.includes("/profile")) {
+        return { id: "50049787", service: "patreon", name: "AYEH", post_count: cachedPosts.length };
+      }
+      if (target.includes("&q=alpha")) {
+        return [];
+      }
+      return [];
+    });
+
+    render(<CreatorHarness initialFilter="alpha" alreadySaved />);
+
+    await screen.findByText("alpha 1");
+    expect(findPageLabel(1, 3)).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("link", { name: /next/i })[0]);
+    await screen.findByText("alpha 51");
+    expect(findPageLabel(2, 3)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Newest first" }));
+    await waitFor(() => {
+      expect(findPageLabel(1, 3)).toBeInTheDocument();
+    });
+  });
+
+  it("persists display toggles for unsaved creators across remount", async () => {
+    fetchJsonMock.mockImplementation(async (url) => {
+      if (String(url).includes("/profile")) {
+        return { id: "50049787", service: "patreon", name: "AYEH", post_count: 0 };
+      }
+      return [];
+    });
+
+    const { unmount } = render(<CreatorHarness initialFilter="" alreadySaved={false} />);
+    await screen.findByText("0 posts indexed");
+
+    fireEvent.click(screen.getByLabelText("Excerpts", { selector: "#show-excerpts" }));
+    fireEvent.click(screen.getByLabelText("Tags", { selector: "#show-tags" }));
+    fireEvent.click(screen.getByLabelText("Feature image", { selector: "#show-feature-bg" }));
+
+    await waitFor(() => {
+      expect(localStorage.getItem("kemono.display.__unsaved__")).toContain('"excerpts":true');
+    });
+    expect(localStorage.getItem("kemono.display.__unsaved__")).toContain('"tags":true');
+    expect(localStorage.getItem("kemono.display.__unsaved__")).toContain('"featureBackgrounds":true');
+
+    unmount();
+    render(<CreatorHarness initialFilter="" alreadySaved={false} />);
+    await screen.findByText("0 posts indexed");
+
+    expect(screen.getByLabelText("Excerpts", { selector: "#show-excerpts" })).toBeChecked();
+    expect(screen.getByLabelText("Tags", { selector: "#show-tags" })).toBeChecked();
+    expect(screen.getByLabelText("Feature image", { selector: "#show-feature-bg" })).toBeChecked();
+  });
 });
