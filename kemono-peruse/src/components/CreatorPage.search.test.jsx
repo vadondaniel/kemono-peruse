@@ -174,6 +174,33 @@ describe("CreatorPage search behavior", () => {
     });
   });
 
+  it("persists filter field toggles for unsaved creators across remount", async () => {
+    fetchJsonMock.mockImplementation(async (url) => {
+      if (url.includes("/profile")) {
+        return { id: "50049787", service: "patreon", name: "AYEH", post_count: 0 };
+      }
+      return [];
+    });
+
+    const { unmount } = render(<CreatorHarness initialFilter="" alreadySaved={false} />);
+
+    await screen.findByText("0 posts indexed");
+
+    fireEvent.click(screen.getByLabelText("Title", { selector: "#filter-title" }));
+    fireEvent.click(screen.getByLabelText("Body text", { selector: "#filter-body" }));
+
+    await waitFor(() => {
+      expect(localStorage.getItem("kemono.filterFields.patreon.50049787")).toContain('"title":false');
+    });
+
+    unmount();
+    render(<CreatorHarness initialFilter="" alreadySaved={false} />);
+
+    expect(screen.getByLabelText("Title", { selector: "#filter-title" })).not.toBeChecked();
+    expect(screen.getByLabelText("Tags", { selector: "#filter-tags" })).toBeChecked();
+    expect(screen.getByLabelText("Body text", { selector: "#filter-body" })).not.toBeChecked();
+  });
+
   it("uses stale-while-revalidate for cached post lists and keeps removed posts archived", async () => {
     localStorage.setItem("kemono.cache.pref.patreon.50049787", "true");
     writeCreatorCache("patreon", "50049787", {

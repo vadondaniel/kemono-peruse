@@ -27,7 +27,7 @@ import {
 } from "../utils/cache.js";
 import { formatDate } from "../utils/date.js";
 import { extractTagTokens, getPostExcerptHtml, getServiceLabel, toNumericCount } from "../utils/posts.js";
-import { cacheCreatorName, getCachedCreatorName, getSavedCreatorName, purgeCreatorLocalState, resolveProfileDisplayName, getCreatorScopedStorageKey } from "../utils/creators.js";
+import { cacheCreatorName, getCachedCreatorName, getSavedCreatorName, resolveProfileDisplayName, getCreatorScopedStorageKey } from "../utils/creators.js";
 import { getInitialPageSize, readBooleanPreference } from "../utils/preferences.js";
 import { getUrlForView } from "../utils/navigation.js";
 
@@ -512,7 +512,6 @@ function CreatorPage({
 
   useEffect(() => {
     if (alreadySaved) return;
-    purgeCreatorLocalState(service, creatorId);
     setUseCache(false);
     setCacheData(null);
     setCacheStorageError(false);
@@ -751,24 +750,9 @@ function CreatorPage({
     const storageKeyChanged = prevFilterStorageKeyRef.current !== filterStorageKey;
     if (storageKeyChanged) {
       prevFilterStorageKeyRef.current = filterStorageKey;
-      if (!alreadySaved) {
-        try {
-          window.localStorage.removeItem(filterStorageKey);
-        } catch {
-          // ignore cleanup errors
-        }
-      }
       return;
     }
     prevFilterStorageKeyRef.current = filterStorageKey;
-    if (!alreadySaved) {
-      try {
-        window.localStorage.removeItem(filterStorageKey);
-      } catch {
-        // ignore cleanup errors
-      }
-      return;
-    }
     const storedSnapshot = loadStoredFilterFields();
     if (
       storedSnapshot.title === filterFields.title &&
@@ -782,7 +766,7 @@ function CreatorPage({
     } catch {
       // ignore persistence failures
     }
-  }, [filterStorageKey, filterFields, alreadySaved]);
+  }, [filterStorageKey, filterFields]);
 
   useEffect(() => {
     const trimmed = typeof activeFilter === "string" ? activeFilter.trim() : "";
