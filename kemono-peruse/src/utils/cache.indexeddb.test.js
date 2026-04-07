@@ -112,6 +112,12 @@ const createFakeIndexedDb = () => {
   return { indexedDB, stores, stats };
 };
 
+const flushMicrotasks = async (count = 12) => {
+  for (let index = 0; index < count; index += 1) {
+    await Promise.resolve();
+  }
+};
+
 describe("cache indexeddb integration", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -253,6 +259,159 @@ describe("cache indexeddb integration", () => {
       expect(meta.base.updatedAt).toBe(3);
       expect(chunk[0].id).toBe("third");
       expect(fake.stats.readWriteTransactions).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("normalizes split metadata with duplicate and missing chunk/detail keys", async () => {
+    const fake = createFakeIndexedDb();
+    Object.defineProperty(window, "indexedDB", {
+      configurable: true,
+      writable: true,
+      value: fake.indexedDB,
+    });
+
+    const cache = await import("./cache.js");
+    await cache.loadCreatorCacheAsync("patreon", "seed", { migrateLegacy: false });
+
+    const cacheKey = "kemono.cache.patreon.50049787";
+    const store = fake.stores.get("creator-cache");
+    store.set(`${cacheKey}::meta`, {
+      type: "creator-cache-meta-v2",
+      version: 1,
+      base: { updatedAt: 456 },
+      chunkKeys: ["0", "0", "", "50", "missing"],
+      detailKeys: ["detail-1", "detail-1", "", "missing-detail"],
+      lastAccessedAt: 10,
+      sizeEstimate: 20,
+    });
+    store.set(`${cacheKey}::chunk::0`, [{ id: "first-chunk" }]);
+    store.set(`${cacheKey}::chunk::50`, [{ id: "second-chunk" }]);
+    store.set(`${cacheKey}::detail::detail-1`, {
+      data: { id: "detail-1", title: "Detail Title" },
+      hydrated: "yes",
+    });
+
+    vi.resetModules();
+    Object.defineProperty(window, "indexedDB", {
+      configurable: true,
+      writable: true,
+      value: fake.indexedDB,
+    });
+    const reloadedCache = await import("./cache.js");
+    const loaded = await reloadedCache.loadCreatorCacheAsync("patreon", "50049787", {
+      migrateLegacy: false,
+    });
+
+    expect(loaded).toBeTruthy();
+    expect(loaded.chunks).toMatchObject({
+      "0": [{ id: "first-chunk" }],
+      "50": [{ id: "second-chunk" }],
+    });
+    expect(loaded.postDetails).toMatchObject({
+      "detail-1": {
+        data: { id: "detail-1", title: "Detail Title" },
+        hydrated: true,
+      },
+    });
+    expect(loaded.postDetails["missing-detail"]).toBeUndefined();
+  });
+
+  it("falls back to a legacy blob when split metadata is invalid and migrates it", async () => {
+    const fake = createFakeIndexedDb();
+    Object.defineProperty(window, "indexedDB", {
+      configurable: true,
+      writable: true,
+      value: fake.indexedDB,
+    });
+
+    const cache = await import("./cache.js");
+    await cache.loadCreatorCacheAsync("patreon", "seed", { migrateLegacy: false });
+
+    const cacheKey = "kemono.cache.patreon.50049787";
+    const store = fake.stores.get("creator-cache");
+    store.set(`${cacheKey}::meta`, {
+      type: "wrong-meta-type",
+      version: 1,
+      rootKey: cacheKey,
+      chunkKeys: ["0"],
+      detailKeys: [],
+    });
+    store.set(cacheKey, {
+      version: 1,
+      updatedAt: 901,
+      chunks: { 0: [{ id: "legacy-fallback" }] },
+    });
+
+    vi.resetModules();
+    Object.defineProperty(window, "indexedDB", {
+      configurable: true,
+      writable: true,
+      value: fake.indexedDB,
+    });
+    const reloadedCache = await import("./cache.js");
+    const loaded = await reloadedCache.loadCreatorCacheAsync("patreon", "50049787", {
+      migrateLegacy: false,
+    });
+
+    expect(loaded).toBeTruthy();
+    expect(loaded.updatedAt).toBe(901);
+    expect(loaded.chunks["0"][0].id).toBe("legacy-fallback");
+
+    await flushMicrotasks(20);
+    const migratedMeta = store.get(`${cacheKey}::meta`);
+    expect(migratedMeta).toMatchObject({
+      type: "creator-cache-meta-v2",
+      version: 1,
+      rootKey: cacheKey,
+      chunkKeys: ["0"],
+    });
+    expect(store.get(`${cacheKey}::chunk::0`)[0].id).toBe("legacy-fallback");
+    expect(store.get(cacheKey)).toBeUndefined();
+  });
+
+  it("keeps the earliest previous payload for debounced writes so stale detail keys are removed", async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = createFakeIndexedDb();
+      Object.defineProperty(window, "indexedDB", {
+        configurable: true,
+        writable: true,
+        value: fake.indexedDB,
+      });
+
+      const cache = await import("./cache.js");
+      const first = cache.writeCreatorCacheAsync("patreon", "50049787", {
+        updatedAt: 1,
+        chunks: { 0: [{ id: "first" }] },
+        postDetails: {
+          stale: {
+            data: { id: "stale", text: "old detail" },
+            updatedAt: 1,
+            hydrated: true,
+          },
+        },
+      });
+      const second = cache.writeCreatorCacheAsync("patreon", "50049787", {
+        updatedAt: 2,
+        chunks: { 0: [{ id: "second" }] },
+      });
+      const third = cache.writeCreatorCacheAsync("patreon", "50049787", {
+        updatedAt: 3,
+        chunks: { 0: [{ id: "third" }] },
+      });
+
+      await vi.runAllTimersAsync();
+      await Promise.all([first, second, third]);
+
+      const cacheKey = "kemono.cache.patreon.50049787";
+      const store = fake.stores.get("creator-cache");
+      const meta = store.get(`${cacheKey}::meta`);
+      expect(meta.base.updatedAt).toBe(3);
+      expect(meta.detailKeys).toEqual([]);
+      expect(store.get(`${cacheKey}::detail::stale`)).toBeUndefined();
+      expect(store.get(`${cacheKey}::chunk::0`)[0].id).toBe("third");
     } finally {
       vi.useRealTimers();
     }
