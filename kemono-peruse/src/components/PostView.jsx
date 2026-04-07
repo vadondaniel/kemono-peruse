@@ -436,7 +436,6 @@ function PostView({
   const viewerImageRef = useRef(null);
   const viewerCursorAnchorRef = useRef(null);
   const trimmedActiveFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
-  const hasActiveFilter = trimmedActiveFilter.length > 0;
   const detailSyncMessage = (() => {
     if (!useCache) return null;
     if (detailSyncState === "refreshing") {
@@ -658,7 +657,7 @@ function PostView({
         newerId: newerId ?? null,
         olderId: olderId ?? null,
       });
-      if (!hasActiveFilter && typeof onResolveCreatorPosition === "function") {
+      if (typeof onResolveCreatorPosition === "function") {
         const currentPost = posts[idx];
         const resolvedPosition =
           Number.isFinite(currentPost?.__position) && currentPost.__position >= 0
@@ -745,7 +744,7 @@ function PostView({
               newerId: newerId ?? null,
               olderId: olderId ?? null,
             });
-            if (!hasActiveFilter && typeof onResolveCreatorPosition === "function") {
+            if (typeof onResolveCreatorPosition === "function") {
               const globalIndex = offset + idx;
               if (Number.isFinite(globalIndex) && globalIndex >= 0) {
                 onResolveCreatorPosition(globalIndex, { pageSize: pageSizeRef.current });
@@ -772,7 +771,7 @@ function PostView({
     return () => {
       alive = false;
     };
-  }, [service, creatorId, postId, activeFilter, onResolveCreatorPosition, hasActiveFilter, useCache, cacheData]);
+  }, [service, creatorId, postId, activeFilter, onResolveCreatorPosition, useCache, cacheData]);
 
   const useOriginalAttachments = readerSettings.attachmentsMode === "original";
   const heroFile = post?.file && (post.file.path || post.file.url || post.file.name) ? post.file : null;

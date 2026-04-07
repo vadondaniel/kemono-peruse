@@ -221,4 +221,166 @@ describe("PostView archive cache behavior", () => {
     expect(onNavigate).toHaveBeenNthCalledWith(2, "post-newer");
     expect(fetchJsonMock.mock.calls.some((call) => String(call[0]).includes("/posts?"))).toBe(false);
   });
+
+  it("publishes creator position in unfiltered mode and updates it as the viewed post changes", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(300_000_000);
+    localStorage.setItem("kemono.cache.pref.patreon.50049787", "true");
+    writeCreatorCache("patreon", "50049787", {
+      updatedAt: 1,
+      chunks: {
+        0: [
+          { id: "post-newer", title: "newer post", published: "2025-01-03T00:00:00.000Z" },
+          { id: "148264629", title: "middle post", published: "2025-01-02T00:00:00.000Z" },
+          { id: "post-older", title: "older post", published: "2025-01-01T00:00:00.000Z" },
+        ],
+      },
+      postDetails: {
+        "post-newer": {
+          data: { ...buildCachedPost("Newer Post"), id: "post-newer", published: "2025-01-03T00:00:00.000Z" },
+          updatedAt: 300_000_000,
+          hydrated: true,
+        },
+        "148264629": {
+          data: { ...buildCachedPost("Middle Post"), id: "148264629", published: "2025-01-02T00:00:00.000Z" },
+          updatedAt: 300_000_000,
+          hydrated: true,
+        },
+        "post-older": {
+          data: { ...buildCachedPost("Older Post"), id: "post-older", published: "2025-01-01T00:00:00.000Z" },
+          updatedAt: 300_000_000,
+          hydrated: true,
+        },
+      },
+    });
+
+    fetchJsonMock.mockResolvedValue([]);
+    const onResolveCreatorPosition = vi.fn();
+
+    const { rerender } = render(
+      <PostView
+        service="patreon"
+        creatorId="50049787"
+        creatorName="AYEH"
+        postId="148264629"
+        alreadySaved
+        creatorPosition={0}
+        activeFilter=""
+        readerSettingsOpen={false}
+        onCloseReaderSettings={noop}
+        onBack={noop}
+        onNavigate={noop}
+        onResolvePostTitle={noop}
+        onResolveCreatorPosition={onResolveCreatorPosition}
+      />,
+    );
+
+    await screen.findByText("Middle Post");
+    await waitFor(() => {
+      expect(onResolveCreatorPosition).toHaveBeenCalledWith(1, { pageSize: 50 });
+    });
+
+    rerender(
+      <PostView
+        service="patreon"
+        creatorId="50049787"
+        creatorName="AYEH"
+        postId="post-older"
+        alreadySaved
+        creatorPosition={0}
+        activeFilter=""
+        readerSettingsOpen={false}
+        onCloseReaderSettings={noop}
+        onBack={noop}
+        onNavigate={noop}
+        onResolvePostTitle={noop}
+        onResolveCreatorPosition={onResolveCreatorPosition}
+      />,
+    );
+
+    await screen.findByText("Older Post");
+    await waitFor(() => {
+      expect(onResolveCreatorPosition).toHaveBeenCalledWith(2, { pageSize: 50 });
+    });
+  });
+
+  it("publishes creator position in filtered mode and updates it as the viewed post changes", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(400_000_000);
+    localStorage.setItem("kemono.cache.pref.patreon.50049787", "true");
+    writeCreatorCache("patreon", "50049787", {
+      updatedAt: 1,
+      chunks: {
+        0: [
+          { id: "post-newer", title: "alpha newer", published: "2025-01-03T00:00:00.000Z" },
+          { id: "148264629", title: "alpha middle", published: "2025-01-02T00:00:00.000Z" },
+          { id: "post-older", title: "alpha older", published: "2025-01-01T00:00:00.000Z" },
+        ],
+      },
+      postDetails: {
+        "post-newer": {
+          data: { ...buildCachedPost("Alpha Newer"), id: "post-newer", tags: ["alpha"], published: "2025-01-03T00:00:00.000Z" },
+          updatedAt: 400_000_000,
+          hydrated: true,
+        },
+        "148264629": {
+          data: { ...buildCachedPost("Alpha Middle"), id: "148264629", tags: ["alpha"], published: "2025-01-02T00:00:00.000Z" },
+          updatedAt: 400_000_000,
+          hydrated: true,
+        },
+        "post-older": {
+          data: { ...buildCachedPost("Alpha Older"), id: "post-older", tags: ["alpha"], published: "2025-01-01T00:00:00.000Z" },
+          updatedAt: 400_000_000,
+          hydrated: true,
+        },
+      },
+    });
+
+    fetchJsonMock.mockResolvedValue([]);
+    const onResolveCreatorPosition = vi.fn();
+
+    const { rerender } = render(
+      <PostView
+        service="patreon"
+        creatorId="50049787"
+        creatorName="AYEH"
+        postId="148264629"
+        alreadySaved
+        creatorPosition={0}
+        activeFilter="alpha"
+        readerSettingsOpen={false}
+        onCloseReaderSettings={noop}
+        onBack={noop}
+        onNavigate={noop}
+        onResolvePostTitle={noop}
+        onResolveCreatorPosition={onResolveCreatorPosition}
+      />,
+    );
+
+    await screen.findByText("Alpha Middle");
+    await waitFor(() => {
+      expect(onResolveCreatorPosition).toHaveBeenCalledWith(1, { pageSize: 50 });
+    });
+
+    rerender(
+      <PostView
+        service="patreon"
+        creatorId="50049787"
+        creatorName="AYEH"
+        postId="post-newer"
+        alreadySaved
+        creatorPosition={0}
+        activeFilter="alpha"
+        readerSettingsOpen={false}
+        onCloseReaderSettings={noop}
+        onBack={noop}
+        onNavigate={noop}
+        onResolvePostTitle={noop}
+        onResolveCreatorPosition={onResolveCreatorPosition}
+      />,
+    );
+
+    await screen.findByText("Alpha Newer");
+    await waitFor(() => {
+      expect(onResolveCreatorPosition).toHaveBeenCalledWith(0, { pageSize: 50 });
+    });
+  });
 });

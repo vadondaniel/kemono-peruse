@@ -6,13 +6,39 @@ vi.mock("./components/Home.jsx", () => ({
 }));
 
 vi.mock("./components/CreatorPage.jsx", () => ({
-  default: ({ service, creatorId }) => (
-    <div>{`Creator Mock ${service}:${creatorId}`}</div>
+  default: ({ service, creatorId, initialPosition }) => (
+    <div>
+      <div>{`Creator Mock ${service}:${creatorId}`}</div>
+      <div>{`Creator Position ${initialPosition ?? 0}`}</div>
+    </div>
   ),
 }));
 
 vi.mock("./components/PostView.jsx", () => ({
-  default: ({ postId }) => <div>{`Post Mock ${postId}`}</div>,
+  default: ({ postId, onNavigate, onBack, onResolveCreatorPosition }) => {
+    React.useEffect(() => {
+      if (typeof onResolveCreatorPosition !== "function") return;
+      if (postId === "123") {
+        onResolveCreatorPosition(49, { pageSize: 50 });
+        return;
+      }
+      if (postId === "200") {
+        onResolveCreatorPosition(75, { pageSize: 50 });
+      }
+    }, [postId, onResolveCreatorPosition]);
+
+    return (
+      <div>
+        <div>{`Post Mock ${postId}`}</div>
+        <button type="button" onClick={() => onNavigate?.("200")}>
+          Mock Next
+        </button>
+        <button type="button" onClick={() => onBack?.()}>
+          Posts
+        </button>
+      </div>
+    );
+  },
 }));
 
 import App from "./App.jsx";
@@ -148,5 +174,62 @@ describe("App integration", () => {
     fireEvent.click(backToTopButton);
 
     expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
+  });
+
+  it("returns to the page containing the current unfiltered post after navigating within post view", async () => {
+    render(<App />);
+    await screen.findByText("Home Mock");
+
+    window.dispatchEvent(
+      new PopStateEvent("popstate", {
+        state: {
+          view: {
+            name: "post",
+            service: "patreon",
+            creatorId: "50049787",
+            creatorName: "AYEH",
+            postId: "123",
+          },
+        },
+      }),
+    );
+
+    await screen.findByText("Post Mock 123");
+    fireEvent.click(screen.getByRole("button", { name: "Mock Next" }));
+    await screen.findByText("Post Mock 200");
+
+    fireEvent.click(screen.getByRole("button", { name: "Posts" }));
+
+    await screen.findByText("Creator Mock patreon:50049787");
+    expect(screen.getByText("Creator Position 50")).toBeInTheDocument();
+  });
+
+  it("returns to the page containing the current filtered post after navigating within post view", async () => {
+    localStorage.setItem("kemono.creatorFilters", JSON.stringify({ "patreon:50049787": "alpha" }));
+    render(<App />);
+    await screen.findByText("Home Mock");
+
+    window.dispatchEvent(
+      new PopStateEvent("popstate", {
+        state: {
+          view: {
+            name: "post",
+            service: "patreon",
+            creatorId: "50049787",
+            creatorName: "AYEH",
+            postId: "123",
+          },
+        },
+      }),
+    );
+
+    await screen.findByText("Post Mock 123");
+    fireEvent.click(screen.getByRole("button", { name: "Mock Next" }));
+    await screen.findByText("Post Mock 200");
+
+    fireEvent.click(screen.getByRole("button", { name: "Posts" }));
+
+    await screen.findByText("Creator Mock patreon:50049787");
+    expect(screen.getByText("Creator Position 50")).toBeInTheDocument();
   });
 });
