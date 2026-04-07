@@ -446,7 +446,23 @@ function CreatorPage({
     showFeatureBackgrounds,
   ]);
   const currentFilteredOffset = isFilterActive ? Math.max(0, (clampedSearchPage - 1) * effectiveLimit) : null;
-  const cachedPostsForSearch = useMemo(() => collectCachedPosts(cacheData), [cacheData?.chunks]);
+  const cachedPostsForSearch = useMemo(() => {
+    const chunkPosts = collectCachedPosts(cacheData) || [];
+    const detailEntries = cacheData?.postDetails;
+    if (!detailEntries || typeof detailEntries !== "object") {
+      return chunkPosts.length > 0 ? chunkPosts : null;
+    }
+    const detailPosts = Object.values(detailEntries)
+      .map((entry) => (entry && typeof entry === "object" ? entry.data : null))
+      .filter((post) => post && typeof post === "object" && post.id != null);
+    if (chunkPosts.length === 0 && detailPosts.length === 0) {
+      return null;
+    }
+    if (detailPosts.length === 0) {
+      return chunkPosts;
+    }
+    return mergePostsById(chunkPosts, detailPosts);
+  }, [cacheData?.chunks, cacheData?.postDetails]);
   const getInitialCreatorName = () =>
     getSavedCreatorName(service, creatorId) ||
     (typeof creatorName === "string" ? creatorName.trim() : "") ||
@@ -1027,6 +1043,34 @@ function CreatorPage({
       }
 
       if (token !== searchTokenRef.current) return;
+
+      if (useCache && workingResults.length > 0) {
+        const archivedAt = Date.now();
+        updateCache(
+          (prev) => {
+            const nextDetails = { ...(prev?.postDetails || {}) };
+            workingResults.forEach((post) => {
+              if (!post || typeof post !== "object" || post.id == null) return;
+              const postIdKey = String(post.id);
+              const existingEntry = nextDetails[postIdKey];
+              const existingData =
+                existingEntry?.data && typeof existingEntry.data === "object"
+                  ? existingEntry.data
+                  : null;
+              nextDetails[postIdKey] = {
+                data: existingData ? { ...existingData, ...post } : { ...post },
+                updatedAt: archivedAt,
+                hydrated: Boolean(existingEntry?.hydrated),
+              };
+            });
+            return {
+              ...prev,
+              postDetails: nextDetails,
+            };
+          },
+          { updateTimestamp: false },
+        );
+      }
 
       if (hasArchivePosts) {
         setSearchResults((previous) =>
