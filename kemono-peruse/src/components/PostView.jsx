@@ -35,6 +35,7 @@ import {
   isPostDetailFresh,
   pruneCacheChunks,
   pruneCachePostDetails,
+  collectCachedPosts,
 } from "../utils/cache.js";
 import { cacheCreatorName, getCachedCreatorName, getSavedCreatorName, resolveProfileDisplayName } from "../utils/creators.js";
 import { extractTagTokens, getServiceLabel, normalizePostHtml } from "../utils/posts.js";
@@ -177,6 +178,55 @@ const getAttachmentDisplayLabel = (attachment, fallback = "Attachment") => {
 
 const isModifiedClick = (event) =>
   event.button !== 0 || event.metaKey || event.altKey || event.ctrlKey || event.shiftKey;
+
+const collectTextSearchHaystacks = (post, fields) => {
+  const haystacks = [];
+  if (!post || !fields) return haystacks;
+  if (fields.title) {
+    if (typeof post.title === "string") {
+      haystacks.push(post.title);
+    }
+    if (typeof post.id === "string") {
+      haystacks.push(post.id);
+    }
+  }
+  if (fields.body) {
+    const bodyCandidates = [
+      post.excerpt,
+      post.snippet,
+      post.summary,
+      post.match,
+      post.content,
+      post.body,
+      post.text,
+      post.description,
+    ];
+    bodyCandidates.forEach((candidate) => {
+      if (!candidate) return;
+      if (typeof candidate === "string") {
+        haystacks.push(candidate);
+      } else if (typeof candidate === "object") {
+        Object.values(candidate).forEach((value) => {
+          if (typeof value === "string") {
+            haystacks.push(value);
+          }
+        });
+      }
+    });
+  }
+  return haystacks;
+};
+
+const postMatchesTextTokens = (post, tokens, fields) => {
+  if (!post || !Array.isArray(tokens) || tokens.length === 0 || !fields) return false;
+  const haystacks = collectTextSearchHaystacks(post, fields);
+  if (!haystacks.length) return false;
+  const normalizedHaystacks = haystacks
+    .map((value) => (typeof value === "string" ? value.toLowerCase() : null))
+    .filter(Boolean);
+  if (!normalizedHaystacks.length) return false;
+  return tokens.every((token) => normalizedHaystacks.some((hay) => hay.includes(token)));
+};
 
 function PostView({
   service,
@@ -574,7 +624,19 @@ function PostView({
     const trimmedFilter = trimmedActiveFilter;
     const storedFields = getStoredFilterFields();
     const tagTokens = trimmedFilter ? extractTagTokens(trimmedFilter) : [];
-    const hasTagFilter = trimmedFilter && storedFields.tags && tagTokens.length > 0;
+    const hasTagFilter = Boolean(trimmedFilter && storedFields.tags && tagTokens.length > 0);
+    const normalizedTextQuery =
+      (storedFields.title || storedFields.body) && trimmedFilter
+        ? trimmedFilter.replace(/,/g, " ").trim()
+        : "";
+    const textTokens = normalizedTextQuery
+      ? normalizedTextQuery
+          .toLowerCase()
+          .split(/\s+/)
+          .map((token) => token.trim())
+          .filter(Boolean)
+      : [];
+    const hasTextFilter = Boolean((storedFields.title || storedFields.body) && textTokens.length > 0);
     const textQueryEnabled = storedFields.title || storedFields.body;
     const applyTextQuery = textQueryEnabled && (!storedFields.tags || tagTokens.length === 0);
     const textQuery = applyTextQuery ? trimmedFilter : "";
@@ -584,6 +646,65 @@ function PostView({
       hasTagFilter
         ? tagTokens.map((tag) => `&tag=${encodeURIComponent(tag)}`).join("")
         : "";
+
+    const resolveNeighborsFromPosts = (posts) => {
+      if (!Array.isArray(posts) || posts.length === 0) return false;
+      const idx = posts.findIndex((item) => `${item?.id}` === `${postId}`);
+      if (idx === -1) return false;
+
+      const newerId = idx > 0 ? posts[idx - 1]?.id ?? null : null;
+      const olderId = idx < posts.length - 1 ? posts[idx + 1]?.id ?? null : null;
+      setNeighbors({
+        newerId: newerId ?? null,
+        olderId: olderId ?? null,
+      });
+      if (!hasActiveFilter && typeof onResolveCreatorPosition === "function") {
+        const currentPost = posts[idx];
+        const resolvedPosition =
+          Number.isFinite(currentPost?.__position) && currentPost.__position >= 0
+            ? currentPost.__position
+            : idx;
+        onResolveCreatorPosition(resolvedPosition, { pageSize: pageSizeRef.current });
+      }
+      return true;
+    };
+
+    const filterArchivePosts = (posts) => {
+      if (!trimmedFilter || (!hasTextFilter && !hasTagFilter)) {
+        return Array.isArray(posts) ? posts : [];
+      }
+      return (Array.isArray(posts) ? posts : []).filter((post) => {
+        if (!post) return false;
+        let matchesTags = false;
+        if (hasTagFilter) {
+          const postTags = Array.isArray(post.tags)
+            ? post.tags.map((tag) => String(tag).toLowerCase())
+            : [];
+          matchesTags = tagTokens.every((token) => postTags.includes(token));
+        }
+
+        let matchesText = false;
+        if (hasTextFilter) {
+          matchesText = postMatchesTextTokens(post, textTokens, storedFields);
+        }
+
+        if (hasTagFilter && hasTextFilter) {
+          return matchesTags || matchesText;
+        }
+        if (hasTagFilter) return matchesTags;
+        return matchesText;
+      });
+    };
+
+    const cachedPosts = useCache ? collectCachedPosts(cacheData) : null;
+    if (cachedPosts && cachedPosts.length > 0) {
+      const archiveCandidates = filterArchivePosts(cachedPosts);
+      if (resolveNeighborsFromPosts(archiveCandidates)) {
+        return () => {
+          alive = false;
+        };
+      }
+    }
 
     const resolveNeighbors = async () => {
       let offset = 0;
@@ -651,7 +772,7 @@ function PostView({
     return () => {
       alive = false;
     };
-  }, [service, creatorId, postId, activeFilter, onResolveCreatorPosition]);
+  }, [service, creatorId, postId, activeFilter, onResolveCreatorPosition, hasActiveFilter, useCache, cacheData]);
 
   const useOriginalAttachments = readerSettings.attachmentsMode === "original";
   const heroFile = post?.file && (post.file.path || post.file.url || post.file.name) ? post.file : null;
