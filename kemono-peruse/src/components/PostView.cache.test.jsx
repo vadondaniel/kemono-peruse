@@ -37,6 +37,16 @@ const buildCachedPost = (title) => ({
   attachments: [],
 });
 
+const createDeferred = () => {
+  let resolve;
+  let reject;
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+};
+
 describe("PostView archive cache behavior", () => {
   beforeEach(() => {
     cleanup();
@@ -79,6 +89,7 @@ describe("PostView archive cache behavior", () => {
         postId="148264629"
         alreadySaved
         creatorPosition={0}
+        hasExplicitCreatorPosition
         activeFilter=""
         readerSettingsOpen={false}
         onCloseReaderSettings={noop}
@@ -130,6 +141,7 @@ describe("PostView archive cache behavior", () => {
         postId="148264629"
         alreadySaved
         creatorPosition={0}
+        hasExplicitCreatorPosition
         activeFilter=""
         readerSettingsOpen={false}
         onCloseReaderSettings={noop}
@@ -197,6 +209,7 @@ describe("PostView archive cache behavior", () => {
         postId="148264629"
         alreadySaved
         creatorPosition={0}
+        hasExplicitCreatorPosition
         activeFilter="alpha"
         readerSettingsOpen={false}
         onCloseReaderSettings={noop}
@@ -264,6 +277,7 @@ describe("PostView archive cache behavior", () => {
         postId="148264629"
         alreadySaved
         creatorPosition={0}
+        hasExplicitCreatorPosition
         activeFilter=""
         readerSettingsOpen={false}
         onCloseReaderSettings={noop}
@@ -287,6 +301,7 @@ describe("PostView archive cache behavior", () => {
         postId="post-older"
         alreadySaved
         creatorPosition={0}
+        hasExplicitCreatorPosition
         activeFilter=""
         readerSettingsOpen={false}
         onCloseReaderSettings={noop}
@@ -345,6 +360,7 @@ describe("PostView archive cache behavior", () => {
         postId="148264629"
         alreadySaved
         creatorPosition={0}
+        hasExplicitCreatorPosition
         activeFilter="alpha"
         readerSettingsOpen={false}
         onCloseReaderSettings={noop}
@@ -368,6 +384,7 @@ describe("PostView archive cache behavior", () => {
         postId="post-newer"
         alreadySaved
         creatorPosition={0}
+        hasExplicitCreatorPosition
         activeFilter="alpha"
         readerSettingsOpen={false}
         onCloseReaderSettings={noop}
@@ -381,6 +398,102 @@ describe("PostView archive cache behavior", () => {
     await screen.findByText("Alpha Newer");
     await waitFor(() => {
       expect(onResolveCreatorPosition).toHaveBeenCalledWith(0, { pageSize: 50 });
+    });
+  });
+
+  it("disables Posts while resolving a direct-link position and enables it after position resolves", async () => {
+    const neighborsDeferred = createDeferred();
+    fetchJsonMock.mockImplementation(async (url) => {
+      const target = String(url);
+      if (target.includes("/post/148264629")) {
+        return {
+          post: {
+            ...buildCachedPost("Middle Post"),
+            id: "148264629",
+          },
+          attachments: [],
+        };
+      }
+      if (target.includes("/posts?")) {
+        return neighborsDeferred.promise;
+      }
+      return [];
+    });
+
+    render(
+      <PostView
+        service="patreon"
+        creatorId="50049787"
+        creatorName="AYEH"
+        postId="148264629"
+        alreadySaved={false}
+        creatorPosition={0}
+        hasExplicitCreatorPosition={false}
+        activeFilter=""
+        readerSettingsOpen={false}
+        onCloseReaderSettings={noop}
+        onBack={noop}
+        onNavigate={noop}
+        onResolvePostTitle={noop}
+        onResolveCreatorPosition={noop}
+      />,
+    );
+
+    await screen.findByText("Middle Post");
+    const postsButtons = screen.getAllByRole("link", { name: "Posts" });
+    expect(postsButtons[0]).toHaveAttribute("aria-disabled", "true");
+
+    neighborsDeferred.resolve([{ id: "148264629", title: "Middle Post" }]);
+    await waitFor(() => {
+      expect(screen.getAllByRole("link", { name: "Posts" })[0]).toHaveAttribute("aria-disabled", "false");
+    });
+  });
+
+  it("re-enables Posts with fallback when direct-link position lookup fails", async () => {
+    const neighborsDeferred = createDeferred();
+    fetchJsonMock.mockImplementation(async (url) => {
+      const target = String(url);
+      if (target.includes("/post/148264629")) {
+        return {
+          post: {
+            ...buildCachedPost("Direct Link Post"),
+            id: "148264629",
+          },
+          attachments: [],
+        };
+      }
+      if (target.includes("/posts?")) {
+        return neighborsDeferred.promise;
+      }
+      return [];
+    });
+
+    render(
+      <PostView
+        service="patreon"
+        creatorId="50049787"
+        creatorName="AYEH"
+        postId="148264629"
+        alreadySaved={false}
+        creatorPosition={0}
+        hasExplicitCreatorPosition={false}
+        activeFilter=""
+        readerSettingsOpen={false}
+        onCloseReaderSettings={noop}
+        onBack={noop}
+        onNavigate={noop}
+        onResolvePostTitle={noop}
+        onResolveCreatorPosition={noop}
+      />,
+    );
+
+    await screen.findByText("Direct Link Post");
+    const postsButtons = screen.getAllByRole("link", { name: "Posts" });
+    expect(postsButtons[0]).toHaveAttribute("aria-disabled", "true");
+
+    neighborsDeferred.resolve([]);
+    await waitFor(() => {
+      expect(screen.getAllByRole("link", { name: "Posts" })[0]).toHaveAttribute("aria-disabled", "false");
     });
   });
 });

@@ -235,6 +235,7 @@ function PostView({
   postId,
   alreadySaved,
   creatorPosition,
+  hasExplicitCreatorPosition = true,
   activeFilter,
   readerSettingsOpen,
   onCloseReaderSettings,
@@ -422,6 +423,9 @@ function PostView({
   const [viewerOpen, setViewerOpen] = useState(false);
   const [resolvedCreatorName, setResolvedCreatorName] = useState(() => getInitialCreatorName());
   const [viewerZoomMode, setViewerZoomMode] = useState("fit");
+  const [creatorPositionLookupState, setCreatorPositionLookupState] = useState(() =>
+    hasExplicitCreatorPosition ? "known" : "resolving",
+  );
   const pageSizeRef = useRef(getInitialPageSize());
   const serviceLabel = getServiceLabel(service);
   const creatorLabel = resolvedCreatorName || creatorId || "";
@@ -446,6 +450,9 @@ function PostView({
     }
     return null;
   })();
+  useEffect(() => {
+    setCreatorPositionLookupState(hasExplicitCreatorPosition ? "known" : "resolving");
+  }, [service, creatorId, postId, hasExplicitCreatorPosition]);
   useEffect(() => {
     if (!post || typeof onResolvePostTitle !== "function") return;
     const nextTitle = post.title || post.id || "";
@@ -665,6 +672,7 @@ function PostView({
             : idx;
         onResolveCreatorPosition(resolvedPosition, { pageSize: pageSizeRef.current });
       }
+      setCreatorPositionLookupState("known");
       return true;
     };
 
@@ -750,6 +758,7 @@ function PostView({
                 onResolveCreatorPosition(globalIndex, { pageSize: pageSizeRef.current });
               }
             }
+            setCreatorPositionLookupState("known");
             return;
           }
 
@@ -759,10 +768,12 @@ function PostView({
         }
 
         setNeighbors({ newerId: null, olderId: null });
+        setCreatorPositionLookupState("failed");
       } catch (error) {
         console.error("Failed to resolve post neighbors", error);
         if (!alive) return;
         setNeighbors({ newerId: null, olderId: null });
+        setCreatorPositionLookupState("failed");
       }
     };
 
@@ -923,9 +934,14 @@ function PostView({
         &larr; Prev
       </a>
       <a
-        className="btn outline"
-        href={creatorHref}
+        className={`btn outline${creatorPositionLookupState === "resolving" ? " disabled" : ""}`}
+        href={creatorPositionLookupState === "resolving" ? "#" : creatorHref}
+        aria-disabled={creatorPositionLookupState === "resolving"}
         onClick={(event) => {
+          if (creatorPositionLookupState === "resolving") {
+            event.preventDefault();
+            return;
+          }
           if (typeof onBack !== "function" || isModifiedClick(event)) return;
           event.preventDefault();
           onBack();

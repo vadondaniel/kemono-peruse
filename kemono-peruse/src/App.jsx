@@ -276,7 +276,7 @@ function App() {
       service,
       creatorId,
       creatorName,
-      position: effectiveOffset > 0 ? effectiveOffset : undefined,
+      position: effectiveOffset,
     });
   };
 
@@ -292,7 +292,7 @@ function App() {
       creatorName,
       postId,
       postTitle,
-      position: effectiveOffset > 0 ? effectiveOffset : undefined,
+      position: effectiveOffset,
     });
   };
 
@@ -376,8 +376,7 @@ function App() {
     const normalizedOffset = computePageOffset(normalizedIndex, options.pageSize);
     const persist = options.persist !== false;
     const currentView = viewRef.current;
-    const currentViewPosition =
-      typeof currentView?.position === "number" && currentView.position > 0 ? currentView.position : 0;
+    const currentViewPosition = typeof currentView?.position === "number" ? currentView.position : undefined;
     const shouldSyncView =
       currentView &&
       (currentView.name === "creator" || currentView.name === "post") &&
@@ -403,7 +402,7 @@ function App() {
           service,
           creatorId,
           creatorName: currentView.creatorName,
-          position: normalizedOffset > 0 ? normalizedOffset : undefined,
+          position: normalizedOffset,
         },
         { replace: true },
       );
@@ -418,7 +417,7 @@ function App() {
         creatorName: currentView.creatorName,
         postId: currentView.postId,
         postTitle: currentView.postTitle,
-        position: normalizedOffset > 0 ? normalizedOffset : undefined,
+        position: normalizedOffset,
       },
       { replace: true },
     );
@@ -533,8 +532,9 @@ function App() {
 
             {view.name === "post" && (() => {
               const rawFilter = getCreatorFilter(view.service, view.creatorId);
+              const hasExplicitCreatorPosition = typeof view.position === "number";
               const currentPosition =
-                typeof view.position === "number"
+                hasExplicitCreatorPosition
                   ? view.position
                   : getCreatorOffset(view.service, view.creatorId);
               return (
@@ -545,6 +545,7 @@ function App() {
                   postId={view.postId}
                   alreadySaved={isCreatorSaved(view.service, view.creatorId)}
                   creatorPosition={currentPosition}
+                  hasExplicitCreatorPosition={hasExplicitCreatorPosition}
                   activeFilter={rawFilter}
                   readerSettingsOpen={readerSettingsOpen}
                   onCloseReaderSettings={() => setReaderSettingsOpen(false)}
@@ -554,7 +555,7 @@ function App() {
                       service: view.service,
                       creatorId: view.creatorId,
                       creatorName: view.creatorName,
-                      position: currentPosition > 0 ? currentPosition : undefined,
+                      position: currentPosition,
                     });
                   }}
                   onNavigate={(nextPostId) => {
@@ -564,7 +565,7 @@ function App() {
                       creatorId: view.creatorId,
                       creatorName: view.creatorName,
                       postId: nextPostId,
-                      position: currentPosition > 0 ? currentPosition : undefined,
+                      position: currentPosition,
                     });
                   }}
                   onResolvePostTitle={handleResolvePostTitle}
