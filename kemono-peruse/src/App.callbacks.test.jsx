@@ -305,4 +305,47 @@ describe("App callback and error-path coverage", () => {
     ]);
     warnSpy.mockRestore();
   });
+
+  it("auto-closes reader settings when leaving post view", async () => {
+    render(<App />);
+    await screen.findByText("Home Mock");
+
+    window.dispatchEvent(
+      new PopStateEvent("popstate", {
+        state: {
+          view: {
+            name: "creator",
+            service: "patreon",
+            creatorId: "50049787",
+            creatorName: "AYEH",
+          },
+        },
+      }),
+    );
+    await screen.findByText("Creator Mock patreon:50049787");
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Post 200" }));
+    await screen.findByText("Post Mock post-200");
+    fireEvent.click(screen.getByRole("button", { name: "Reader settings" }));
+    await screen.findByText("Reader Settings Open yes");
+
+    fireEvent.click(screen.getByRole("link", { name: "Kemono Peruse" }));
+    await screen.findByText("Home Mock");
+
+    window.dispatchEvent(
+      new PopStateEvent("popstate", {
+        state: {
+          view: {
+            name: "post",
+            service: "patreon",
+            creatorId: "50049787",
+            creatorName: "AYEH",
+            postId: "post-200",
+          },
+        },
+      }),
+    );
+    await screen.findByText("Post Mock post-200");
+    await screen.findByText("Reader Settings Open no");
+  });
 });
