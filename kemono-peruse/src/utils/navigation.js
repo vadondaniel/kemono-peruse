@@ -185,9 +185,6 @@ export function getUrlForView(view) {
   if (normalized.name === "creator" && typeof normalized.position === "number" && normalized.position > 0) {
     query.push(`pos=${normalized.position}`);
   }
-  if (normalized.name === "post" && typeof normalized.position === "number" && normalized.position > 0) {
-    query.push(`pos=${normalized.position}`);
-  }
   const queryString = query.length ? `?${query.join("&")}` : "";
   const base = BASE_PATH_PREFIX ? `${BASE_PATH_PREFIX}${suffix}` : suffix;
   return `${base}${queryString}`;

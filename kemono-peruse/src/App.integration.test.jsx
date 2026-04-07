@@ -318,4 +318,20 @@ describe("App integration", () => {
     await screen.findByText("Post Mock 404");
     expect(screen.getByText("Has Explicit Position no")).toBeInTheDocument();
   });
+
+  it("removes pos query from post url while preserving resolved history state", async () => {
+    window.history.replaceState(
+      null,
+      "",
+      "/creator/patreon/50049787/post/123?pos=75",
+    );
+
+    render(<App />);
+
+    await screen.findByText("Post Mock 123");
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/creator/patreon/50049787/post/123");
+      expect(window.location.search).toBe("");
+    });
+  });
 });

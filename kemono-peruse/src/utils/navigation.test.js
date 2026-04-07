@@ -48,7 +48,7 @@ describe("navigation utils", () => {
     expect(view).toEqual({ name: "home" });
   });
 
-  it("builds urls for creator and post views with pos", () => {
+  it("builds creator urls with pos and omits pos from post urls", () => {
     const creatorUrl = getUrlForView({
       name: "creator",
       service: "patreon",
@@ -66,7 +66,7 @@ describe("navigation utils", () => {
     expect(creatorUrl).toContain("/creator/patreon/50049787");
     expect(creatorUrl).toContain("pos=25");
     expect(postUrl).toContain("/creator/patreon/50049787/post/148264629");
-    expect(postUrl).toContain("pos=75");
+    expect(postUrl).not.toContain("pos=75");
   });
 
   it("compares views correctly", () => {
