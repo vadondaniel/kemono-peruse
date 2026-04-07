@@ -79,6 +79,33 @@ describe("preferences utils", () => {
     expect(window.localStorage.getItem("reader.same")).toBe(JSON.stringify({ textScale: "small" }));
   });
 
+  it("copyReaderSettings ignores malformed or empty keys", () => {
+    const getItemSpy = vi.spyOn(Storage.prototype, "getItem");
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem");
+
+    copyReaderSettings("", "reader.to");
+    copyReaderSettings("reader.from", "");
+    copyReaderSettings(null, "reader.to");
+    copyReaderSettings("reader.from", null);
+
+    expect(getItemSpy).not.toHaveBeenCalled();
+    expect(setItemSpy).not.toHaveBeenCalled();
+
+    getItemSpy.mockRestore();
+    setItemSpy.mockRestore();
+  });
+
+  it("copyReaderSettings does not write when source key has no stored value", () => {
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem");
+
+    copyReaderSettings("reader.missing", "reader.to");
+
+    expect(window.localStorage.getItem("reader.to")).toBeNull();
+    expect(setItemSpy).not.toHaveBeenCalled();
+
+    setItemSpy.mockRestore();
+  });
+
   it("readBooleanPreference and reader settings handle storage failures safely", () => {
     const getItemSpy = vi
       .spyOn(Storage.prototype, "getItem")
@@ -110,5 +137,27 @@ describe("preferences utils", () => {
       expect.objectContaining({ fontFamily: expect.stringContaining("IBM Plex Sans") }),
     );
     expect(getTypefacePreviewStyle("unknown")).toBeUndefined();
+  });
+
+  it("returns safe defaults when window is unavailable", () => {
+    const originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
+    Object.defineProperty(globalThis, "window", {
+      configurable: true,
+      writable: true,
+      value: undefined,
+    });
+
+    try {
+      expect(readBooleanPreference("flag", true)).toBe(true);
+      expect(getInitialPageSize()).toBe(API_PAGE_SIZE);
+      expect(getInitialReaderSettings("reader.any")).toEqual(
+        expect.objectContaining({ textScale: "base" }),
+      );
+      expect(() => copyReaderSettings("reader.from", "reader.to")).not.toThrow();
+    } finally {
+      if (originalDescriptor) {
+        Object.defineProperty(globalThis, "window", originalDescriptor);
+      }
+    }
   });
 });
