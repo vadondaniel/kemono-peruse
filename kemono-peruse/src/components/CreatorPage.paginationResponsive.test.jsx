@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 
 import { PAGE_SIZE_KEY } from "../constants.js";
 
@@ -142,7 +142,9 @@ describe("CreatorPage responsive pagination", () => {
     expect(screen.queryAllByRole("link", { name: /next/i })).toHaveLength(0);
     expect(screen.queryAllByRole("link", { name: /prev/i })).toHaveLength(0);
 
-    setMatches(false);
+    act(() => {
+      setMatches(false);
+    });
 
     await waitFor(() => {
       expect(screen.queryAllByRole("link", { name: /next/i }).length).toBeGreaterThan(0);
@@ -160,7 +162,9 @@ describe("CreatorPage responsive pagination", () => {
     expect(media.addListener).toHaveBeenCalledTimes(1);
     expect(screen.queryAllByRole("link", { name: /next/i })).toHaveLength(0);
 
-    setMatches(false);
+    act(() => {
+      setMatches(false);
+    });
     await waitFor(() => {
       expect(screen.queryAllByRole("link", { name: /next/i }).length).toBeGreaterThan(0);
     });
@@ -169,4 +173,3 @@ describe("CreatorPage responsive pagination", () => {
     expect(media.removeListener).toHaveBeenCalledTimes(1);
   });
 });
-
