@@ -887,11 +887,8 @@ function CreatorPage({
     const encodedQuery = hasTextSearch ? encodeURIComponent(normalizedTextQuery) : "";
     const filterBody = normalizedFields.body ? "true" : "false";
     const filterTitle = normalizedFields.title ? "true" : "false";
-    const filterTags = normalizedFields.tags ? "true" : "false";
-    const fieldParams = `&title=${filterTitle}&tags=${filterTags}&body=${filterBody}`;
-    const tagFieldParams = normalizedFields.body
-      ? fieldParams
-      : `&title=${filterTitle}&tags=${filterTags}&body=true`;
+    const textFieldParams = `&title=${filterTitle}&tags=false&body=${filterBody}`;
+    const tagFieldParams = "&title=false&tags=true&body=true";
     const tagParams = hasTagSearch ? tagTokens.map((tag) => `&tag=${encodeURIComponent(tag)}`).join("") : "";
 
     const searchModes = [];
@@ -900,7 +897,7 @@ function CreatorPage({
         type: "text",
         queryParam: `&q=${encodedQuery}`,
         tagParam: "",
-        fieldParam: fieldParams,
+        fieldParam: textFieldParams,
         allowCache: true,
       });
     }

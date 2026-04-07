@@ -88,6 +88,8 @@ describe("CreatorPage search behavior", () => {
     const urls = fetchJsonMock.mock.calls.map((call) => String(call[0]));
     const tagUrl = urls.find((url) => url.includes("&tag=alpha"));
     expect(tagUrl).toBeTruthy();
+    expect(tagUrl).toContain("&title=false");
+    expect(tagUrl).toContain("&tags=true");
     expect(tagUrl).toContain("&body=true");
   });
 
@@ -116,8 +118,38 @@ describe("CreatorPage search behavior", () => {
     expect(screen.queryByText("completely different")).not.toBeInTheDocument();
 
     const urls = fetchJsonMock.mock.calls.map((call) => String(call[0]));
-    expect(urls.some((url) => url.includes("&q=alpha"))).toBe(true);
-    expect(urls.some((url) => url.includes("&tag=alpha"))).toBe(true);
+    const textUrl = urls.find((url) => url.includes("&q=alpha"));
+    const tagUrl = urls.find((url) => url.includes("&tag=alpha"));
+    expect(textUrl).toBeTruthy();
+    expect(tagUrl).toBeTruthy();
+    expect(textUrl).toContain("&tags=false");
+    expect(tagUrl).toContain("&title=false");
+  });
+
+  it("keeps tag-only matches when title and tags are both enabled", async () => {
+    fetchJsonMock.mockImplementation(async (url) => {
+      if (url.includes("/profile")) {
+        return { id: "50049787", service: "patreon", name: "AYEH", post_count: 76 };
+      }
+      if (url.includes("&q=AYEH")) {
+        return [];
+      }
+      if (url.includes("&tag=ayeh")) {
+        if (url.includes("&title=false&tags=true&body=true")) {
+          return [{ id: "tag-only-match", title: "Tag only post", tags: ["ayeh"] }];
+        }
+        return [];
+      }
+      return [];
+    });
+
+    render(<CreatorHarness initialFilter="AYEH" />);
+
+    await screen.findByText("Tag only post");
+
+    const urls = fetchJsonMock.mock.calls.map((call) => String(call[0]));
+    const tagUrl = urls.find((url) => url.includes("&tag=ayeh"));
+    expect(tagUrl).toContain("&title=false&tags=true&body=true");
   });
 
   it("resets filter state when clear is clicked", async () => {

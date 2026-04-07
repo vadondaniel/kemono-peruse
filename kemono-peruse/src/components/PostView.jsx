@@ -647,7 +647,11 @@ function PostView({
     const applyTextQuery = textQueryEnabled && (!storedFields.tags || tagTokens.length === 0);
     const textQuery = applyTextQuery ? trimmedFilter : "";
     const queryParam = textQuery ? `&q=${encodeURIComponent(textQuery)}` : "";
-    const fieldParams = trimmedFilter ? buildFieldQueryParams(storedFields, { forceBodyForTags: hasTagFilter }) : "";
+    const fieldParams = !trimmedFilter
+      ? ""
+      : hasTagFilter
+        ? "&title=false&tags=true&body=true"
+        : buildFieldQueryParams(storedFields, { forceBodyForTags: false });
     const tagParams =
       hasTagFilter
         ? tagTokens.map((tag) => `&tag=${encodeURIComponent(tag)}`).join("")
