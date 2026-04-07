@@ -7,6 +7,7 @@ import {
   getUrlForView,
   getViewFromHistoryState,
   normalizeBasePath,
+  stripBasePath,
   viewsEqual,
 } from "./navigation.js";
 
@@ -15,6 +16,8 @@ describe("navigation utils", () => {
     expect(normalizeBasePath("app")).toBe("/app/");
     expect(normalizeBasePath("/app")).toBe("/app/");
     expect(normalizeBasePath("/app//")).toBe("/app/");
+    expect(normalizeBasePath("  /nested//path  ")).toBe("/nested/path/");
+    expect(normalizeBasePath(null)).toBe("/");
     expect(normalizeBasePath("")).toBe("/");
   });
 
@@ -46,6 +49,22 @@ describe("navigation utils", () => {
     const state = buildHistoryState({ name: "home" });
     const view = getViewFromHistoryState(state, "/creator/patreon/50049787");
     expect(view).toEqual({ name: "home" });
+  });
+
+  it("falls back to parsing path when history state is malformed", () => {
+    const state = {
+      view: {
+        name: "creator",
+        service: "patreon",
+      },
+    };
+    const view = getViewFromHistoryState(state, "/creator/patreon/50049787", "?pos=50");
+    expect(view).toMatchObject({
+      name: "creator",
+      service: "patreon",
+      creatorId: "50049787",
+      position: 50,
+    });
   });
 
   it("builds creator urls with pos and omits pos from post urls", () => {
@@ -125,6 +144,27 @@ describe("navigation utils", () => {
     expect(decodePathSegment("%E0%A4%A")).toBe("%E0%A4%A");
   });
 
+  it("parses malformed encoded segments without throwing and ignores invalid pos", () => {
+    const view = getViewFromHistoryState(
+      null,
+      "/creator/patreon/%E0%A4%A/post/%E0%A4%A",
+      "?pos=-5",
+    );
+    expect(view).toMatchObject({
+      name: "post",
+      service: "patreon",
+      creatorId: "%E0%A4%A",
+      postId: "%E0%A4%A",
+    });
+    expect(view.position).toBeUndefined();
+  });
+
+  it("returns home for incomplete creator paths and keeps paths when no base prefix is configured", () => {
+    expect(getViewFromHistoryState(null, "/creator/patreon", "?pos=12")).toEqual({ name: "home" });
+    expect(getViewFromHistoryState(null, "/creator//", "")).toEqual({ name: "home" });
+    expect(stripBasePath("/creator/patreon/50049787")).toBe("/creator/patreon/50049787");
+  });
+
   it("builds encoded urls and omits non-positive pos query", () => {
     const encoded = getUrlForView({
       name: "post",
@@ -165,5 +205,44 @@ describe("navigation utils", () => {
       postId: "p/id",
       position: 7,
     });
+  });
+
+  it("handles non-root RAW_BASE_PATH when parsing and building urls", async () => {
+    vi.resetModules();
+    vi.doMock("../constants", () => ({
+      RAW_BASE_PATH: "/kemono//app",
+      SERVICE_LABELS: { patreon: "Patreon" },
+    }));
+
+    try {
+      const isolated = await import("./navigation.js");
+      expect(isolated.stripBasePath("/kemono/app/creator/patreon/50049787")).toBe("/creator/patreon/50049787");
+      expect(isolated.stripBasePath("/kemono/app")).toBe("/");
+      expect(isolated.stripBasePath("/other/root")).toBe("/other/root");
+      expect(
+        isolated.getViewFromHistoryState(
+          null,
+          "/kemono/app/creator/patreon/50049787/post/148264629",
+          "?pos=25",
+        ),
+      ).toMatchObject({
+        name: "post",
+        service: "patreon",
+        creatorId: "50049787",
+        postId: "148264629",
+        position: 25,
+      });
+      expect(
+        isolated.getUrlForView({
+          name: "creator",
+          service: "patreon",
+          creatorId: "50049787",
+          position: 10,
+        }),
+      ).toBe("/kemono/app/creator/patreon/50049787?pos=10");
+    } finally {
+      vi.doUnmock("../constants");
+      vi.resetModules();
+    }
   });
 });
