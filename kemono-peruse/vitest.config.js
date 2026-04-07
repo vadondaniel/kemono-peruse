@@ -14,9 +14,6 @@ export default defineConfig({
         "src/**/*.test.{js,jsx}",
         "src/test/**",
         "src/main.jsx",
-        "src/App.jsx",
-        "src/components/PostView.jsx",
-        "src/workers/**",
       ],
       thresholds: {
         statements: 50,
