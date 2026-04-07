@@ -2048,6 +2048,16 @@ function CreatorPage({
       featureVisibilityObserverRef.current = null;
     }
 
+    if (typeof window.IntersectionObserver !== "function") {
+      const fallbackKeys = cards
+        .map((card) => card.getAttribute("data-feature-key"))
+        .filter((key) => Boolean(key));
+      if (fallbackKeys.length > 0) {
+        markFeatureCardsVisible(fallbackKeys);
+      }
+      return;
+    }
+
     const observer = new window.IntersectionObserver(
       (entries) => {
         const newlyVisible = [];
