@@ -103,10 +103,33 @@ describe("PostView reader and viewer behavior", () => {
     expect(onCloseReaderSettings).toHaveBeenCalledTimes(2);
 
     fireEvent.click(screen.getByRole("button", { name: "Large" }));
+    fireEvent.click(screen.getByRole("button", { name: "Relaxed" }));
+    fireEvent.click(screen.getByRole("button", { name: "Compact" }));
+    fireEvent.click(screen.getByRole("button", { name: "IBM Plex" }));
+    fireEvent.click(screen.getByRole("button", { name: "Center" }));
+    fireEvent.click(screen.getByRole("button", { name: "Soft" }));
+    fireEvent.click(screen.getByRole("button", { name: "Proxy links" }));
+    fireEvent.click(screen.getByRole("button", { name: "Text + gallery" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(onCloseReaderSettings).toHaveBeenCalledTimes(3);
 
     const postCard = document.querySelector(".post-card");
     expect(postCard).toHaveClass("reader-scale-large");
-    expect(JSON.parse(localStorage.getItem(READER_SETTINGS_UNSAVED_KEY) || "{}").textScale).toBe("large");
+    expect(postCard).toHaveClass("reader-leading-relaxed");
+    expect(postCard).toHaveClass("reader-width-compact");
+    expect(postCard).toHaveClass("reader-align-center");
+    expect(postCard).toHaveClass("reader-indent-soft");
+    expect(postCard).toHaveClass("reader-font-ibm-plex");
+    expect(JSON.parse(localStorage.getItem(READER_SETTINGS_UNSAVED_KEY) || "{}")).toMatchObject({
+      textScale: "large",
+      lineSpacing: "relaxed",
+      widthMode: "compact",
+      typeface: "ibm-plex",
+      textAlign: "center",
+      textIndent: "soft",
+      attachmentsMode: "proxy",
+      galleryMode: "both",
+    });
 
     rerender(<PostView {...baseProps} readerSettingsOpen={false} />);
     await waitFor(() => {
@@ -147,12 +170,24 @@ describe("PostView reader and viewer behavior", () => {
 
     await screen.findByRole("dialog", { name: "Image viewer" });
     const stage = screen.getByLabelText("Zoom in for full resolution");
-    fireEvent.click(stage, { clientX: 40, clientY: 20 });
+    fireEvent.keyDown(stage, { key: "Enter" });
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Fit to screen" })).toBeInTheDocument();
     });
 
+    fireEvent.click(screen.getByRole("option", { name: "Show one.jpg" }));
+    await waitFor(() => {
+      expect(screen.getAllByText("1 / 2").length).toBeGreaterThan(0);
+    });
+
+    const zoomedStage = screen.getByLabelText("Zoom out (fit to screen)");
+    fireEvent.keyDown(zoomedStage, { key: " " });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Zoom in for full resolution")).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByLabelText("Zoom in for full resolution"), { clientX: 40, clientY: 20 });
     fireEvent.keyDown(window, { key: "ArrowRight" });
     await waitFor(() => {
       expect(screen.getAllByText("2 / 2").length).toBeGreaterThan(0);
@@ -183,9 +218,23 @@ describe("PostView reader and viewer behavior", () => {
 
     await screen.findByText("Hero Keyboard Post");
     const hero = screen.getByLabelText("Open feature image in viewer");
+    fireEvent.click(hero);
+
+    await screen.findByRole("dialog", { name: "Image viewer" });
+    fireEvent.click(screen.getByRole("button", { name: "Close image viewer" }));
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Image viewer" })).not.toBeInTheDocument();
+    });
+
     fireEvent.keyDown(hero, { key: "Enter" });
 
     await screen.findByRole("dialog", { name: "Image viewer" });
+
+    const heroImage = document.querySelector(".feature-image img");
+    fireEvent.error(heroImage);
+    await waitFor(() => {
+      expect(heroImage).toHaveClass("image-loaded");
+    });
   });
 
   it("falls back to default filter fields when stored field flags are all false", async () => {
@@ -249,5 +298,65 @@ describe("PostView reader and viewer behavior", () => {
 
     fireEvent.click(postsLink);
     expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps Posts disabled while resolving and does not call onBack on click", async () => {
+    let resolveNeighbors;
+    const neighborsPromise = new Promise((resolve) => {
+      resolveNeighbors = resolve;
+    });
+    fetchJsonMock.mockImplementation(async (url) => {
+      const target = String(url);
+      if (target.includes("/post/148264629")) {
+        return buildPostPayload({ title: "Resolving Posts Link" });
+      }
+      if (target.includes("/posts?")) {
+        return neighborsPromise;
+      }
+      return [];
+    });
+
+    const onBack = vi.fn();
+    render(<PostView {...baseProps} hasExplicitCreatorPosition={false} onBack={onBack} />);
+
+    await screen.findByText("Resolving Posts Link");
+    const postsLink = screen.getAllByRole("link", { name: "Posts" })[0];
+    expect(postsLink).toHaveAttribute("aria-disabled", "true");
+
+    fireEvent.click(postsLink);
+    expect(onBack).toHaveBeenCalledTimes(0);
+
+    resolveNeighbors([]);
+    await waitFor(() => {
+      expect(screen.getAllByRole("link", { name: "Posts" })[0]).toHaveAttribute("aria-disabled", "false");
+    });
+  });
+
+  it("prevents default Next/Prev navigation when onNavigate is missing", async () => {
+    fetchJsonMock.mockImplementation(async (url) => {
+      const target = String(url);
+      if (target.includes("/post/148264629")) {
+        return buildPostPayload({ title: "No Navigate Callback" });
+      }
+      if (target.includes("/posts?")) {
+        return [
+          { id: "newer-id", title: "newer" },
+          { id: "148264629", title: "current" },
+          { id: "older-id", title: "older" },
+        ];
+      }
+      return [];
+    });
+
+    render(<PostView {...baseProps} onNavigate={null} />);
+
+    await screen.findByText("No Navigate Callback");
+    const prevButton = screen.getAllByRole("link", { name: /prev/i })[0];
+    const nextButton = screen.getAllByRole("link", { name: /next/i })[0];
+
+    fireEvent.click(prevButton);
+    fireEvent.click(nextButton);
+
+    expect(screen.getByText("No Navigate Callback")).toBeInTheDocument();
   });
 });
