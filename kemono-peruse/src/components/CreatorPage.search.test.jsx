@@ -11,9 +11,11 @@ vi.mock("../utils/api.js", () => ({
 
 import CreatorPage from "./CreatorPage.jsx";
 import { writeCreatorCache } from "../utils/cache.js";
+import { PAGE_SIZE_KEY } from "../constants.js";
 
-function CreatorHarness({ initialFilter = "alpha", alreadySaved = false }) {
+function CreatorHarness({ initialFilter = "alpha", alreadySaved = false, initialPosition = 0 }) {
   const [filter, setFilter] = useState(initialFilter);
+  const [position, setPosition] = useState(initialPosition);
   return (
     <CreatorPage
       service="patreon"
@@ -24,8 +26,8 @@ function CreatorHarness({ initialFilter = "alpha", alreadySaved = false }) {
       onSave={vi.fn()}
       activeFilter={filter}
       onUpdateFilter={setFilter}
-      onRememberPosition={vi.fn()}
-      initialPosition={0}
+      onRememberPosition={setPosition}
+      initialPosition={position}
     />
   );
 }
@@ -247,5 +249,210 @@ describe("CreatorPage search behavior", () => {
       "If-Modified-Since": "Tue, 01 Apr 2025 12:05:00 GMT",
     });
     expect(screen.getByText("Cached title")).toBeInTheDocument();
+  });
+
+  it("uses stale archive results immediately and keeps them when source filtering returns empty", async () => {
+    localStorage.setItem("kemono.cache.pref.patreon.50049787", "true");
+    localStorage.setItem(
+      "kemono.filterFields.patreon.50049787",
+      JSON.stringify({ title: true, tags: false, body: false }),
+    );
+    writeCreatorCache("patreon", "50049787", {
+      updatedAt: 1,
+      totalPosts: 2,
+      profile: { id: "50049787", service: "patreon", name: "AYEH", post_count: 2 },
+      chunks: {
+        0: [
+          {
+            id: "archive-match",
+            title: "alpha cached post",
+            archivedOnly: true,
+            published: "2025-01-01T00:00:00.000Z",
+          },
+          {
+            id: "other-post",
+            title: "beta cached post",
+            published: "2025-01-02T00:00:00.000Z",
+          },
+        ],
+      },
+    });
+
+    let resolveSourceFilter;
+    fetchJsonMock.mockImplementation((url) => {
+      const target = String(url);
+      if (target.includes("/profile")) {
+        return Promise.resolve({ id: "50049787", service: "patreon", name: "AYEH", post_count: 2 });
+      }
+      if (target.includes("&q=alpha")) {
+        return new Promise((resolve) => {
+          resolveSourceFilter = resolve;
+        });
+      }
+      return Promise.resolve([]);
+    });
+
+    render(<CreatorHarness initialFilter="alpha" alreadySaved />);
+
+    await screen.findByText("alpha cached post");
+    expect(screen.getByText("Archived")).toBeInTheDocument();
+    expect(screen.getByText("Using archive results; syncing with source...")).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(typeof resolveSourceFilter).toBe("function");
+    });
+    resolveSourceFilter([]);
+    await waitFor(() => {
+      expect(screen.getByText("alpha cached post")).toBeInTheDocument();
+    });
+    expect(screen.queryByText("Using archive results; syncing with source...")).not.toBeInTheDocument();
+  });
+
+  it("keeps archive matches visible when source filtering fails", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      localStorage.setItem("kemono.cache.pref.patreon.50049787", "true");
+      localStorage.setItem(
+        "kemono.filterFields.patreon.50049787",
+        JSON.stringify({ title: true, tags: false, body: false }),
+      );
+      writeCreatorCache("patreon", "50049787", {
+        updatedAt: 1,
+        totalPosts: 1,
+        profile: { id: "50049787", service: "patreon", name: "AYEH", post_count: 1 },
+        chunks: {
+          0: [{ id: "archive-match", title: "alpha offline post", published: "2025-01-01T00:00:00.000Z" }],
+        },
+      });
+
+      fetchJsonMock.mockImplementation((url) => {
+        const target = String(url);
+        if (target.includes("/profile")) {
+          return Promise.resolve({ id: "50049787", service: "patreon", name: "AYEH", post_count: 1 });
+        }
+        if (target.includes("&q=alpha")) {
+          return Promise.reject(new Error("source unavailable"));
+        }
+        return Promise.resolve([]);
+      });
+
+      render(<CreatorHarness initialFilter="alpha" alreadySaved />);
+
+      await screen.findByText("alpha offline post");
+      await screen.findByText("Using archive results (source unavailable)");
+      expect(screen.getByText("alpha offline post")).toBeInTheDocument();
+    } finally {
+      consoleSpy.mockRestore();
+    }
+  });
+
+  it("merges source filter matches into archive results without duplicates", async () => {
+    localStorage.setItem("kemono.cache.pref.patreon.50049787", "true");
+    localStorage.setItem(
+      "kemono.filterFields.patreon.50049787",
+      JSON.stringify({ title: true, tags: false, body: false }),
+    );
+    writeCreatorCache("patreon", "50049787", {
+      updatedAt: 1,
+      totalPosts: 2,
+      profile: { id: "50049787", service: "patreon", name: "AYEH", post_count: 2 },
+      chunks: {
+        0: [
+          {
+            id: "shared-post",
+            title: "alpha local old",
+            archivedOnly: true,
+            published: "2025-01-01T00:00:00.000Z",
+          },
+          {
+            id: "local-only-post",
+            title: "alpha local keep",
+            published: "2025-01-01T00:10:00.000Z",
+          },
+        ],
+      },
+    });
+
+    fetchJsonMock.mockImplementation((url) => {
+      const target = String(url);
+      if (target.includes("/profile")) {
+        return Promise.resolve({ id: "50049787", service: "patreon", name: "AYEH", post_count: 3 });
+      }
+      if (target.includes("&q=alpha")) {
+        return Promise.resolve([
+          { id: "shared-post", title: "alpha remote updated", published: "2025-01-03T00:00:00.000Z" },
+          { id: "remote-new-post", title: "alpha remote new", published: "2025-01-03T00:10:00.000Z" },
+        ]);
+      }
+      return Promise.resolve([]);
+    });
+
+    render(<CreatorHarness initialFilter="alpha" alreadySaved />);
+
+    await screen.findByText("alpha remote updated");
+    expect(screen.queryByText("alpha local old")).not.toBeInTheDocument();
+    expect(screen.getByText("alpha local keep")).toBeInTheDocument();
+    expect(screen.getByText("alpha remote new")).toBeInTheDocument();
+    expect(screen.queryAllByText("alpha remote updated")).toHaveLength(1);
+    expect(screen.queryByText("Archived")).not.toBeInTheDocument();
+  });
+
+  it("paginates deterministic archive filter results and keeps page stable on source failure", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      localStorage.setItem("kemono.cache.pref.patreon.50049787", "true");
+      localStorage.setItem(PAGE_SIZE_KEY, "50");
+      localStorage.setItem(
+        "kemono.filterFields.patreon.50049787",
+        JSON.stringify({ title: true, tags: false, body: false }),
+      );
+      const cachedPosts = Array.from({ length: 120 }, (_, index) => ({
+        id: `page-${index + 1}`,
+        title: `alpha ${index + 1}`,
+        published: `2025-01-01T${String(Math.floor(index / 6)).padStart(2, "0")}:${String((index % 6) * 10).padStart(2, "0")}:00.000Z`,
+      }));
+      writeCreatorCache("patreon", "50049787", {
+        updatedAt: 1,
+        totalPosts: cachedPosts.length,
+        profile: { id: "50049787", service: "patreon", name: "AYEH", post_count: cachedPosts.length },
+        chunks: {
+          0: cachedPosts,
+        },
+      });
+
+      let rejectSourceFilter;
+      fetchJsonMock.mockImplementation((url) => {
+        const target = String(url);
+        if (target.includes("/profile")) {
+          return Promise.resolve({ id: "50049787", service: "patreon", name: "AYEH", post_count: cachedPosts.length });
+        }
+        if (target.includes("&q=alpha")) {
+          return new Promise((_, reject) => {
+            rejectSourceFilter = reject;
+          });
+        }
+        return Promise.resolve([]);
+      });
+
+      render(<CreatorHarness initialFilter="alpha" alreadySaved />);
+
+      await screen.findByText("alpha 1");
+      expect(screen.queryByText("alpha 51")).not.toBeInTheDocument();
+      fireEvent.click(screen.getAllByRole("link", { name: /next/i })[0]);
+      await screen.findByText("alpha 51");
+      expect(screen.queryByText("alpha 1")).not.toBeInTheDocument();
+      fireEvent.click(screen.getAllByRole("link", { name: /next/i })[0]);
+      expect(screen.getByText("alpha 101")).toBeInTheDocument();
+
+      await waitFor(() => {
+        expect(typeof rejectSourceFilter).toBe("function");
+      });
+      rejectSourceFilter(new Error("source unavailable"));
+      await screen.findByText("Using archive results (source unavailable)");
+
+      expect(screen.getByText("alpha 101")).toBeInTheDocument();
+    } finally {
+      consoleSpy.mockRestore();
+    }
   });
 });

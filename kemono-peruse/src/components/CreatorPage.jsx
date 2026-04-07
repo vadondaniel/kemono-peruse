@@ -5,7 +5,6 @@ import {
   API_BASE,
   API_PAGE_SIZE,
   CACHE_VERSION,
-  MAX_CACHE_POSTS,
   MAX_SEARCH_RESULTS,
   MEDIA_BASE,
   ORIGINAL_MEDIA_BASE,
@@ -45,6 +44,42 @@ const dedupePostsById = (items) => {
     deduped.push(item);
   });
   return deduped;
+};
+
+const mergePostsById = (baseItems, incomingItems) => {
+  const merged = Array.isArray(baseItems) ? [...baseItems] : [];
+  const indexById = new Map();
+  merged.forEach((item, index) => {
+    if (item?.id == null) return;
+    indexById.set(String(item.id), index);
+  });
+
+  (Array.isArray(incomingItems) ? incomingItems : []).forEach((item) => {
+    if (!item) return;
+    const key = item.id != null ? String(item.id) : null;
+    const normalizedIncoming =
+      item && typeof item === "object"
+        ? {
+            ...item,
+            archivedOnly: false,
+          }
+        : item;
+    if (key && indexById.has(key)) {
+      const targetIndex = indexById.get(key);
+      const existing = merged[targetIndex];
+      merged[targetIndex] =
+        existing && typeof existing === "object"
+          ? { ...existing, ...normalizedIncoming }
+          : normalizedIncoming;
+      return;
+    }
+    merged.push(normalizedIncoming);
+    if (key) {
+      indexById.set(key, merged.length - 1);
+    }
+  });
+
+  return dedupePostsById(merged);
 };
 
 const resolveOffsetForPosition = (position, pageSize) => {
@@ -194,6 +229,7 @@ function CreatorPage({
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchPage, setSearchPage] = useState(1);
   const [searchCapped, setSearchCapped] = useState(false);
+  const [searchStatusMessage, setSearchStatusMessage] = useState(null);
   const [searchMatchSources, setSearchMatchSources] = useState({ text: false, tags: false });
   const filterStorageKey = `kemono.filterFields.${service}.${creatorId}`;
   const reversePrefKey = useMemo(
@@ -726,11 +762,13 @@ function CreatorPage({
       setSearchResults([]);
       setSearchLoading(false);
       setSearchCapped(false);
+      setSearchStatusMessage(null);
       return;
     }
     setOffset((value) => (value !== 0 ? 0 : value));
     setSearchResults([]);
     setSearchCapped(false);
+    setSearchStatusMessage(null);
     runSearch({ query: trimmedFilter });
   }, [service, creatorId, activeFilter, reloadKey]);
 
@@ -773,58 +811,69 @@ function CreatorPage({
     const hasTextSearch = textSearchable && textTokens.length > 0;
 
     if (!hasTextSearch && !hasTagSearch) {
+      if (searchAbortRef.current) {
+        searchAbortRef.current.abort();
+        searchAbortRef.current = null;
+      }
       setSearchResults([]);
       setSearchLoading(false);
       setSearchCapped(false);
+      setSearchStatusMessage(null);
       setSearchMatchSources({ text: false, tags: false });
       return;
     }
 
-    let matchedViaText = false;
-    let matchedViaTags = false;
-
-    if (useCache && cacheFresh) {
-      if (cachedPostsForSearch && cachedPostsForSearch.length > 0) {
-        const results = cachedPostsForSearch.filter((post) => {
-          if (!post) return false;
-          let matchesTags = false;
-          if (hasTagSearch) {
-            const postTags = Array.isArray(post.tags)
-              ? post.tags.map((tag) => String(tag).toLowerCase())
-              : [];
-            matchesTags = tagTokens.every((token) => postTags.includes(token));
-            if (matchesTags) matchedViaTags = true;
-          }
-          let matchesText = false;
-          if (hasTextSearch) {
-            matchesText = postMatchesTextTokens(post, textTokens, normalizedFields);
-            if (matchesText) matchedViaText = true;
-          }
-          if (hasTagSearch && hasTextSearch) {
-            return matchesTags || matchesText;
-          }
-          if (hasTagSearch) return matchesTags;
-          return matchesText;
-        });
-        const cacheTotalPosts = toNumericCount(cacheData?.totalPosts);
-        const cacheComplete =
-          typeof cacheTotalPosts === "number" &&
-          cacheTotalPosts > 0 &&
-          cacheTotalPosts <= MAX_CACHE_POSTS &&
-          cachedPostsForSearch.length >= cacheTotalPosts;
-        const capped = Boolean(cacheTotalPosts && cacheTotalPosts > cachedPostsForSearch.length);
-        if (results.length > 0 || cacheComplete) {
-          setSearchResults(dedupePostsById(results));
-          setSearchCapped(capped);
-          setSearchLoading(false);
-          setSearchMatchSources({
-            text: hasTextSearch && matchedViaText,
-            tags: hasTagSearch && matchedViaTags,
-          });
-          return;
+    const filterArchivePosts = (posts) => {
+      let matchedText = false;
+      let matchedTags = false;
+      const results = (Array.isArray(posts) ? posts : []).filter((post) => {
+        if (!post) return false;
+        let matchesTags = false;
+        if (hasTagSearch) {
+          const postTags = Array.isArray(post.tags)
+            ? post.tags.map((tag) => String(tag).toLowerCase())
+            : [];
+          matchesTags = tagTokens.every((token) => postTags.includes(token));
+          if (matchesTags) matchedTags = true;
         }
-        // Fall through to API search when cache did not yield any hits and we cannot prove completeness.
-      }
+        let matchesText = false;
+        if (hasTextSearch) {
+          matchesText = postMatchesTextTokens(post, textTokens, normalizedFields);
+          if (matchesText) matchedText = true;
+        }
+        if (hasTagSearch && hasTextSearch) {
+          return matchesTags || matchesText;
+        }
+        if (hasTagSearch) return matchesTags;
+        return matchesText;
+      });
+
+      return {
+        results: dedupePostsById(results),
+        matchedText,
+        matchedTags,
+      };
+    };
+
+    const hasArchivePosts = Boolean(useCache && cachedPostsForSearch && cachedPostsForSearch.length > 0);
+    const localArchiveSearch = hasArchivePosts
+      ? filterArchivePosts(cachedPostsForSearch)
+      : { results: [], matchedText: false, matchedTags: false };
+
+    let matchedViaText = localArchiveSearch.matchedText;
+    let matchedViaTags = localArchiveSearch.matchedTags;
+
+    if (hasArchivePosts) {
+      setSearchResults(localArchiveSearch.results);
+      setSearchCapped(false);
+      setSearchMatchSources({
+        text: hasTextSearch && matchedViaText,
+        tags: hasTagSearch && matchedViaTags,
+      });
+    } else {
+      setSearchResults([]);
+      setSearchCapped(false);
+      setSearchMatchSources({ text: false, tags: false });
     }
 
     if (searchAbortRef.current) {
@@ -865,10 +914,18 @@ function CreatorPage({
       });
     }
 
+    const onlineHint = typeof navigator === "undefined" || navigator.onLine !== false;
+    if (!onlineHint || searchModes.length === 0) {
+      setSearchLoading(false);
+      setSearchStatusMessage(hasArchivePosts ? "Using archive results (source unavailable)" : null);
+      if (searchAbortRef.current === requestController) {
+        searchAbortRef.current = null;
+      }
+      return;
+    }
+
     setSearchLoading(true);
-    setSearchResults([]);
-    setSearchCapped(false);
-    setSearchMatchSources({ text: false, tags: false });
+    setSearchStatusMessage(hasArchivePosts ? "Using archive results; syncing with source..." : null);
 
     const seenIds = new Set();
     const workingResults = [];
@@ -946,7 +1003,17 @@ function CreatorPage({
 
       if (token !== searchTokenRef.current) return;
 
-      setSearchResults(dedupePostsById(workingResults));
+      if (hasArchivePosts) {
+        setSearchResults((previous) =>
+          mergePostsById(
+            Array.isArray(previous) && previous.length > 0 ? previous : localArchiveSearch.results,
+            workingResults,
+          ),
+        );
+        setSearchStatusMessage(null);
+      } else {
+        setSearchResults(dedupePostsById(workingResults));
+      }
       setSearchCapped(capped);
       setSearchMatchSources({
         text: hasTextSearch && matchedViaText,
@@ -957,9 +1024,19 @@ function CreatorPage({
         console.error("Post search failed", error);
       }
       if (token !== searchTokenRef.current) return;
-      setSearchResults([]);
-      setSearchCapped(false);
-      setSearchMatchSources({ text: false, tags: false });
+      if (hasArchivePosts) {
+        setSearchCapped(false);
+        setSearchStatusMessage("Using archive results (source unavailable)");
+        setSearchMatchSources({
+          text: hasTextSearch && matchedViaText,
+          tags: hasTagSearch && matchedViaTags,
+        });
+      } else {
+        setSearchResults([]);
+        setSearchCapped(false);
+        setSearchStatusMessage(null);
+        setSearchMatchSources({ text: false, tags: false });
+      }
     } finally {
       if (searchAbortRef.current === requestController) {
         searchAbortRef.current = null;
@@ -1056,6 +1133,7 @@ function CreatorPage({
     onUpdateFilter("");
     setSearchInput("");
     setSearchPage(1);
+    setSearchStatusMessage(null);
     if (typeof window !== "undefined" && window.localStorage) {
       window.localStorage.removeItem(filterStorageKey);
     }
@@ -2192,6 +2270,9 @@ function CreatorPage({
                 Body text
               </label>
             </div>
+            {isFilterActive && searchStatusMessage && (
+              <p className="muted small filter-status-line">{searchStatusMessage}</p>
+            )}
           </div>
         </div>
       </section>
