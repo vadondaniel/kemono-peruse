@@ -178,7 +178,12 @@ function App() {
     return "light";
   });
   const [readerSettingsOpen, setReaderSettingsOpen] = useState(false);
+  const [showBackToTop, setShowBackToTop] = useState(false);
   const activeTheme = themeMode === "auto" ? systemTheme : themeMode;
+  const handleBackToTop = useCallback(() => {
+    if (typeof window === "undefined") return;
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
   const handleLinkNavigation = useCallback(
     (event, nextView) => {
       if (event.button !== 0 || event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) {
@@ -225,6 +230,22 @@ function App() {
       setReaderSettingsOpen(false);
     }
   }, [view, readerSettingsOpen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return undefined;
+    if (view.name !== "post") {
+      setShowBackToTop(false);
+      return undefined;
+    }
+    const updateBackToTop = () => {
+      setShowBackToTop(window.scrollY > 300);
+    };
+    updateBackToTop();
+    window.addEventListener("scroll", updateBackToTop, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", updateBackToTop);
+    };
+  }, [view.name]);
 
   const handleResolvePostTitle = useCallback(
     (resolvedTitle) => {
@@ -556,6 +577,11 @@ function App() {
           </Suspense>
         </main>
       </div>
+      {view.name === "post" && showBackToTop && (
+        <button type="button" className="btn ghost back-to-top" aria-label="Back to top" onClick={handleBackToTop}>
+          Back to top
+        </button>
+      )}
     </div>
   );
 }

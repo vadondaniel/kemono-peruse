@@ -1242,6 +1242,14 @@ html[data-theme="dark"] .hero-stat {
   background: rgba(148, 163, 184, 0.25);
 }
 
+.back-to-top {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 1600;
+  white-space: nowrap;
+}
+
 .link {
   border: none;
   background: none;
@@ -2468,6 +2476,11 @@ html[data-theme="light"] .gallery-viewer-close {
 }
 
 @media (max-width: 640px) {
+  .back-to-top {
+    right: 12px;
+    bottom: 14px;
+  }
+
   .app-header {
     padding: 16px 0;
   }

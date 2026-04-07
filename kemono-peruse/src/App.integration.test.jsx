@@ -1,5 +1,5 @@
 import React from "react";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 vi.mock("./components/Home.jsx", () => ({
   default: () => <div>Home Mock</div>,
@@ -33,10 +33,24 @@ const setupMatchMedia = () => {
   });
 };
 
+const setScrollY = (value) => {
+  Object.defineProperty(window, "scrollY", {
+    configurable: true,
+    writable: true,
+    value,
+  });
+};
+
 describe("App integration", () => {
   beforeEach(() => {
     localStorage.clear();
     setupMatchMedia();
+    Object.defineProperty(window, "scrollTo", {
+      configurable: true,
+      writable: true,
+      value: vi.fn(),
+    });
+    setScrollY(0);
     window.history.replaceState(null, "", "/");
   });
 
@@ -70,5 +84,69 @@ describe("App integration", () => {
     unmount();
 
     expect(localStorage.getItem("kemono.savedCreators")).toBe("[]");
+  });
+
+  it("does not render back-to-top on home view", async () => {
+    render(<App />);
+    await screen.findByText("Home Mock");
+
+    expect(screen.queryByRole("button", { name: "Back to top" })).not.toBeInTheDocument();
+  });
+
+  it("renders back-to-top only on post view after crossing the scroll threshold", async () => {
+    render(<App />);
+    await screen.findByText("Home Mock");
+
+    window.dispatchEvent(
+      new PopStateEvent("popstate", {
+        state: {
+          view: {
+            name: "post",
+            service: "patreon",
+            creatorId: "50049787",
+            creatorName: "AYEH",
+            postId: "123",
+          },
+        },
+      }),
+    );
+
+    await screen.findByText("Post Mock 123");
+    expect(screen.queryByRole("button", { name: "Back to top" })).not.toBeInTheDocument();
+
+    setScrollY(350);
+    window.dispatchEvent(new Event("scroll"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Back to top" })).toBeInTheDocument();
+    });
+  });
+
+  it("clicking back-to-top scrolls smoothly to the top", async () => {
+    render(<App />);
+    await screen.findByText("Home Mock");
+
+    window.dispatchEvent(
+      new PopStateEvent("popstate", {
+        state: {
+          view: {
+            name: "post",
+            service: "patreon",
+            creatorId: "50049787",
+            creatorName: "AYEH",
+            postId: "123",
+          },
+        },
+      }),
+    );
+
+    await screen.findByText("Post Mock 123");
+    setScrollY(350);
+    window.dispatchEvent(new Event("scroll"));
+
+    const backToTopButton = await screen.findByRole("button", { name: "Back to top" });
+    fireEvent.click(backToTopButton);
+
+    expect(window.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
   });
 });
