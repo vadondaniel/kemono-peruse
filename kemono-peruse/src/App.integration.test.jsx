@@ -1,8 +1,25 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { PAGE_SIZE_KEY } from "./constants.js";
 
 vi.mock("./components/Home.jsx", () => ({
-  default: () => <div>Home Mock</div>,
+  default: ({ onSaveCreator, onRenameCreator }) => (
+    <div>
+      <div>Home Mock</div>
+      <button
+        type="button"
+        onClick={() => onSaveCreator?.({ service: "patreon", id: "50049787", name: "AYEH" })}
+      >
+        Save Mock Creator
+      </button>
+      <button
+        type="button"
+        onClick={() => onRenameCreator?.({ service: "patreon", id: "50049787", name: "AYEH Renamed" })}
+      >
+        Rename Mock Creator
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock("./components/CreatorPage.jsx", () => ({
@@ -32,6 +49,15 @@ vi.mock("./components/PostView.jsx", () => ({
         </button>
         <button type="button" onClick={() => onBack?.()}>
           Posts
+        </button>
+        <button type="button" onClick={() => onResolveCreatorPosition?.(149, { pageSize: 25 })}>
+          Resolve Position 149 With 25
+        </button>
+        <button type="button" onClick={() => onResolveCreatorPosition?.(149, { pageSize: 0 })}>
+          Resolve Position 149 With Fallback Size
+        </button>
+        <button type="button" onClick={() => onResolveCreatorPosition?.(149, { pageSize: 25, persist: false })}>
+          Resolve Position 149 Without Persist
         </button>
       </div>
     );
@@ -333,5 +359,109 @@ describe("App integration", () => {
       expect(window.location.pathname).toBe("/creator/patreon/50049787/post/123");
       expect(window.location.search).toBe("");
     });
+  });
+
+  it("uses stored page size when resolved creator position has invalid pageSize override", async () => {
+    localStorage.setItem(PAGE_SIZE_KEY, "75");
+    render(<App />);
+    await screen.findByText("Home Mock");
+
+    window.dispatchEvent(
+      new PopStateEvent("popstate", {
+        state: {
+          view: {
+            name: "post",
+            service: "patreon",
+            creatorId: "50049787",
+            creatorName: "AYEH",
+            postId: "123",
+          },
+        },
+      }),
+    );
+
+    await screen.findByText("Post Mock 123");
+    fireEvent.click(screen.getByRole("button", { name: "Resolve Position 149 With Fallback Size" }));
+    fireEvent.click(screen.getByRole("button", { name: "Posts" }));
+
+    await screen.findByText("Creator Mock patreon:50049787");
+    expect(screen.getByText("Creator Position 75")).toBeInTheDocument();
+  });
+
+  it("syncs creator view position but does not persist creatorPositions when persist=false", async () => {
+    localStorage.setItem("kemono.creatorPositions", JSON.stringify({ "patreon:50049787": 20 }));
+
+    const { unmount } = render(<App />);
+    await screen.findByText("Home Mock");
+
+    window.dispatchEvent(
+      new PopStateEvent("popstate", {
+        state: {
+          view: {
+            name: "post",
+            service: "patreon",
+            creatorId: "50049787",
+            creatorName: "AYEH",
+            postId: "123",
+          },
+        },
+      }),
+    );
+
+    await screen.findByText("Post Mock 123");
+    fireEvent.click(screen.getByRole("button", { name: "Resolve Position 149 Without Persist" }));
+    fireEvent.click(screen.getByRole("button", { name: "Posts" }));
+
+    await screen.findByText("Creator Mock patreon:50049787");
+    expect(screen.getByText("Creator Position 125")).toBeInTheDocument();
+
+    unmount();
+    expect(localStorage.getItem("kemono.creatorPositions")).toBe(
+      JSON.stringify({ "patreon:50049787": 20 }),
+    );
+  });
+
+  it("coalesces debounced creator position writes and persists only the latest position", async () => {
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem");
+
+    try {
+      render(<App />);
+      await screen.findByText("Home Mock");
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      setItemSpy.mockClear();
+
+      window.dispatchEvent(
+        new PopStateEvent("popstate", {
+          state: {
+            view: {
+              name: "post",
+              service: "patreon",
+              creatorId: "50049787",
+              creatorName: "AYEH",
+              postId: "123",
+            },
+          },
+        }),
+      );
+
+      await screen.findByText("Post Mock 123");
+      fireEvent.click(screen.getByRole("button", { name: "Resolve Position 149 With 25" }));
+      fireEvent.click(screen.getByRole("button", { name: "Resolve Position 149 With Fallback Size" }));
+
+      let creatorPositionWrites = setItemSpy.mock.calls.filter(
+        ([key]) => key === "kemono.creatorPositions",
+      );
+      expect(creatorPositionWrites).toHaveLength(0);
+
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      creatorPositionWrites = setItemSpy.mock.calls.filter(
+        ([key]) => key === "kemono.creatorPositions",
+      );
+      expect(creatorPositionWrites).toHaveLength(1);
+      expect(creatorPositionWrites[0][1]).toBe(JSON.stringify({ "patreon:50049787": 149 }));
+    } finally {
+      setItemSpy.mockRestore();
+    }
   });
 });
