@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { createEvent, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 const fetchJsonMock = vi.fn();
 
@@ -53,6 +53,32 @@ describe("Home interactions", () => {
       name: "Alpha Name",
     });
     expect(onOpenCreator).toHaveBeenCalledWith("fanbox", "1234", "Alpha Name");
+  });
+
+  it("passes through modified clicks and only intercepts plain creator link clicks", async () => {
+    const onOpenCreator = vi.fn();
+
+    render(
+      <Home
+        savedCreators={[{ service: "patreon", id: "50049787", name: "AYEH" }]}
+        onSaveCreator={noop}
+        onRenameCreator={noop}
+        onRemoveCreator={noop}
+        onOpenCreator={onOpenCreator}
+      />,
+    );
+
+    const creatorLink = screen.getByRole("link", { name: "AYEH" });
+
+    const ctrlClick = createEvent.click(creatorLink, { ctrlKey: true, button: 0 });
+    fireEvent(creatorLink, ctrlClick);
+    expect(ctrlClick.defaultPrevented).toBe(false);
+    expect(onOpenCreator).not.toHaveBeenCalled();
+
+    const plainClick = createEvent.click(creatorLink, { button: 0 });
+    fireEvent(creatorLink, plainClick);
+    expect(plainClick.defaultPrevented).toBe(true);
+    expect(onOpenCreator).toHaveBeenCalledWith("patreon", "50049787", "AYEH");
   });
 
   it("handles saved creator rename, cancel, remove, and library search empty state", async () => {
@@ -159,7 +185,7 @@ describe("Home interactions", () => {
     });
   });
 
-  it("recovers from an invalid directory payload on the next fetch", async () => {
+  it("shows directory error state and retries when Retry is clicked", async () => {
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     fetchJsonMock
       .mockResolvedValueOnce({ invalid: true })
@@ -185,13 +211,17 @@ describe("Home interactions", () => {
     );
 
     fireEvent.change(screen.getByLabelText("Search creators"), { target: { value: "ay" } });
+    const retryButton = await screen.findByRole("button", { name: "Retry" });
+
+    expect(fetchJsonMock).toHaveBeenCalledTimes(1);
+    fireEvent.click(retryButton);
     await screen.findByText("AYEH");
 
     expect(fetchJsonMock).toHaveBeenCalledTimes(2);
     expect(consoleSpy).toHaveBeenCalled();
   });
 
-  it("focuses creator ID on empty quick-add open and opens saved creators inline", async () => {
+  it("focuses creator ID on invalid quick-add open and opens saved creators inline", async () => {
     const onOpenCreator = vi.fn();
 
     render(
@@ -205,6 +235,7 @@ describe("Home interactions", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Add a creator" }));
+    fireEvent.change(screen.getByLabelText("Creator ID"), { target: { value: "   " } });
     fireEvent.click(screen.getByRole("link", { name: "View creator" }));
 
     const idInput = screen.getByLabelText("Creator ID");

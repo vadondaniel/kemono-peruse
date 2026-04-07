@@ -66,7 +66,7 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
 
   useEffect(() => {
     if (!searchReady) return;
-    if (creatorDirectory || creatorDirectoryStatus === "loading" || creatorDirectoryStatus === "ready") {
+    if (creatorDirectory || creatorDirectoryStatus !== "idle") {
       return;
     }
     const token = creatorDirectoryTokenRef.current + 1;
