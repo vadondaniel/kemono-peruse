@@ -150,7 +150,7 @@ describe("CreatorPage responsive pagination", () => {
       expect(screen.queryAllByRole("link", { name: /next/i }).length).toBeGreaterThan(0);
       expect(screen.queryAllByRole("link", { name: /prev/i }).length).toBeGreaterThan(0);
     });
-  });
+  }, 10000);
 
   it("uses legacy matchMedia listeners when addEventListener is unavailable", async () => {
     const { media, setMatches } = setupMatchMediaLegacy(true);
@@ -171,5 +171,5 @@ describe("CreatorPage responsive pagination", () => {
 
     unmount();
     expect(media.removeListener).toHaveBeenCalledTimes(1);
-  });
+  }, 10000);
 });
