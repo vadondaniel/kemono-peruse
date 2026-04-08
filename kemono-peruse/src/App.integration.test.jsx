@@ -90,6 +90,26 @@ const setScrollY = (value) => {
   });
 };
 
+const setPageGeometry = ({ innerHeight = 800, scrollHeight = 2000 } = {}) => {
+  Object.defineProperty(window, "innerHeight", {
+    configurable: true,
+    writable: true,
+    value: innerHeight,
+  });
+  Object.defineProperty(document.documentElement, "scrollHeight", {
+    configurable: true,
+    writable: true,
+    value: scrollHeight,
+  });
+  Object.defineProperty(document.body, "scrollHeight", {
+    configurable: true,
+    writable: true,
+    value: scrollHeight,
+  });
+};
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 describe("App integration", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -100,6 +120,7 @@ describe("App integration", () => {
       value: vi.fn(),
     });
     setScrollY(0);
+    setPageGeometry();
     window.history.replaceState(null, "", "/");
   });
 
@@ -142,7 +163,7 @@ describe("App integration", () => {
     expect(screen.queryByRole("button", { name: "Back to top" })).not.toBeInTheDocument();
   });
 
-  it("renders back-to-top only on post view after crossing the scroll threshold", async () => {
+  it("shows back-to-top while scrolling in post view and hides it after a delay", async () => {
     render(<App />);
     await screen.findByText("Home Mock");
 
@@ -168,6 +189,104 @@ describe("App integration", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Back to top" })).toBeInTheDocument();
+    });
+
+    await wait(1500);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Back to top" })).not.toBeInTheDocument();
+    });
+  });
+
+  it("keeps back-to-top visible at the bottom of long pages even after scrolling stops", async () => {
+    render(<App />);
+    await screen.findByText("Home Mock");
+
+    window.dispatchEvent(
+      new PopStateEvent("popstate", {
+        state: {
+          view: {
+            name: "post",
+            service: "patreon",
+            creatorId: "50049787",
+            creatorName: "AYEH",
+            postId: "123",
+          },
+        },
+      }),
+    );
+
+    await screen.findByText("Post Mock 123");
+    setScrollY(1200);
+    window.dispatchEvent(new Event("scroll"));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Back to top" })).toBeInTheDocument();
+    });
+
+    await wait(1200);
+
+    expect(screen.getByRole("button", { name: "Back to top" })).toBeInTheDocument();
+  });
+
+  it("does not show back-to-top for short pages, even at the bottom", async () => {
+    setPageGeometry({ innerHeight: 800, scrollHeight: 700 });
+    render(<App />);
+    await screen.findByText("Home Mock");
+
+    window.dispatchEvent(
+      new PopStateEvent("popstate", {
+        state: {
+          view: {
+            name: "post",
+            service: "patreon",
+            creatorId: "50049787",
+            creatorName: "AYEH",
+            postId: "123",
+          },
+        },
+      }),
+    );
+
+    await screen.findByText("Post Mock 123");
+    window.dispatchEvent(new Event("scroll"));
+
+    expect(screen.queryByRole("button", { name: "Back to top" })).not.toBeInTheDocument();
+  });
+
+  it("does not hide back-to-top while hovered and restarts hide delay after hover leaves", async () => {
+    render(<App />);
+    await screen.findByText("Home Mock");
+
+    window.dispatchEvent(
+      new PopStateEvent("popstate", {
+        state: {
+          view: {
+            name: "post",
+            service: "patreon",
+            creatorId: "50049787",
+            creatorName: "AYEH",
+            postId: "123",
+          },
+        },
+      }),
+    );
+
+    await screen.findByText("Post Mock 123");
+    setScrollY(350);
+    window.dispatchEvent(new Event("scroll"));
+
+    const backToTopButton = await screen.findByRole("button", { name: "Back to top" });
+    fireEvent.mouseEnter(backToTopButton);
+
+    await wait(1700);
+    expect(screen.getByRole("button", { name: "Back to top" })).toBeInTheDocument();
+
+    fireEvent.mouseLeave(screen.getByRole("button", { name: "Back to top" }));
+    await wait(1500);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Back to top" })).not.toBeInTheDocument();
     });
   });
 

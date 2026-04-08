@@ -12,6 +12,8 @@ const CreatorPage = lazy(() => import("./components/CreatorPage.jsx"));
 const Home = lazy(() => import("./components/Home.jsx"));
 const PostView = lazy(() => import("./components/PostView.jsx"));
 const STORAGE_WRITE_DEBOUNCE_MS = 250;
+const BACK_TO_TOP_HIDE_DELAY_MS = 1400;
+const BACK_TO_TOP_SCROLL_THRESHOLD_PX = 300;
 
 function App() {
   const [view, setViewState] = useState(getInitialView);
@@ -179,6 +181,7 @@ function App() {
   });
   const [readerSettingsOpen, setReaderSettingsOpen] = useState(false);
   const [showBackToTop, setShowBackToTop] = useState(false);
+  const backToTopButtonRef = useRef(null);
   const activeTheme = themeMode === "auto" ? systemTheme : themeMode;
   const handleBackToTop = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -237,13 +240,99 @@ function App() {
       setShowBackToTop(false);
       return undefined;
     }
-    const updateBackToTop = () => {
-      setShowBackToTop(window.scrollY > 300);
+
+    const getScrollHeight = () => {
+      if (typeof document === "undefined") return 0;
+      const { documentElement, body } = document;
+      return Math.max(documentElement?.scrollHeight ?? 0, body?.scrollHeight ?? 0);
     };
+    const isScrollablePage = () => getScrollHeight() - window.innerHeight > 1;
+    const isAtBottom = () => {
+      if (!isScrollablePage()) return false;
+      return window.innerHeight + window.scrollY >= getScrollHeight() - 2;
+    };
+    const hasCrossedScrollThreshold = () => window.scrollY > BACK_TO_TOP_SCROLL_THRESHOLD_PX;
+
+    let hideTimerId;
+    let isHovered = false;
+    const clearHideTimer = () => {
+      if (!hideTimerId) return;
+      window.clearTimeout(hideTimerId);
+      hideTimerId = undefined;
+    };
+    const scheduleHide = () => {
+      clearHideTimer();
+      if (isHovered || isAtBottom()) return;
+      hideTimerId = window.setTimeout(() => {
+        if (isHovered) return;
+        if (isAtBottom()) {
+          setShowBackToTop(true);
+          return;
+        }
+        setShowBackToTop(false);
+      }, BACK_TO_TOP_HIDE_DELAY_MS);
+    };
+    const showWhileScrolling = () => {
+      if (!isScrollablePage()) {
+        clearHideTimer();
+        setShowBackToTop(false);
+        return;
+      }
+      if (isAtBottom()) {
+        clearHideTimer();
+        setShowBackToTop(true);
+        return;
+      }
+      if (!hasCrossedScrollThreshold()) {
+        clearHideTimer();
+        setShowBackToTop(false);
+        return;
+      }
+      setShowBackToTop(true);
+      scheduleHide();
+    };
+    const updateBackToTop = () => {
+      clearHideTimer();
+      if (!isScrollablePage()) {
+        setShowBackToTop(false);
+        return;
+      }
+      setShowBackToTop(isAtBottom());
+    };
+    const handleBackToTopMouseEnter = () => {
+      isHovered = true;
+      clearHideTimer();
+    };
+    const handleBackToTopMouseLeave = () => {
+      isHovered = false;
+      if (isAtBottom()) {
+        setShowBackToTop(true);
+        return;
+      }
+      if (!hasCrossedScrollThreshold()) {
+        setShowBackToTop(false);
+        return;
+      }
+      setShowBackToTop(true);
+      scheduleHide();
+    };
+    const backToTopButton = backToTopButtonRef.current;
+
     updateBackToTop();
-    window.addEventListener("scroll", updateBackToTop, { passive: true });
+    window.addEventListener("scroll", showWhileScrolling, { passive: true });
+    window.addEventListener("resize", updateBackToTop);
+    if (backToTopButton) {
+      backToTopButton.addEventListener("mouseenter", handleBackToTopMouseEnter);
+      backToTopButton.addEventListener("mouseleave", handleBackToTopMouseLeave);
+    }
     return () => {
-      window.removeEventListener("scroll", updateBackToTop);
+      clearHideTimer();
+      window.removeEventListener("scroll", showWhileScrolling);
+      window.removeEventListener("resize", updateBackToTop);
+      if (backToTopButton) {
+        backToTopButton.removeEventListener("mouseenter", handleBackToTopMouseEnter);
+        backToTopButton.removeEventListener("mouseleave", handleBackToTopMouseLeave);
+      }
     };
   }, [view.name]);
 
@@ -578,8 +667,16 @@ function App() {
           </Suspense>
         </main>
       </div>
-      {view.name === "post" && showBackToTop && (
-        <button type="button" className="btn ghost back-to-top" aria-label="Back to top" onClick={handleBackToTop}>
+      {view.name === "post" && (
+        <button
+          type="button"
+          className={`btn ghost back-to-top${showBackToTop ? " is-visible" : ""}`}
+          aria-label="Back to top"
+          aria-hidden={!showBackToTop}
+          tabIndex={showBackToTop ? 0 : -1}
+          ref={backToTopButtonRef}
+          onClick={handleBackToTop}
+        >
           Back to top
         </button>
       )}
