@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const fetchJsonMock = vi.fn();
 const purgeCreatorLocalStateMock = vi.fn();
@@ -134,19 +134,23 @@ const setupMatchMedia = ({ matches = false } = {}) => {
   });
 };
 
+const dispatchPopState = (view) => {
+  act(() => {
+    window.dispatchEvent(
+      new PopStateEvent("popstate", {
+        state: { view },
+      }),
+    );
+  });
+};
+
 const navigateToCreator = () => {
-  window.dispatchEvent(
-    new PopStateEvent("popstate", {
-      state: {
-        view: {
-          name: "creator",
-          service: "patreon",
-          creatorId: "50049787",
-          creatorName: "AYEH",
-        },
-      },
-    }),
-  );
+  dispatchPopState({
+    name: "creator",
+    service: "patreon",
+    creatorId: "50049787",
+    creatorName: "AYEH",
+  });
 };
 
 describe("App callback and error-path coverage", () => {
@@ -279,18 +283,12 @@ describe("App callback and error-path coverage", () => {
     const { unmount } = render(<App />);
     await screen.findByText("Home Mock");
 
-    window.dispatchEvent(
-      new PopStateEvent("popstate", {
-        state: {
-          view: {
-            name: "creator",
-            service: "patreon",
-            creatorId: "50049787",
-            creatorName: "50049787",
-          },
-        },
-      }),
-    );
+    dispatchPopState({
+      name: "creator",
+      service: "patreon",
+      creatorId: "50049787",
+      creatorName: "50049787",
+    });
 
     await screen.findByText("Creator Mock patreon:50049787");
     fireEvent.click(screen.getByRole("button", { name: "Save Current Creator" }));
@@ -310,18 +308,12 @@ describe("App callback and error-path coverage", () => {
     render(<App />);
     await screen.findByText("Home Mock");
 
-    window.dispatchEvent(
-      new PopStateEvent("popstate", {
-        state: {
-          view: {
-            name: "creator",
-            service: "patreon",
-            creatorId: "50049787",
-            creatorName: "AYEH",
-          },
-        },
-      }),
-    );
+    dispatchPopState({
+      name: "creator",
+      service: "patreon",
+      creatorId: "50049787",
+      creatorName: "AYEH",
+    });
     await screen.findByText("Creator Mock patreon:50049787");
 
     fireEvent.click(screen.getByRole("button", { name: "Open Post 200" }));
@@ -332,19 +324,13 @@ describe("App callback and error-path coverage", () => {
     fireEvent.click(screen.getByRole("link", { name: "Kemono Peruse" }));
     await screen.findByText("Home Mock");
 
-    window.dispatchEvent(
-      new PopStateEvent("popstate", {
-        state: {
-          view: {
-            name: "post",
-            service: "patreon",
-            creatorId: "50049787",
-            creatorName: "AYEH",
-            postId: "post-200",
-          },
-        },
-      }),
-    );
+    dispatchPopState({
+      name: "post",
+      service: "patreon",
+      creatorId: "50049787",
+      creatorName: "AYEH",
+      postId: "post-200",
+    });
     await screen.findByText("Post Mock post-200");
     await screen.findByText("Reader Settings Open no");
   });

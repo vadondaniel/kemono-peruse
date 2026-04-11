@@ -191,7 +191,10 @@ describe("CreatorPage post navigation behavior", () => {
     expect(postLink).toBeTruthy();
 
     const ctrlClick = createEvent.click(postLink, { ctrlKey: true, button: 0 });
+    const postHref = postLink.getAttribute("href");
+    postLink.removeAttribute("href");
     fireEvent(postLink, ctrlClick);
+    postLink.setAttribute("href", postHref);
 
     expect(ctrlClick.defaultPrevented).toBe(false);
     expect(onOpenPost).not.toHaveBeenCalled();

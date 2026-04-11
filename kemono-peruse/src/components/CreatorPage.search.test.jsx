@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { cleanup, createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, createEvent, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const fetchJsonMock = vi.fn();
 const fetchJsonWithMetaMock = vi.fn();
@@ -192,8 +192,10 @@ describe("CreatorPage search behavior", () => {
 
     await screen.findByText("0 posts indexed");
 
-    fireEvent.click(screen.getByLabelText("Title", { selector: "#filter-title" }));
-    fireEvent.click(screen.getByLabelText("Body text", { selector: "#filter-body" }));
+    act(() => {
+      fireEvent.click(screen.getByLabelText("Title", { selector: "#filter-title" }));
+      fireEvent.click(screen.getByLabelText("Body text", { selector: "#filter-body" }));
+    });
 
     await waitFor(() => {
       expect(localStorage.getItem("kemono.filterFields.patreon.50049787")).toContain('"title":false');
@@ -201,6 +203,7 @@ describe("CreatorPage search behavior", () => {
 
     unmount();
     render(<CreatorHarness initialFilter="" alreadySaved={false} />);
+    await screen.findByText("0 posts indexed");
 
     expect(screen.getByLabelText("Title", { selector: "#filter-title" })).not.toBeChecked();
     expect(screen.getByLabelText("Tags", { selector: "#filter-tags" })).toBeChecked();
@@ -591,7 +594,10 @@ describe("CreatorPage search behavior", () => {
     expect(findPageLabel(1, 3)).toBeInTheDocument();
     const nextLink = screen.getAllByRole("link", { name: /next/i })[0];
     const ctrlClick = createEvent.click(nextLink, { ctrlKey: true, button: 0 });
+    const nextHref = nextLink.getAttribute("href");
+    nextLink.removeAttribute("href");
     fireEvent(nextLink, ctrlClick);
+    nextLink.setAttribute("href", nextHref);
 
     expect(ctrlClick.defaultPrevented).toBe(false);
     expect(findPageLabel(1, 3)).toBeInTheDocument();
@@ -651,9 +657,11 @@ describe("CreatorPage search behavior", () => {
     const { unmount } = render(<CreatorHarness initialFilter="" alreadySaved={false} />);
     await screen.findByText("0 posts indexed");
 
-    fireEvent.click(screen.getByLabelText("Excerpts", { selector: "#show-excerpts" }));
-    fireEvent.click(screen.getByLabelText("Tags", { selector: "#show-tags" }));
-    fireEvent.click(screen.getByLabelText("Feature image", { selector: "#show-feature-bg" }));
+    act(() => {
+      fireEvent.click(screen.getByLabelText("Excerpts", { selector: "#show-excerpts" }));
+      fireEvent.click(screen.getByLabelText("Tags", { selector: "#show-tags" }));
+      fireEvent.click(screen.getByLabelText("Feature image", { selector: "#show-feature-bg" }));
+    });
 
     await waitFor(() => {
       expect(localStorage.getItem("kemono.display.__unsaved__")).toContain('"excerpts":true');

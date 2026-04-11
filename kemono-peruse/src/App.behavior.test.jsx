@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const fetchJsonMock = vi.fn();
 const copyUnsavedCreatorSettingsToMock = vi.fn();
@@ -113,22 +113,29 @@ describe("App behavior coverage", () => {
     render(<App />);
     await screen.findByText("Home Mock");
 
-    window.dispatchEvent(
-      new PopStateEvent("popstate", {
-        state: {
-          view: {
-            name: "creator",
-            service: "patreon",
-            creatorId: "50049787",
-            creatorName: "AYEH",
+    act(() => {
+      window.dispatchEvent(
+        new PopStateEvent("popstate", {
+          state: {
+            view: {
+              name: "creator",
+              service: "patreon",
+              creatorId: "50049787",
+              creatorName: "AYEH",
+            },
           },
-        },
-      }),
-    );
+        }),
+      );
+    });
     await screen.findByText("Creator Mock patreon:50049787");
 
     const brandLink = screen.getByRole("link", { name: "Kemono Peruse" });
-    fireEvent.click(brandLink, { ctrlKey: true });
+    const brandHref = brandLink.getAttribute("href");
+    act(() => {
+      brandLink.removeAttribute("href");
+      fireEvent.click(brandLink, { ctrlKey: true });
+      brandLink.setAttribute("href", brandHref);
+    });
     expect(screen.getByText("Creator Mock patreon:50049787")).toBeInTheDocument();
 
     fireEvent.click(brandLink);

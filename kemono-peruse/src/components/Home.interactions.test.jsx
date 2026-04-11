@@ -71,7 +71,10 @@ describe("Home interactions", () => {
     const creatorLink = screen.getByRole("link", { name: "AYEH" });
 
     const ctrlClick = createEvent.click(creatorLink, { ctrlKey: true, button: 0 });
+    const creatorHref = creatorLink.getAttribute("href");
+    creatorLink.removeAttribute("href");
     fireEvent(creatorLink, ctrlClick);
+    creatorLink.setAttribute("href", creatorHref);
     expect(ctrlClick.defaultPrevented).toBe(false);
     expect(onOpenCreator).not.toHaveBeenCalled();
 

@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { MEDIA_BASE } from "../constants.js";
 
@@ -195,13 +195,15 @@ describe("CreatorPage feature backgrounds", () => {
       expect(secondCard).not.toHaveClass("feature-background");
       expect(observer.observe).toHaveBeenCalledWith(secondCard);
 
-      observer.trigger([
-        {
-          target: secondCard,
-          isIntersecting: true,
-          intersectionRatio: 1,
-        },
-      ]);
+      act(() => {
+        observer.trigger([
+          {
+            target: secondCard,
+            isIntersecting: true,
+            intersectionRatio: 1,
+          },
+        ]);
+      });
 
       await waitFor(() => {
         expect(secondCard).toHaveClass("feature-background");
@@ -212,4 +214,3 @@ describe("CreatorPage feature backgrounds", () => {
     }
   });
 });
-

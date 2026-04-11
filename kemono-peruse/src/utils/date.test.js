@@ -14,7 +14,7 @@ describe("date utils", () => {
   });
 
   it("falls back to raw string when formatter throws", () => {
-    const formatterSpy = vi.spyOn(Intl, "DateTimeFormat").mockImplementation(() => {
+    const formatterSpy = vi.spyOn(Intl, "DateTimeFormat").mockImplementation(function DateTimeFormatMock() {
       throw new Error("intl unavailable");
     });
 

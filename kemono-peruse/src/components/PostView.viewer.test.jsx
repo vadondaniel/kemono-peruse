@@ -293,7 +293,10 @@ describe("PostView reader and viewer behavior", () => {
     await screen.findByText("Posts Link Behavior");
     const postsLink = screen.getAllByRole("link", { name: "Posts" })[0];
 
+    const postsHref = postsLink.getAttribute("href");
+    postsLink.removeAttribute("href");
     fireEvent.click(postsLink, { ctrlKey: true });
+    postsLink.setAttribute("href", postsHref);
     expect(onBack).toHaveBeenCalledTimes(0);
 
     fireEvent.click(postsLink);

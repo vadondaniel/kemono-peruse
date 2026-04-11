@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { PAGE_SIZE_KEY } from "./constants.js";
 
 vi.mock("./components/Home.jsx", () => ({
@@ -108,7 +108,30 @@ const setPageGeometry = ({ innerHeight = 800, scrollHeight = 2000 } = {}) => {
   });
 };
 
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const wait = (ms) => act(() => new Promise((resolve) => setTimeout(resolve, ms)));
+
+const dispatchAppEvent = (event) => {
+  act(() => {
+    window.dispatchEvent(event);
+  });
+};
+
+const dispatchPopState = (view) => {
+  dispatchAppEvent(
+    new PopStateEvent("popstate", {
+      state: { view },
+    }),
+  );
+};
+
+const dispatchScroll = (scrollY) => {
+  act(() => {
+    if (Number.isFinite(scrollY)) {
+      setScrollY(scrollY);
+    }
+    window.dispatchEvent(new Event("scroll"));
+  });
+};
 
 describe("App integration", () => {
   beforeEach(() => {
@@ -128,18 +151,12 @@ describe("App integration", () => {
     render(<App />);
     await screen.findByText("Home Mock");
 
-    window.dispatchEvent(
-      new PopStateEvent("popstate", {
-        state: {
-          view: {
-            name: "creator",
-            service: "patreon",
-            creatorId: "50049787",
-            creatorName: "AYEH",
-          },
-        },
-      }),
-    );
+    dispatchPopState({
+      name: "creator",
+      service: "patreon",
+      creatorId: "50049787",
+      creatorName: "AYEH",
+    });
 
     await screen.findByText("Creator Mock patreon:50049787");
     expect(document.title).toContain("AYEH");
@@ -167,25 +184,18 @@ describe("App integration", () => {
     render(<App />);
     await screen.findByText("Home Mock");
 
-    window.dispatchEvent(
-      new PopStateEvent("popstate", {
-        state: {
-          view: {
-            name: "post",
-            service: "patreon",
-            creatorId: "50049787",
-            creatorName: "AYEH",
-            postId: "123",
-          },
-        },
-      }),
-    );
+    dispatchPopState({
+      name: "post",
+      service: "patreon",
+      creatorId: "50049787",
+      creatorName: "AYEH",
+      postId: "123",
+    });
 
     await screen.findByText("Post Mock 123");
     expect(screen.queryByRole("button", { name: "Back to top" })).not.toBeInTheDocument();
 
-    setScrollY(350);
-    window.dispatchEvent(new Event("scroll"));
+    dispatchScroll(350);
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Back to top" })).toBeInTheDocument();
@@ -202,23 +212,16 @@ describe("App integration", () => {
     render(<App />);
     await screen.findByText("Home Mock");
 
-    window.dispatchEvent(
-      new PopStateEvent("popstate", {
-        state: {
-          view: {
-            name: "post",
-            service: "patreon",
-            creatorId: "50049787",
-            creatorName: "AYEH",
-            postId: "123",
-          },
-        },
-      }),
-    );
+    dispatchPopState({
+      name: "post",
+      service: "patreon",
+      creatorId: "50049787",
+      creatorName: "AYEH",
+      postId: "123",
+    });
 
     await screen.findByText("Post Mock 123");
-    setScrollY(1200);
-    window.dispatchEvent(new Event("scroll"));
+    dispatchScroll(1200);
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Back to top" })).toBeInTheDocument();
@@ -234,22 +237,16 @@ describe("App integration", () => {
     render(<App />);
     await screen.findByText("Home Mock");
 
-    window.dispatchEvent(
-      new PopStateEvent("popstate", {
-        state: {
-          view: {
-            name: "post",
-            service: "patreon",
-            creatorId: "50049787",
-            creatorName: "AYEH",
-            postId: "123",
-          },
-        },
-      }),
-    );
+    dispatchPopState({
+      name: "post",
+      service: "patreon",
+      creatorId: "50049787",
+      creatorName: "AYEH",
+      postId: "123",
+    });
 
     await screen.findByText("Post Mock 123");
-    window.dispatchEvent(new Event("scroll"));
+    dispatchScroll();
 
     expect(screen.queryByRole("button", { name: "Back to top" })).not.toBeInTheDocument();
   });
@@ -258,23 +255,16 @@ describe("App integration", () => {
     render(<App />);
     await screen.findByText("Home Mock");
 
-    window.dispatchEvent(
-      new PopStateEvent("popstate", {
-        state: {
-          view: {
-            name: "post",
-            service: "patreon",
-            creatorId: "50049787",
-            creatorName: "AYEH",
-            postId: "123",
-          },
-        },
-      }),
-    );
+    dispatchPopState({
+      name: "post",
+      service: "patreon",
+      creatorId: "50049787",
+      creatorName: "AYEH",
+      postId: "123",
+    });
 
     await screen.findByText("Post Mock 123");
-    setScrollY(350);
-    window.dispatchEvent(new Event("scroll"));
+    dispatchScroll(350);
 
     const backToTopButton = await screen.findByRole("button", { name: "Back to top" });
     fireEvent.mouseEnter(backToTopButton);
@@ -294,23 +284,16 @@ describe("App integration", () => {
     render(<App />);
     await screen.findByText("Home Mock");
 
-    window.dispatchEvent(
-      new PopStateEvent("popstate", {
-        state: {
-          view: {
-            name: "post",
-            service: "patreon",
-            creatorId: "50049787",
-            creatorName: "AYEH",
-            postId: "123",
-          },
-        },
-      }),
-    );
+    dispatchPopState({
+      name: "post",
+      service: "patreon",
+      creatorId: "50049787",
+      creatorName: "AYEH",
+      postId: "123",
+    });
 
     await screen.findByText("Post Mock 123");
-    setScrollY(350);
-    window.dispatchEvent(new Event("scroll"));
+    dispatchScroll(350);
 
     const backToTopButton = await screen.findByRole("button", { name: "Back to top" });
     fireEvent.click(backToTopButton);
@@ -322,34 +305,22 @@ describe("App integration", () => {
     render(<App />);
     await screen.findByText("Home Mock");
 
-    window.dispatchEvent(
-      new PopStateEvent("popstate", {
-        state: {
-          view: {
-            name: "post",
-            service: "patreon",
-            creatorId: "50049787",
-            creatorName: "AYEH",
-            postId: "123",
-          },
-        },
-      }),
-    );
+    dispatchPopState({
+      name: "post",
+      service: "patreon",
+      creatorId: "50049787",
+      creatorName: "AYEH",
+      postId: "123",
+    });
 
     await screen.findByText("Post Mock 123");
-    window.dispatchEvent(
-      new PopStateEvent("popstate", {
-        state: {
-          view: {
-            name: "post",
-            service: "patreon",
-            creatorId: "50049787",
-            creatorName: "AYEH",
-            postId: "200",
-          },
-        },
-      }),
-    );
+    dispatchPopState({
+      name: "post",
+      service: "patreon",
+      creatorId: "50049787",
+      creatorName: "AYEH",
+      postId: "200",
+    });
     await screen.findByText("Post Mock 200");
     await screen.findByText("Has Explicit Position yes");
 
@@ -364,34 +335,22 @@ describe("App integration", () => {
     render(<App />);
     await screen.findByText("Home Mock");
 
-    window.dispatchEvent(
-      new PopStateEvent("popstate", {
-        state: {
-          view: {
-            name: "post",
-            service: "patreon",
-            creatorId: "50049787",
-            creatorName: "AYEH",
-            postId: "123",
-          },
-        },
-      }),
-    );
+    dispatchPopState({
+      name: "post",
+      service: "patreon",
+      creatorId: "50049787",
+      creatorName: "AYEH",
+      postId: "123",
+    });
 
     await screen.findByText("Post Mock 123");
-    window.dispatchEvent(
-      new PopStateEvent("popstate", {
-        state: {
-          view: {
-            name: "post",
-            service: "patreon",
-            creatorId: "50049787",
-            creatorName: "AYEH",
-            postId: "200",
-          },
-        },
-      }),
-    );
+    dispatchPopState({
+      name: "post",
+      service: "patreon",
+      creatorId: "50049787",
+      creatorName: "AYEH",
+      postId: "200",
+    });
     await screen.findByText("Post Mock 200");
     await screen.findByText("Has Explicit Position yes");
 
@@ -406,37 +365,25 @@ describe("App integration", () => {
     render(<App />);
     await screen.findByText("Home Mock");
 
-    window.dispatchEvent(
-      new PopStateEvent("popstate", {
-        state: {
-          view: {
-            name: "creator",
-            service: "patreon",
-            creatorId: "50049787",
-            creatorName: "AYEH",
-            position: 0,
-          },
-        },
-      }),
-    );
+    dispatchPopState({
+      name: "creator",
+      service: "patreon",
+      creatorId: "50049787",
+      creatorName: "AYEH",
+      position: 0,
+    });
 
     await screen.findByText("Creator Mock patreon:50049787");
     expect(screen.getByText("Creator Position 0")).toBeInTheDocument();
 
-    window.dispatchEvent(
-      new PopStateEvent("popstate", {
-        state: {
-          view: {
-            name: "post",
-            service: "patreon",
-            creatorId: "50049787",
-            creatorName: "AYEH",
-            postId: "123",
-            position: 0,
-          },
-        },
-      }),
-    );
+    dispatchPopState({
+      name: "post",
+      service: "patreon",
+      creatorId: "50049787",
+      creatorName: "AYEH",
+      postId: "123",
+      position: 0,
+    });
 
     await screen.findByText("Post Mock 123");
     expect(screen.getByText("Has Explicit Position yes")).toBeInTheDocument();
@@ -446,19 +393,13 @@ describe("App integration", () => {
     render(<App />);
     await screen.findByText("Home Mock");
 
-    window.dispatchEvent(
-      new PopStateEvent("popstate", {
-        state: {
-          view: {
-            name: "post",
-            service: "patreon",
-            creatorId: "50049787",
-            creatorName: "AYEH",
-            postId: "404",
-          },
-        },
-      }),
-    );
+    dispatchPopState({
+      name: "post",
+      service: "patreon",
+      creatorId: "50049787",
+      creatorName: "AYEH",
+      postId: "404",
+    });
 
     await screen.findByText("Post Mock 404");
     expect(screen.getByText("Has Explicit Position no")).toBeInTheDocument();
@@ -485,19 +426,13 @@ describe("App integration", () => {
     render(<App />);
     await screen.findByText("Home Mock");
 
-    window.dispatchEvent(
-      new PopStateEvent("popstate", {
-        state: {
-          view: {
-            name: "post",
-            service: "patreon",
-            creatorId: "50049787",
-            creatorName: "AYEH",
-            postId: "123",
-          },
-        },
-      }),
-    );
+    dispatchPopState({
+      name: "post",
+      service: "patreon",
+      creatorId: "50049787",
+      creatorName: "AYEH",
+      postId: "123",
+    });
 
     await screen.findByText("Post Mock 123");
     fireEvent.click(screen.getByRole("button", { name: "Resolve Position 149 With Fallback Size" }));
@@ -513,19 +448,13 @@ describe("App integration", () => {
     const { unmount } = render(<App />);
     await screen.findByText("Home Mock");
 
-    window.dispatchEvent(
-      new PopStateEvent("popstate", {
-        state: {
-          view: {
-            name: "post",
-            service: "patreon",
-            creatorId: "50049787",
-            creatorName: "AYEH",
-            postId: "123",
-          },
-        },
-      }),
-    );
+    dispatchPopState({
+      name: "post",
+      service: "patreon",
+      creatorId: "50049787",
+      creatorName: "AYEH",
+      postId: "123",
+    });
 
     await screen.findByText("Post Mock 123");
     fireEvent.click(screen.getByRole("button", { name: "Resolve Position 149 Without Persist" }));
@@ -546,22 +475,16 @@ describe("App integration", () => {
     try {
       render(<App />);
       await screen.findByText("Home Mock");
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await wait(300);
       setItemSpy.mockClear();
 
-      window.dispatchEvent(
-        new PopStateEvent("popstate", {
-          state: {
-            view: {
-              name: "post",
-              service: "patreon",
-              creatorId: "50049787",
-              creatorName: "AYEH",
-              postId: "123",
-            },
-          },
-        }),
-      );
+      dispatchPopState({
+        name: "post",
+        service: "patreon",
+        creatorId: "50049787",
+        creatorName: "AYEH",
+        postId: "123",
+      });
 
       await screen.findByText("Post Mock 123");
       fireEvent.click(screen.getByRole("button", { name: "Resolve Position 149 With 25" }));
@@ -572,7 +495,7 @@ describe("App integration", () => {
       );
       expect(creatorPositionWrites).toHaveLength(0);
 
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      await wait(300);
 
       creatorPositionWrites = setItemSpy.mock.calls.filter(
         ([key]) => key === "kemono.creatorPositions",

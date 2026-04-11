@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const fetchJsonMock = vi.fn();
 
@@ -102,18 +102,20 @@ describe("Home worker search integration", () => {
     const secondRequestId = searchMessages[1].requestId;
     expect(secondRequestId).toBeGreaterThan(firstRequestId);
 
-    worker.emit({
-      type: "searchResult",
-      requestId: firstRequestId,
-      total: 1,
-      results: [{ id: "1234", service: "patreon", name: "Old Alpha", favorited: 0 }],
-    });
+    act(() => {
+      worker.emit({
+        type: "searchResult",
+        requestId: firstRequestId,
+        total: 1,
+        results: [{ id: "1234", service: "patreon", name: "Old Alpha", favorited: 0 }],
+      });
 
-    worker.emit({
-      type: "searchResult",
-      requestId: secondRequestId,
-      total: 1,
-      results: [{ id: "50049787", service: "patreon", name: "AYEH", favorited: 0 }],
+      worker.emit({
+        type: "searchResult",
+        requestId: secondRequestId,
+        total: 1,
+        results: [{ id: "50049787", service: "patreon", name: "AYEH", favorited: 0 }],
+      });
     });
 
     await screen.findByText("AYEH");
