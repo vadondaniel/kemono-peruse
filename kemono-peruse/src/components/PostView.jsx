@@ -407,11 +407,13 @@ function PostView({
     });
   };
 
-  const getInitialCreatorName = () =>
+  const getInitialCreatorName = useCallback(() =>
     getSavedCreatorName(service, creatorId) ||
     (typeof creatorName === "string" ? creatorName.trim() : "") ||
     getCachedCreatorName(service, creatorId) ||
-    "";
+    "",
+    [service, creatorId, creatorName],
+  );
 
   const [post, setPost] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -463,7 +465,7 @@ function PostView({
 
   useEffect(() => {
     setResolvedCreatorName(() => getInitialCreatorName());
-  }, [service, creatorId]);
+  }, [getInitialCreatorName]);
 
   useEffect(() => {
     const savedName = getSavedCreatorName(service, creatorId);
@@ -523,7 +525,7 @@ function PostView({
     setViewerOpen(false);
     setViewerZoomMode("fit");
   }, [postId]);
-  const getStoredFilterFields = () => {
+  const getStoredFilterFields = useCallback(() => {
     const defaults = { title: true, tags: true, body: true };
     if (typeof window === "undefined" || !window.localStorage) return defaults;
     try {
@@ -542,13 +544,13 @@ function PostView({
     } catch {
       return defaults;
     }
-  };
-  const buildFieldQueryParams = (fields, options = {}) => {
+  }, [service, creatorId]);
+  const buildFieldQueryParams = useCallback((fields, options = {}) => {
     const resolved = fields || getStoredFilterFields();
     const forceBodyForTags = Boolean(options?.forceBodyForTags);
     const resolvedBody = forceBodyForTags && resolved.tags ? true : resolved.body;
     return `&title=${resolved.title ? "true" : "false"}&tags=${resolved.tags ? "true" : "false"}&body=${resolvedBody ? "true" : "false"}`;
-  };
+  }, [getStoredFilterFields]);
 
   useEffect(() => {
     let alive = true;
@@ -786,7 +788,18 @@ function PostView({
     return () => {
       alive = false;
     };
-  }, [service, creatorId, postId, activeFilter, onResolveCreatorPosition, useCache, cacheData]);
+  }, [
+    service,
+    creatorId,
+    postId,
+    activeFilter,
+    onResolveCreatorPosition,
+    useCache,
+    cacheData,
+    buildFieldQueryParams,
+    getStoredFilterFields,
+    trimmedActiveFilter,
+  ]);
 
   const useOriginalAttachments = readerSettings.attachmentsMode === "original";
   const heroFile = post?.file && (post.file.path || post.file.url || post.file.name) ? post.file : null;
@@ -802,20 +815,22 @@ function PostView({
     setHeroLoaded(!heroImage);
   }, [heroImage]);
 
-  const baseAttachments = Array.isArray(post?.attachments) ? [...post.attachments] : [];
   const attachmentMediaBase = useOriginalAttachments ? ORIGINAL_MEDIA_BASE : MEDIA_BASE;
-  const attachments = heroFile
-    ? [
-        {
-          ...heroFile,
-          path: heroFile.path || heroFile.file || null,
-          original: heroOriginalSrc || heroFile.original || heroFile.url || null,
-          name: heroFile.name || heroFile.title || "Feature image",
-          __heroAttachment: true,
-        },
-        ...baseAttachments,
-      ]
-    : baseAttachments;
+  const attachments = useMemo(() => {
+    const baseAttachments = Array.isArray(post?.attachments) ? [...post.attachments] : [];
+    return heroFile
+      ? [
+          {
+            ...heroFile,
+            path: heroFile.path || heroFile.file || null,
+            original: heroOriginalSrc || heroFile.original || heroFile.url || null,
+            name: heroFile.name || heroFile.title || "Feature image",
+            __heroAttachment: true,
+          },
+          ...baseAttachments,
+        ]
+      : baseAttachments;
+  }, [heroFile, heroOriginalSrc, post?.attachments]);
   const resolveAttachmentHref = useCallback(
     (attachment, { preferOriginal = false } = {}) => {
       const { proxiedHref, originalHref } = getAttachmentHrefParts(attachment);

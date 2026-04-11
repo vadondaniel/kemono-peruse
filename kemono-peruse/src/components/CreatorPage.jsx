@@ -116,6 +116,8 @@ const VIRTUAL_CARD_MIN_WIDTH = 260;
 const VIRTUAL_GRID_GAP = 16;
 const VIRTUAL_OVERSCAN_ROWS = 4;
 const VIRTUALIZATION_MIN_ITEMS = 50;
+const DEFAULT_DISPLAY_SETTINGS = { excerpts: false, tags: false, featureBackgrounds: false };
+const getDefaultFilterFields = () => ({ title: true, tags: true, body: true });
 
 const resolveVirtualRowHeight = ({ showExcerpts, showTags, showFeatureBackgrounds }) => {
   let estimate = 176;
@@ -173,6 +175,55 @@ const resolvePostFeatureKey = (post, index) => {
   return `post-fallback-${fallbackPosition}-${fallbackUpdated}-${index}`;
 };
 
+const collectTextSearchHaystacks = (post, fields) => {
+  const haystacks = [];
+  if (!post || !fields) return haystacks;
+  if (fields.title) {
+    if (typeof post.title === "string") {
+      haystacks.push(post.title);
+    }
+    if (typeof post.id === "string") {
+      haystacks.push(post.id);
+    }
+  }
+  if (fields.body) {
+    const bodyCandidates = [
+      post.excerpt,
+      post.snippet,
+      post.summary,
+      post.match,
+      post.content,
+      post.body,
+      post.text,
+      post.description,
+    ];
+    bodyCandidates.forEach((candidate) => {
+      if (!candidate) return;
+      if (typeof candidate === "string") {
+        haystacks.push(candidate);
+      } else if (typeof candidate === "object") {
+        Object.values(candidate).forEach((value) => {
+          if (typeof value === "string") {
+            haystacks.push(value);
+          }
+        });
+      }
+    });
+  }
+  return haystacks;
+};
+
+const postMatchesTextTokens = (post, tokens, fields) => {
+  if (!post || !Array.isArray(tokens) || tokens.length === 0 || !fields) return false;
+  const haystacks = collectTextSearchHaystacks(post, fields);
+  if (!haystacks.length) return false;
+  const normalizedHaystacks = haystacks
+    .map((value) => (typeof value === "string" ? value.toLowerCase() : null))
+    .filter(Boolean);
+  if (!normalizedHaystacks.length) return false;
+  return tokens.every((token) => normalizedHaystacks.some((hay) => hay.includes(token)));
+};
+
 function CreatorPage({
   service,
   creatorId,
@@ -209,9 +260,8 @@ function CreatorPage({
       // ignore persistence issues
     }
   }, [limit]);
-  const defaultDisplaySettings = { excerpts: false, tags: false, featureBackgrounds: false };
-  const readDisplaySettings = () => {
-    const base = { ...defaultDisplaySettings };
+  const readDisplaySettings = useCallback(() => {
+    const base = { ...DEFAULT_DISPLAY_SETTINGS };
     if (typeof window === "undefined" || !window.localStorage) return base;
     if (!displayStorageKey) return base;
     try {
@@ -226,8 +276,8 @@ function CreatorPage({
     } catch {
       return base;
     }
-  };
-  const writeDisplaySettings = (settings) => {
+  }, [displayStorageKey]);
+  const writeDisplaySettings = useCallback((settings) => {
     if (typeof window === "undefined" || !window.localStorage) return;
     if (!displayStorageKey) return;
     try {
@@ -237,7 +287,7 @@ function CreatorPage({
     } catch {
       // ignore
     }
-  };
+  }, [displayStorageKey, readDisplaySettings]);
   const [showExcerpts, setShowExcerpts] = useState(() => readDisplaySettings().excerpts);
   const [showTags, setShowTags] = useState(() => readDisplaySettings().tags);
   const [showFeatureBackgrounds, setShowFeatureBackgrounds] = useState(() => readDisplaySettings().featureBackgrounds);
@@ -246,16 +296,16 @@ function CreatorPage({
     setShowExcerpts(settings.excerpts);
     setShowTags(settings.tags);
     setShowFeatureBackgrounds(settings.featureBackgrounds);
-  }, [displayStorageKey]);
+  }, [readDisplaySettings]);
   useEffect(() => {
     writeDisplaySettings({ excerpts: showExcerpts });
-  }, [showExcerpts, displayStorageKey]);
+  }, [showExcerpts, writeDisplaySettings]);
   useEffect(() => {
     writeDisplaySettings({ tags: showTags });
-  }, [showTags, displayStorageKey]);
+  }, [showTags, writeDisplaySettings]);
   useEffect(() => {
     writeDisplaySettings({ featureBackgrounds: showFeatureBackgrounds });
-  }, [showFeatureBackgrounds, displayStorageKey]);
+  }, [showFeatureBackgrounds, writeDisplaySettings]);
   const [postTagMap, setPostTagMap] = useState({});
   const [postDetailMap, setPostDetailMap] = useState({});
 
@@ -318,8 +368,7 @@ function CreatorPage({
     },
     [service, creatorId, handleCachePersistenceFailure],
   );
-  const getDefaultFilterFields = () => ({ title: true, tags: true, body: true });
-  const loadStoredFilterFields = () => {
+  const loadStoredFilterFields = useCallback(() => {
     if (typeof window === "undefined" || !window.localStorage) return getDefaultFilterFields();
     try {
       const stored = window.localStorage.getItem(filterStorageKey);
@@ -333,7 +382,7 @@ function CreatorPage({
     } catch {
       return getDefaultFilterFields();
     }
-  };
+  }, [filterStorageKey]);
   const [filterFields, setFilterFields] = useState(loadStoredFilterFields);
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [loadingPosts, setLoadingPosts] = useState(true);
@@ -396,6 +445,7 @@ function CreatorPage({
   );
   const virtualizationActive = orderedPosts.length > VIRTUALIZATION_MIN_ITEMS;
   const virtualizedPosts = useMemo(() => {
+    void rowMetricsVersion;
     if (!virtualizationActive) {
       return {
         items: orderedPosts,
@@ -462,12 +512,30 @@ function CreatorPage({
       return chunkPosts;
     }
     return mergePostsById(chunkPosts, detailPosts);
-  }, [cacheData?.chunks, cacheData?.postDetails]);
-  const getInitialCreatorName = () =>
+  }, [cacheData]);
+  const searchContextRef = useRef({
+    cachedPostsForSearch,
+    creatorId,
+    filterFields,
+    service,
+    updateCache,
+    useCache,
+  });
+  searchContextRef.current = {
+    cachedPostsForSearch,
+    creatorId,
+    filterFields,
+    service,
+    updateCache,
+    useCache,
+  };
+  const getInitialCreatorName = useCallback(() =>
     getSavedCreatorName(service, creatorId) ||
     (typeof creatorName === "string" ? creatorName.trim() : "") ||
     getCachedCreatorName(service, creatorId) ||
-    "";
+    "",
+    [service, creatorId, creatorName],
+  );
   const [resolvedCreatorName, setResolvedCreatorName] = useState(() => getInitialCreatorName());
   const buildCreatorHref = useCallback(
     (positionValue) =>
@@ -483,7 +551,7 @@ function CreatorPage({
 
   useEffect(() => {
     setResolvedCreatorName(() => getInitialCreatorName());
-  }, [service, creatorId]);
+  }, [getInitialCreatorName]);
 
 
   useEffect(() => {
@@ -514,11 +582,11 @@ function CreatorPage({
 
   useEffect(() => {
     setCacheStorageError(false);
-  }, [service, creatorId]);
+  }, [loadStoredFilterFields]);
 
   useEffect(() => {
     setCacheValidationState("idle");
-  }, [service, creatorId]);
+  }, [loadStoredFilterFields]);
 
   useEffect(() => {
     if (!useCache) {
@@ -600,7 +668,7 @@ function CreatorPage({
       }
       return stored;
     });
-  }, [service, creatorId]);
+  }, [loadStoredFilterFields]);
 
   const positionContextRef = useRef({ service, creatorId, position: initialPosition });
 
@@ -782,39 +850,7 @@ function CreatorPage({
     } catch {
       // ignore persistence failures
     }
-  }, [filterStorageKey, filterFields]);
-
-  useEffect(() => {
-    const trimmed = typeof activeFilter === "string" ? activeFilter.trim() : "";
-    if (!trimmed) return;
-    setSearchPage(1);
-    setSearchCapped(false);
-    runSearch({ query: trimmed });
-  }, [filterFields.title, filterFields.tags, filterFields.body, activeFilter, effectiveLimit]);
-
-
-  useEffect(() => {
-    const trimmedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
-    if (searchAbortRef.current) {
-      searchAbortRef.current.abort();
-      searchAbortRef.current = null;
-    }
-    setSearchInput(trimmedFilter);
-    searchTokenRef.current += 1;
-    setSearchPage(1);
-    if (!trimmedFilter) {
-      setSearchResults([]);
-      setSearchLoading(false);
-      setSearchCapped(false);
-      setSearchStatusMessage(null);
-      return;
-    }
-    setOffset((value) => (value !== 0 ? 0 : value));
-    setSearchResults([]);
-    setSearchCapped(false);
-    setSearchStatusMessage(null);
-    runSearch({ query: trimmedFilter });
-  }, [service, creatorId, activeFilter, reloadKey]);
+  }, [filterStorageKey, filterFields, loadStoredFilterFields]);
 
   useEffect(
     () => () => {
@@ -826,13 +862,21 @@ function CreatorPage({
     [],
   );
 
-  const runSearch = async ({ query } = {}) => {
+  const runSearch = useCallback(async ({ query } = {}) => {
     const trimmed = (query || "").trim();
+    const {
+      cachedPostsForSearch: currentCachedPostsForSearch,
+      creatorId: currentCreatorId,
+      filterFields: currentFilterFields,
+      service: currentService,
+      updateCache: currentUpdateCache,
+      useCache: currentUseCache,
+    } = searchContextRef.current;
 
     const normalizedFields = {
-      title: Boolean(filterFields.title),
-      tags: Boolean(filterFields.tags),
-      body: Boolean(filterFields.body),
+      title: Boolean(currentFilterFields.title),
+      tags: Boolean(currentFilterFields.tags),
+      body: Boolean(currentFilterFields.body),
     };
     if (!normalizedFields.title && !normalizedFields.tags && !normalizedFields.body) {
       normalizedFields.title = true;
@@ -899,9 +943,11 @@ function CreatorPage({
       };
     };
 
-    const hasArchivePosts = Boolean(useCache && cachedPostsForSearch && cachedPostsForSearch.length > 0);
+    const hasArchivePosts = Boolean(
+      currentUseCache && currentCachedPostsForSearch && currentCachedPostsForSearch.length > 0,
+    );
     const localArchiveSearch = hasArchivePosts
-      ? filterArchivePosts(cachedPostsForSearch)
+      ? filterArchivePosts(currentCachedPostsForSearch)
       : { results: [], matchedText: false, matchedTags: false };
 
     let matchedViaText = localArchiveSearch.matchedText;
@@ -979,7 +1025,7 @@ function CreatorPage({
         const needsTextFiltering = mode.type === "text" && hasTextSearch;
         while (!exhausted && workingResults.length < MAX_SEARCH_RESULTS) {
           const chunk = await fetchJson(
-            `${API_BASE}/${service}/user/${creatorId}/posts?o=${offset}&n=${API_PAGE_SIZE}${mode.queryParam}${mode.fieldParam}${mode.tagParam}`,
+            `${API_BASE}/${currentService}/user/${currentCreatorId}/posts?o=${offset}&n=${API_PAGE_SIZE}${mode.queryParam}${mode.fieldParam}${mode.tagParam}`,
             { signal: requestSignal, dedupe: false },
           );
           if (requestSignal?.aborted || token !== searchTokenRef.current) return;
@@ -990,14 +1036,14 @@ function CreatorPage({
           let chunkMatchedViaText = false;
           let chunkMatchedViaTags = false;
           const shouldArchiveFetchedChunk =
-            useCache &&
+            currentUseCache &&
             mode.allowCache &&
             chunk.length > 0 &&
             !mode.queryParam &&
             !mode.tagParam &&
             !mode.fieldParam;
           if (shouldArchiveFetchedChunk) {
-            updateCache((prev) => {
+            currentUpdateCache((prev) => {
               const prevChunks = prev?.chunks ? { ...prev.chunks } : {};
               prevChunks[String(offset)] = mergeArchiveChunk(prevChunks[String(offset)], chunk);
               return {
@@ -1044,9 +1090,9 @@ function CreatorPage({
 
       if (token !== searchTokenRef.current) return;
 
-      if (useCache && workingResults.length > 0) {
+      if (currentUseCache && workingResults.length > 0) {
         const archivedAt = Date.now();
-        updateCache(
+        currentUpdateCache(
           (prev) => {
             const nextDetails = { ...(prev?.postDetails || {}) };
             workingResults.forEach((post) => {
@@ -1114,54 +1160,38 @@ function CreatorPage({
         setSearchLoading(false);
       }
     }
-  };
-  const collectTextSearchHaystacks = (post, fields) => {
-    const haystacks = [];
-    if (!post || !fields) return haystacks;
-    if (fields.title) {
-      if (typeof post.title === "string") {
-        haystacks.push(post.title);
-      }
-      if (typeof post.id === "string") {
-        haystacks.push(post.id);
-      }
+  }, []);
+
+  useEffect(() => {
+    const trimmed = typeof activeFilter === "string" ? activeFilter.trim() : "";
+    if (!trimmed) return;
+    setSearchPage(1);
+    setSearchCapped(false);
+    runSearch({ query: trimmed });
+  }, [filterFields.title, filterFields.tags, filterFields.body, activeFilter, effectiveLimit, runSearch]);
+
+  useEffect(() => {
+    const trimmedFilter = typeof activeFilter === "string" ? activeFilter.trim() : "";
+    if (searchAbortRef.current) {
+      searchAbortRef.current.abort();
+      searchAbortRef.current = null;
     }
-    if (fields.body) {
-      const bodyCandidates = [
-        post.excerpt,
-        post.snippet,
-        post.summary,
-        post.match,
-        post.content,
-        post.body,
-        post.text,
-        post.description,
-      ];
-      bodyCandidates.forEach((candidate) => {
-        if (!candidate) return;
-        if (typeof candidate === "string") {
-          haystacks.push(candidate);
-        } else if (typeof candidate === "object") {
-          Object.values(candidate).forEach((value) => {
-            if (typeof value === "string") {
-              haystacks.push(value);
-            }
-          });
-        }
-      });
+    setSearchInput(trimmedFilter);
+    searchTokenRef.current += 1;
+    setSearchPage(1);
+    if (!trimmedFilter) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      setSearchCapped(false);
+      setSearchStatusMessage(null);
+      return;
     }
-    return haystacks;
-  };
-  const postMatchesTextTokens = (post, tokens, fields) => {
-    if (!post || !Array.isArray(tokens) || tokens.length === 0 || !fields) return false;
-    const haystacks = collectTextSearchHaystacks(post, fields);
-    if (!haystacks.length) return false;
-    const normalizedHaystacks = haystacks
-      .map((value) => (typeof value === "string" ? value.toLowerCase() : null))
-      .filter(Boolean);
-    if (!normalizedHaystacks.length) return false;
-    return tokens.every((token) => normalizedHaystacks.some((hay) => hay.includes(token)));
-  };
+    setOffset((value) => (value !== 0 ? 0 : value));
+    setSearchResults([]);
+    setSearchCapped(false);
+    setSearchStatusMessage(null);
+    runSearch({ query: trimmedFilter });
+  }, [service, creatorId, activeFilter, reloadKey, runSearch]);
 
   const handleSearchSubmit = (event) => {
     event.preventDefault();
@@ -1440,6 +1470,7 @@ function CreatorPage({
     updateCache,
     cacheValidationPending,
     cacheValidationState,
+    profile?.post_count,
   ]);
 
   const cacheUpdatedAt = useCache && cacheData?.updatedAt ? cacheData.updatedAt : null;
@@ -1850,6 +1881,7 @@ function CreatorPage({
 
   const updateVirtualWindow = useCallback(() => {
     if (typeof window === "undefined") return;
+    void rowMetricsVersion;
     const listNode = postListRef.current;
     if (!listNode) return;
 
