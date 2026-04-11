@@ -1611,9 +1611,6 @@ function CreatorPage({
         const queue = [...missing];
         while (queue.length > 0) {
           const batch = queue.splice(0, chunkSize);
-          const startOffset = Number.isFinite(batch[0]?.__position)
-            ? Math.floor(batch[0].__position / API_PAGE_SIZE) * API_PAGE_SIZE
-            : 0;
           const needRangeStart = Math.max(0, Math.min(...batch.map((post) => Math.max(0, post.__position ?? 0))));
           const needRangeEnd = Math.max(
             ...batch.map((post, idx) => Math.max(needRangeStart, (post.__position ?? idx) + 1)),
