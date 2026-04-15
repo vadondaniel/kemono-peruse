@@ -15,6 +15,33 @@ const APP_SHELL = [
 ];
 
 const cacheable = (response) => response && (response.ok || response.type === "opaque");
+const contentTypeOf = (response) => (response?.headers?.get("content-type") || "").toLowerCase();
+const isJavaScriptType = (contentType) =>
+  contentType.includes("javascript") || contentType.includes("ecmascript") || contentType.includes("module");
+
+const shouldCacheResponse = (request, response) => {
+  if (!cacheable(response)) return false;
+  if (response.type === "opaque") return true;
+
+  const contentType = contentTypeOf(response);
+
+  // Prevent cache poisoning from SPA fallbacks rewriting missing JS/CSS URLs to index.html.
+  if (request.mode !== "navigate" && contentType.includes("text/html")) return false;
+
+  switch (request.destination) {
+    case "script":
+    case "worker":
+      return isJavaScriptType(contentType);
+    case "style":
+      return contentType.includes("text/css");
+    case "image":
+      return contentType.startsWith("image/");
+    case "font":
+      return contentType.startsWith("font/") || contentType.includes("application/font");
+    default:
+      return true;
+  }
+};
 
 const trimCache = async (cacheName, maxEntries) => {
   const cache = await caches.open(cacheName);
@@ -24,7 +51,7 @@ const trimCache = async (cacheName, maxEntries) => {
 };
 
 const putInCache = async (cacheName, request, response, maxEntries) => {
-  if (!cacheable(response)) return;
+  if (!shouldCacheResponse(request, response)) return;
   const cache = await caches.open(cacheName);
   await cache.put(request, response.clone());
   if (maxEntries) {
