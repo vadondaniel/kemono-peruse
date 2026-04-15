@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: kemono-peruse-backend
+    runtime: node
+    plan: free
+    autoDeploy: true
+    buildCommand: echo "No build step required"
+    startCommand: node proxy-server.js
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: KEMONO_HOST
+        value: https://kemono.cr
+      - key: KEMONO_BASE_PATH
+        value: /api/v1
+      - key: KEMONO_ACCEPT
+        value: text/css
+  - type: web
+    name: kemono-peruse
+    runtime: static
+    plan: free
+    autoDeploy: true
+    rootDir: kemono-peruse
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    routes:
+      - type: rewrite
+        source: /api/proxy/kemono/*
+        destination: https://kemono-peruse-backend.onrender.com/api/proxy/kemono/*
+      - type: rewrite
+        source: /*
+        destination: /index.html

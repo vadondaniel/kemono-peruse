@@ -170,3 +170,43 @@ After `npm run build`, either:
   ```
 
 Vite's preview server will host `dist/` (default `http://localhost:4173`, or whatever you set via `VITE_PREVIEW_PORT`). For remote hosting, upload `dist` to any static host and expose the proxy under `/api/proxy/kemono` on the same origin (or set `VITE_API_BASE` to wherever your proxy lives).
+
+## Deploy on Render
+
+This repo includes a Render Blueprint at `render.yaml` that deploys two services:
+
+- `kemono-peruse-backend` (Node web service) for the Kemono proxy API
+- `kemono-peruse` (Static Site) for the frontend app
+
+### Fast path (Blueprint)
+
+1. Push this repository to GitHub.
+2. In Render, click **New +** -> **Blueprint**.
+3. Select the repo and deploy.
+4. Open your frontend URL (for example `https://kemono-peruse.onrender.com`).
+
+The static site is configured with rewrite routes so requests to `/api/proxy/kemono/*` are forwarded to the backend service. This keeps the frontend on a same-origin API path (`/api/proxy/kemono`) and avoids extra CORS/client config.
+
+### Manual setup (without Blueprint)
+
+Create these two services:
+
+1. Backend web service (`kemono-peruse-backend`)
+
+- **Runtime**: `Node`
+- **Build Command**: `echo "No build step required"`
+- **Start Command**: `node proxy-server.js`
+- **Health Check Path**: `/healthz`
+
+- `KEMONO_HOST=https://kemono.cr`
+- `KEMONO_BASE_PATH=/api/v1`
+- `KEMONO_ACCEPT=text/css`
+
+2. Frontend static site (`kemono-peruse`)
+
+- **Root Directory**: `kemono-peruse`
+- **Build Command**: `npm ci && npm run build`
+- **Publish Directory**: `dist`
+- **Routes**:
+  - Rewrite `/api/proxy/kemono/*` -> `https://kemono-peruse-backend.onrender.com/api/proxy/kemono/*`
+  - Rewrite `/*` -> `/index.html`

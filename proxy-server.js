@@ -29,6 +29,12 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.url === "/healthz") {
+    res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders() });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
+
   // Handle CORS preflight quickly.
   if (req.method === "OPTIONS") {
     res.writeHead(204, corsHeaders());
@@ -37,7 +43,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (!req.url.startsWith(API_PROXY_PREFIX)) {
-    res.writeHead(404, { "Content-Type": "application/json" });
+    res.writeHead(404, { "Content-Type": "application/json", ...corsHeaders() });
     res.end(JSON.stringify({ error: "Not a Kemono proxy route" }));
     return;
   }
