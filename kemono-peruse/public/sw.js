@@ -10,6 +10,8 @@ const APP_SHELL = [
   "./favicon.png",
   "./pwa-192.png",
   "./pwa-512.png",
+  "./pwa-maskable-192.png",
+  "./pwa-maskable-512.png",
 ];
 
 const cacheable = (response) => response && (response.ok || response.type === "opaque");
