@@ -6,6 +6,7 @@ import {
   normalizePostHtml,
   toNumericCount,
 } from "./posts.js";
+import { MEDIA_BASE } from "../constants.js";
 
 describe("posts utils", () => {
   it("extractTagTokens normalizes comma-separated tokens", () => {
@@ -48,7 +49,12 @@ describe("posts utils", () => {
   it("normalizePostHtml rewrites relative src urls", () => {
     const html = `<img src="/data/file.jpg" alt="x" />`;
     const normalized = normalizePostHtml(html);
-    expect(normalized).toContain(`src="https://kemono.cr/data/file.jpg"`);
+    expect(normalized).toContain(`src="${MEDIA_BASE}/data/file.jpg"`);
+  });
+
+  it("keeps source-specific proxy image URLs without adding a second prefix", () => {
+    const html = `<img src="${MEDIA_BASE}/__pawchive/n3.pawchive.pw/data/hash.png">`;
+    expect(normalizePostHtml(html)).toBe(html);
   });
 
   it("normalizePostHtml converts Fanbox download anchors into inline images", () => {
@@ -76,6 +82,14 @@ describe("posts utils", () => {
     expect(normalized).not.toContain("<img");
   });
 
+  it("uses the assigned Pawchive original for Fanbox inline images in original mode", () => {
+    const normalized = normalizePostHtml('<a href="https://downloads.fanbox.cc/files/image.png">image</a>', {
+      service: "fanbox", mediaBase: MEDIA_BASE, preferOriginal: true,
+      attachments: [{ name: "image.png", path: "/__pawchive/n3.pawchive.pw/data/hash.png", original: "https://n3.pawchive.pw/data/hash.png" }],
+    });
+    expect(normalized).toContain('src="https://n3.pawchive.pw/data/hash.png"');
+  });
+
   it("normalizePostHtml recovers when DOM parsing fails", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     const originalParser = window.DOMParser;
@@ -94,7 +108,7 @@ describe("posts utils", () => {
         attachments: [{ name: "file.jpg", path: "/uploads/file.jpg" }],
       });
 
-      expect(normalized).toContain(`src="https://kemono.cr/data/file.jpg"`);
+      expect(normalized).toContain(`src="${MEDIA_BASE}/data/file.jpg"`);
       expect(warnSpy).toHaveBeenCalled();
     } finally {
       window.DOMParser = originalParser;

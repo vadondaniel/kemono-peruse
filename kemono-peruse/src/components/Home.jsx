@@ -424,7 +424,7 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
               <h2 className="title">Creator tools</h2>
               <span className="label">
                 {activeCreatorTool === "search"
-                  ? "Look up creators directly from kemono.cr"
+                  ? "Look up creators from Pawchive (Kemono fallback)"
                   : "Jump straight to a creator or save them for later"}
               </span>
             </div>
@@ -735,7 +735,7 @@ function Home({ savedCreators, onSaveCreator, onRenameCreator, onRemoveCreator, 
             <div className="saved-empty">
               <p className="muted">Use the quick add form to build your personal reading list.</p>
               <ul className="home-tips">
-                <li>Grab the service + creator ID directly from kemono.cr URLs.</li>
+                <li>Grab the service + creator ID from pawchive.pw or kemono.cr URLs.</li>
                 <li>Give creators custom display names to keep things tidy.</li>
                 <li>Use the library search to jump to anyone instantly.</li>
               </ul>

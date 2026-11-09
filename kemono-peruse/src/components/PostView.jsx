@@ -902,7 +902,7 @@ function PostView({
   const bodyHtml = post?.content || post?.body || post?.text || "";
 
   const normalizedHtml = bodyHtml
-    ? normalizePostHtml(bodyHtml, { service: post?.service || service, attachments, mediaBase: attachmentMediaBase })
+    ? normalizePostHtml(bodyHtml, { service: post?.service || service, attachments, mediaBase: attachmentMediaBase, preferOriginal: useOriginalAttachments })
     : "";
 
   const [processedHtml, setProcessedHtml] = useState(() => normalizedHtml || "");

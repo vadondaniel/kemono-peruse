@@ -1,6 +1,6 @@
 # Kemono Peruse
 
-Kemono Peruse is a clean web reader for Kemono posts.
+Kemono Peruse is a clean web reader using Pawchive (pawchive.pw) by default, with Kemono as an automatic fallback when an API request fails.
 
 ## Why you might like it
 
@@ -91,13 +91,14 @@ These settings live in `kemono-peruse/.env` (or `.env.local` for Vite). Restart 
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `PROXY_PORT` (or `PORT`) | Where the Kemono Peruse service listens | `3001` |
-| `KEMONO_HOST` | Upstream Kemono host | `https://kemono.cr` |
+| `PAWCHIVE_HOST` | Primary archive host | `https://pawchive.pw` |
+| `KEMONO_HOST` | Fallback archive host | `https://kemono.cr` |
 | `KEMONO_BASE_PATH` | Upstream API prefix | `/api/v1` |
 | `KEMONO_ACCEPT` | `Accept` header forwarded to Kemono | `text/css` |
 | `VITE_DEV_SERVER_PORT` / `VITE_PORT` | Vite dev server port | `5173` |
 | `VITE_PREVIEW_PORT` | Vite preview/built server port | `4173` |
 
-Media URLs such as `/data/…` are automatically tunneled through the service at `/api/proxy/kemono/media/…`, so you normally do not need extra setup.
+Media and creator icons are routed to their archive hosts through the service; media URLs are tunneled at `/api/proxy/kemono/media/…`, so you normally do not need extra setup.
 
 ## Troubleshooting
 

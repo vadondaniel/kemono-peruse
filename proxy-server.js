@@ -1,13 +1,14 @@
-// Lightweight Kemono proxy to dodge browser CORS limits.
+// Pawchive-first archive proxy with Kemono fallback to avoid browser CORS limits.
 // Usage:
 //   1. `npm install` (if you already have a package.json) – no extra deps needed.
 //   2. Run with `node proxy-server.js` (Node 18+ for global fetch support).
 //   3. Keep your frontend API_BASE at `/api/proxy/kemono`.
 //
-// The proxy rewrites `/api/proxy/kemono/...` -> `https://kemono.cr/api/v1/...`
-// and forwards the request server-side with the Accept header Kemono expects.
+// The proxy keeps `/api/proxy/kemono/...` as its public route for existing deployments
+// using Pawchive by default and Kemono on upstream failure; the legacy route stays compatible.
 
 const http = require("node:http");
+const { fetchArchive } = require("./kemono-peruse/proxy-upstream.cjs");
 const fs = require("node:fs");
 const path = require("node:path");
 const { Readable } = require("node:stream");
@@ -96,7 +97,7 @@ const server = http.createServer(async (req, res) => {
   res.once("close", handleResponseClose);
 
   try {
-    const upstreamResponse = await fetch(upstreamUrl, {
+    const upstreamResponse = await fetchArchive(upstreamUrl, {
       method: req.method,
       headers: {
         Accept: KEMONO_ACCEPT_HEADER,
@@ -137,7 +138,7 @@ const server = http.createServer(async (req, res) => {
 
     await pipeline(Readable.fromWeb(upstreamResponse.body), res);
   } catch (error) {
-    if (abortedByClient || error?.name === "AbortError") {
+    if (abortedByClient) {
       return;
     }
     console.error("Kemono proxy failed:", error);
@@ -149,7 +150,7 @@ const server = http.createServer(async (req, res) => {
       ...corsHeaders(),
       "Content-Type": "application/json",
     });
-    res.end(JSON.stringify({ error: "Failed to reach Kemono API" }));
+    res.end(JSON.stringify({ error: "Failed to reach Pawchive and Kemono APIs" }));
   } finally {
     req.removeListener("aborted", abortUpstream);
     res.removeListener("close", handleResponseClose);
@@ -158,7 +159,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PROXY_PORT, () => {
   console.log(
-    `Kemono proxy listening on http://localhost:${PROXY_PORT}${API_PROXY_PREFIX} -> ${KEMONO_API_HOST}${KEMONO_API_BASE_PATH}`,
+    `Archive proxy listening on http://localhost:${PROXY_PORT}${API_PROXY_PREFIX} -> ${process.env.PAWCHIVE_HOST || "https://pawchive.pw"} (fallback: ${KEMONO_API_HOST})`,
   );
 });
 

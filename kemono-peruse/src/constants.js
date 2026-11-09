@@ -2,16 +2,17 @@ const rawApiBase = import.meta.env.VITE_API_BASE || "/api/proxy/kemono";
 
 export const API_BASE = rawApiBase.endsWith("/") ? rawApiBase.slice(0, -1) : rawApiBase;
 export const MEDIA_BASE = `${API_BASE}/media`;
-const rawOriginalMediaBase = import.meta.env.VITE_ORIGINAL_MEDIA_BASE || "https://kemono.cr/data";
+// API file records supply source-specific originals; older records use the proxy.
+const rawOriginalMediaBase = import.meta.env.VITE_ORIGINAL_MEDIA_BASE || MEDIA_BASE;
 export const ORIGINAL_MEDIA_BASE = rawOriginalMediaBase.endsWith("/")
   ? rawOriginalMediaBase.slice(0, -1)
   : rawOriginalMediaBase;
-export const ICON_BASE = "https://img.kemono.cr/icons";
+export const ICON_BASE = `${MEDIA_BASE}/icons`;
 export const API_PAGE_SIZE = 50;
 export const MAX_SEARCH_RESULTS = 1000;
 export const MAX_CACHE_POSTS = 5000;
 export const MAX_CACHE_POST_DETAILS = 2000;
-export const CACHE_VERSION = 1;
+export const CACHE_VERSION = 2;
 export const CACHE_MAX_AGE_MS = 1000 * 60 * 60 * 24;
 export const CACHE_POST_DETAIL_MAX_AGE_MS = 1000 * 60 * 60 * 6;
 export const CACHE_PREF_PREFIX = "kemono.cache.pref";

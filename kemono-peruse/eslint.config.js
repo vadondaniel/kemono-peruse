@@ -27,6 +27,10 @@ export default defineConfig([
     },
   },
   {
+    files: ['*.cjs'],
+    languageOptions: { globals: globals.node },
+  },
+  {
     files: ['src/**/*.test.{js,jsx}'],
     languageOptions: {
       globals: {

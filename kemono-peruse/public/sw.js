@@ -1,4 +1,4 @@
-const CACHE_VERSION = "v1";
+const CACHE_VERSION = "v2";
 const APP_CACHE = `kemono-peruse-app-${CACHE_VERSION}`;
 const RUNTIME_CACHE = `kemono-peruse-runtime-${CACHE_VERSION}`;
 const API_CACHE = `kemono-peruse-api-${CACHE_VERSION}`;

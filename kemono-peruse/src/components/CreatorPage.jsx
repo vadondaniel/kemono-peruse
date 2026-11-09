@@ -7,6 +7,7 @@ import {
   CACHE_VERSION,
   MAX_SEARCH_RESULTS,
   MEDIA_BASE,
+  ICON_BASE,
   ORIGINAL_MEDIA_BASE,
   PAGE_SIZE_KEY,
   PAGE_SIZE_OPTIONS,
@@ -1791,7 +1792,7 @@ function CreatorPage({
   const currentPage = limit > 0 ? Math.floor(offset / limit) + 1 : 1;
   const hasNext = derivedTotalPages ? offset + limit < totalPosts : hasNextPage;
   const totalPages = derivedTotalPages ?? currentPage + (hasNext ? 1 : 0);
-  const avatarUrl = `https://img.kemono.cr/icons/${service}/${creatorId}`;
+  const avatarUrl = `${ICON_BASE}/${service}/${creatorId}`;
   const serviceLabel = getServiceLabel(service);
   const normalizedFilterText = normalizedFilter.replace(/,/g, " ").trim();
   const canTextFilter = (filterFields.title || filterFields.body) && normalizedFilterText.length > 0;

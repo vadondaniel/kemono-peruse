@@ -1,10 +1,17 @@
-import { SERVICE_LABELS } from "../constants";
+import { MEDIA_BASE, SERVICE_LABELS } from "../constants";
 
 export function normalizePostHtml(rawHtml, options = {}) {
   if (!rawHtml || typeof rawHtml !== "string") return "";
 
-  const { service, attachments, mediaBase } = options;
-  let html = rawHtml.replace(/src=(["'])\/(?!\/)/gi, 'src=$1https://kemono.cr/');
+  const { service, attachments, mediaBase, preferOriginal = false } = options;
+  let html = rawHtml.replace(/src=(["'])(\/(?!\/)[^"']*)\1/gi, (match, quote, path) => {
+    const proxyPrefix = "/api/proxy/kemono/media/";
+    if (path.startsWith(proxyPrefix)) {
+      return `src=${quote}${MEDIA_BASE}/${path.slice(proxyPrefix.length)}${quote}`;
+    }
+    if (path.startsWith(`${MEDIA_BASE}/`)) return match;
+    return `src=${quote}${MEDIA_BASE}${path}${quote}`;
+  });
 
   const isFanbox = (service || "").toLowerCase() === "fanbox";
   const canUseDomParser =
@@ -18,7 +25,7 @@ export function normalizePostHtml(rawHtml, options = {}) {
     const parser = new window.DOMParser();
     const doc = parser.parseFromString(html, "text/html");
     if (doc?.body) {
-      const mutated = convertFanboxAnchorsToImages(doc, attachments, mediaBase);
+      const mutated = convertFanboxAnchorsToImages(doc, attachments, mediaBase, preferOriginal);
       if (mutated) {
         return doc.body.innerHTML;
       }
@@ -30,7 +37,7 @@ export function normalizePostHtml(rawHtml, options = {}) {
   return html;
 }
 
-function convertFanboxAnchorsToImages(doc, attachments, mediaBase) {
+function convertFanboxAnchorsToImages(doc, attachments, mediaBase, preferOriginal) {
   const anchors = Array.from(doc.querySelectorAll("a[href]"));
   if (anchors.length === 0) return false;
 
@@ -47,7 +54,7 @@ function convertFanboxAnchorsToImages(doc, attachments, mediaBase) {
     if (!attachment?.path) return;
 
     const img = doc.createElement("img");
-    img.setAttribute("src", `${mediaBase}${attachment.path}`);
+    img.setAttribute("src", (preferOriginal && (attachment.original || attachment.url)) || `${mediaBase}${attachment.path}`);
     img.setAttribute("alt", attachment.name || attachment.path.split("/").pop() || "");
     img.setAttribute("loading", "lazy");
     img.classList.add("inline-media");
