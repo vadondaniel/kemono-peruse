@@ -2316,7 +2316,7 @@ function CreatorPage({
                   {serviceLabel ? <span className="creator-service-badge">{serviceLabel}</span> : null}
                   <div className="creator-meta-stats">
                     <span className="muted small">
-                      {loadingProfile ? "Loading profile..." : `${profile?.post_count ?? "-"} posts indexed`}
+                      {loadingProfile ? "Loading profile..." : totalPosts !== null ? `${totalPosts} posts indexed` : "Post count unavailable"}
                     </span>
                     {canUseCacheUi && (useCache || cacheStorageError) && (
                       <span className="muted small cache-status-line">

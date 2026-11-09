@@ -1,4 +1,45 @@
 const DEFAULT_TIMEOUT_MS = 6000;
+const POST_PAGE_SIZE = 50;
+const creatorPostCounts = new Map();
+const COUNT_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
+
+async function fetchPostCount(profileUrl, options, fetchImpl) {
+  const postsUrl = new URL(profileUrl);
+  postsUrl.pathname = postsUrl.pathname.replace(/\/profile\/?$/, "/posts");
+  postsUrl.search = "";
+  const getPageLength = async (page) => {
+    postsUrl.searchParams.set("o", String(page * POST_PAGE_SIZE));
+    const response = await fetchImpl(new URL(postsUrl), { ...options, method: "GET" });
+    if (!response.ok) {
+      await response.body?.cancel();
+      throw new Error(`Post count request failed: ${response.status}`);
+    }
+    const posts = await response.json();
+    if (!Array.isArray(posts) || posts.length > POST_PAGE_SIZE) throw new Error("Invalid count page");
+    return posts.length;
+  };
+  const firstLength = await getPageLength(0);
+  if (firstLength < POST_PAGE_SIZE) return firstLength;
+  let low = 0;
+  let high = 1;
+  // Find the end without downloading every page of a large archive.
+  while (high <= 2 ** 20) {
+    const length = await getPageLength(high);
+    if (length === 0) break;
+    if (length < POST_PAGE_SIZE) return high * POST_PAGE_SIZE + length;
+    low = high;
+    high *= 2;
+  }
+  if (high > 2 ** 20) throw new Error("Post count exceeds supported range");
+  while (high - low > 1) {
+    const middle = Math.floor((low + high) / 2);
+    const length = await getPageLength(middle);
+    if (length === 0) high = middle;
+    else if (length < POST_PAGE_SIZE) return middle * POST_PAGE_SIZE + length;
+    else low = middle;
+  }
+  return (low + 1) * POST_PAGE_SIZE;
+}
 
 function isArchiveHost(hostname, host, source) {
   const domains = [new URL(host).hostname];
@@ -96,6 +137,23 @@ async function fetchArchive(url, options = {}, config = {}) {
       if (list ? !Array.isArray(data) : !data || typeof data !== "object" || Array.isArray(data)) {
         throw new Error(`${source} returned an invalid payload`);
       }
+      if (source === "pawchive" && /\/profile\/?$/.test(path) && data.post_count == null) {
+        const key = target.href;
+        const cached = creatorPostCounts.get(key);
+        if (cached && cached.updated === data.updated && Date.now() - cached.fetchedAt < COUNT_CACHE_MAX_AGE_MS) {
+          data.post_count = cached.count;
+        } else {
+          try {
+            const count = await fetchPostCount(target, { ...options, signal }, fetchImpl);
+            data.post_count = count;
+            creatorPostCounts.set(key, { count, updated: data.updated, fetchedAt: Date.now() });
+            if (creatorPostCounts.size > 256) creatorPostCounts.delete(creatorPostCounts.keys().next().value);
+          } catch (error) {
+            if (options.signal?.aborted) throw error;
+            // A missing count must not replace a valid Pawchive profile with Kemono's older data.
+          }
+        }
+      }
       const headers = new Headers(response.headers);
       headers.delete("content-length");
       headers.delete("content-encoding");
@@ -113,4 +171,4 @@ async function fetchArchive(url, options = {}, config = {}) {
   throw lastError;
 }
 
-module.exports = { fetchArchive, normalizePayload, normalizeTags };
+module.exports = { fetchArchive, fetchPostCount, normalizePayload, normalizeTags };

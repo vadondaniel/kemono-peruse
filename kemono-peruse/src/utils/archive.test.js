@@ -1,12 +1,42 @@
 import upstream from "../../proxy-upstream.cjs";
 
-const { fetchArchive, normalizeTags } = upstream;
+const { fetchArchive, fetchPostCount, normalizeTags } = upstream;
 const api = "https://kemono.cr/api/v1/patreon/user/123/posts?o=50&q=chapter&tag=Novel";
 const response = (data, status = 200) => new Response(JSON.stringify(data), {
   status, headers: { "content-type": "application/json" },
 });
 
 describe("Pawchive compatibility and Kemono fallback", () => {
+  it.each([0, 12, 50, 97, 100, 150, 9999])("counts %i posts using the same source's paginated feed", async (total) => {
+    const fetch = vi.fn().mockImplementation(async (url) => {
+      expect(url.hostname).toBe("pawchive.pw");
+      expect(url.pathname).toBe("/api/v1/patreon/user/156814709/posts");
+      const offset = Number(url.searchParams.get("o"));
+      return response(Array.from({ length: Math.max(0, Math.min(50, total - offset)) }, (_, i) => ({ id: offset + i })));
+    });
+    expect(await fetchPostCount(new URL("https://pawchive.pw/api/v1/patreon/user/156814709/profile"), {}, fetch)).toBe(total);
+    expect(fetch.mock.calls.length).toBeLessThan(20);
+  });
+
+  it("adds and reuses a Pawchive profile count without consulting Kemono", async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(response({ id: "count-cache", updated: "today" }))
+      .mockResolvedValueOnce(response(Array.from({ length: 50 }, (_, id) => ({ id }))))
+      .mockResolvedValueOnce(response(Array.from({ length: 47 }, (_, id) => ({ id }))))
+      .mockResolvedValueOnce(response({ id: "count-cache", updated: "today" }));
+    const url = "https://kemono.cr/api/v1/patreon/user/count-cache/profile";
+    expect((await (await fetchArchive(url, {}, { fetch })).json()).post_count).toBe(97);
+    expect((await (await fetchArchive(url, {}, { fetch })).json()).post_count).toBe(97);
+    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(fetch.mock.calls.every(([target]) => target.hostname === "pawchive.pw")).toBe(true);
+  });
+
+  it("keeps the Pawchive profile if its count cannot be fetched", async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(response({ id: "count-unavailable", name: "Pawchive name" }))
+      .mockResolvedValueOnce(response({}, 503));
+    const res = await fetchArchive("https://kemono.cr/api/v1/patreon/user/count-unavailable/profile", {}, { fetch });
+    expect(await res.json()).toEqual({ id: "count-unavailable", name: "Pawchive name" });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
   it("uses Pawchive first, preserving pagination and search, and normalizes tags and file URLs", async () => {
     const fetch = vi.fn().mockResolvedValue(response([{
       id: "1", tags: '{Novel,"Tag, with comma"}',
